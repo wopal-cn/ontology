@@ -9,7 +9,7 @@
  * 4. glob 模式匹配是否工作
  *
  * 使用方法：
- *   cd /path/to/ai-toolbox
+ *   cd /path/to/workspace
  *   bun projects/agent-tools/plugins/opencode/rules-plugin/validate-rules-plugin.ts
  */
 

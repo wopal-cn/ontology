@@ -88,7 +88,7 @@ description: 基于代码库深度分析创建详尽的功能实现计划 (Plan)
 **计划模板**: 参考 `projects/agent-tools/templates/PLAN-template.md` 的结构与要求。该模板提供了计划所需的所有核心章节（从用户故事到验证命令）。
 
 **文件命名与存放位置**:
-> **注意**: AI-Toolbox 采用 Monorepo + Submodule 架构，所有规划文件均集中存放以方便统一管理。
+> **注意**: 本项目采用 Monorepo + Submodule 架构，所有规划文件均集中存放以方便统一管理。
 
 1. 定位**主仓库**的根目录。即便你当前处于某个 Submodule 中，计划文件也**必须**写入主仓库的 `.agents/plans/` 目录下（如果不存在则创建）。
 2. 文件名必须使用描述性的短名称 (kebab-case)，并在名字前加上子模块或项目前缀（如果在子模块中）。
