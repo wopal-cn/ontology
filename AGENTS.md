@@ -28,6 +28,7 @@ agent-tools/
 | `create-rules` | 创建项目规则 |
 | `execute` | 执行计划 |
 | `init-py-project` | 初始化 Python 项目 |
+| `today-memo` | 记录短期记忆 |
 | `plan-feature` | 功能规划 |
 | `prime` | 加载项目上下文 |
 | `pin-submodule` | 创建子模块里程碑快照 |
