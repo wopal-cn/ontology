@@ -9,6 +9,18 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
 
 # 环境变量（如需提交示例请用 .env.example）
 .env

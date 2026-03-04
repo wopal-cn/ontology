@@ -1,0 +1,29 @@
+{
+  "name": "@wopal/process",
+  "version": "1.0.0",
+  "description": "Independent process management tool for background and interactive sessions",
+  "main": "src/index.js",
+  "bin": {
+    "process-adapter": "./bin/process-adapter"
+  },
+  "scripts": {
+    "test": "node --test tests/**/*.js",
+    "test:unit": "node --test tests/unit/**/*.js",
+    "test:integration": "node --test tests/integration/**/*.js"
+  },
+  "keywords": [
+    "process",
+    "pty",
+    "background",
+    "session",
+    "agent"
+  ],
+  "author": "Wopal",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0"
+  }
+}

@@ -80,7 +80,7 @@ def read_version_file(skill_dir: Path) -> dict | None:
     return json.loads(version_file.read_text(encoding="utf-8"))
 
 
-def check_sync(dest_dir: Path, root_dir: Path = None) -> dict:
+def check_sync(dest_dir: Path, root_dir: Path | None = None) -> dict:
     """Check sync status of all deployed skills.
 
     Args:
@@ -122,7 +122,12 @@ def check_sync(dest_dir: Path, root_dir: Path = None) -> dict:
             result["unchanged"].append(skill_dir.name)
             continue
 
-        source_path = root_dir / version["source_path"]
+        source_path_str = version["source_path"]
+        if source_path_str.startswith("/"):
+            source_path = Path(source_path_str)
+        else:
+            source_path = root_dir / source_path_str
+
         if not source_path.exists():
             result["orphaned"].append(
                 {
