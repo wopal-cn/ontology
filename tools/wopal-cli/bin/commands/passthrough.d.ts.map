@@ -1,0 +1,1 @@
+{"version":3,"file":"passthrough.d.ts","sourceRoot":"","sources":["../../src/commands/passthrough.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,OAAO,EAAE,MAAM,WAAW,CAAC;AAEpC,OAAO,EAAE,MAAM,EAAE,MAAM,oBAAoB,CAAC;AAI5C,wBAAgB,SAAS,CAAC,CAAC,EAAE,MAAM,GAAG,IAAI,CAEzC;AAED,wBAAgB,0BAA0B,CAAC,OAAO,EAAE,OAAO,GAAG,IAAI,CAOjE"}
