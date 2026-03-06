@@ -19,11 +19,19 @@ function getVersion(): string {
   return packageJson.version;
 }
 
+function findCommand(cmd: Command, names: string[]): Command | null {
+  if (names.length === 0) return cmd;
+  const [name, ...rest] = names;
+  const sub = cmd.commands.find(c => c.name() === name);
+  if (!sub) return null;
+  return findCommand(sub, rest);
+}
+
 const program = new Command();
 
 program
   .name('wopal')
-  .description('Wopal Skills CLI - Manage AI agent skills with INBOX workflow')
+  .description('Universal toolbox for wopal agents')
   .version(getVersion(), '-v, --version', 'Show version number')
   .option('-d, --debug', 'Enable debug mode')
   .hook('preAction', (thisCommand) => {
@@ -41,15 +49,29 @@ program
     logger.log(`INBOX directory: ${process.env.SKILL_INBOX_DIR || '~/.wopal/skills/INBOX'}`);
   });
 
-program
+const skillsCommand = program
   .command('skills')
-  .description('Manage AI agent skills')
-  .action(() => {
-    program.help();
-  });
+  .description('Manage AI agent skills');
 
-registerInboxCommand(program);
-registerListCommand(program);
-registerPassthroughCommand(program);
+registerInboxCommand(skillsCommand);
+registerListCommand(skillsCommand);
+registerPassthroughCommand(skillsCommand);
+
+program
+  .command('help [command...]')
+  .description('Display help for command')
+  .action((commandNames) => {
+    if (!commandNames || commandNames.length === 0) {
+      program.outputHelp();
+      return;
+    }
+    const cmd = findCommand(program, commandNames);
+    if (cmd) {
+      cmd.outputHelp();
+    } else {
+      console.error(pc.red(`Unknown command: ${commandNames.join(' ')}`));
+      process.exit(1);
+    }
+  });
 
 program.parse();

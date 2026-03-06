@@ -6,18 +6,15 @@ export function setLogger(l) {
 }
 export function registerPassthroughCommand(program) {
     program
-        .command('find [query]')
+        .command('find <query>')
         .description('Search for skills (via Skills CLI)')
         .action(async (query) => {
-        await passthroughFind(query || '');
+        await passthroughFind(query);
     });
 }
 async function passthroughFind(query) {
     logger?.log(`Passthrough find: ${query}`);
-    const args = ['-y', 'skills', 'find'];
-    if (query) {
-        args.push(query);
-    }
+    const args = ['-y', 'skills', 'find', query];
     const result = spawnSync('npx', args, {
         stdio: 'inherit',
         shell: process.platform === 'win32'

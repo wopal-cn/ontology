@@ -11,20 +11,17 @@ export function setLogger(l: Logger): void {
 
 export function registerPassthroughCommand(program: Command): void {
   program
-    .command('find [query]')
+    .command('find <query>')
     .description('Search for skills (via Skills CLI)')
-    .action(async (query?: string) => {
-      await passthroughFind(query || '');
+    .action(async (query: string) => {
+      await passthroughFind(query);
     });
 }
 
 async function passthroughFind(query: string): Promise<void> {
   logger?.log(`Passthrough find: ${query}`);
 
-  const args = ['-y', 'skills', 'find'];
-  if (query) {
-    args.push(query);
-  }
+  const args = ['-y', 'skills', 'find', query];
 
   const result = spawnSync('npx', args, {
     stdio: 'inherit',

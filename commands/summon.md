@@ -55,7 +55,6 @@ git status
 # 查看最近五次施法记录
 git log -5 --oneline
 ```
-
 ## 唤醒报告
 
 用简洁的巫师语言呈现：
