@@ -92,6 +92,13 @@ agent-tools/
 - INBOX 管理：`wopal inbox list/show/remove`
 - 技能列表：`wopal list [--info]`
 - 透传搜索：`wopal find [query]`
+- 技能下载：`wopal skills download <sources...> [--branch|--tag] [--force]`
+
+**版本指纹机制**：
+- **GitHub Tree SHA**：技能文件夹级别的哈希（`skillFolderHash`），任何文件变化都会改变
+- **Commit SHA**：用于追溯具体提交（`commit`）
+- **分支/标签记录**：记录用户指定的版本（`ref`/`tag`）
+- **GitHub Token**：支持 `GITHUB_TOKEN`/`GH_TOKEN`/`gh auth token` 认证（提高 API 速率限制）
 
 **配置**：
 - 环境变量：`SKILL_INBOX_DIR`（默认 `~/.wopal/skills/INBOX`）
@@ -99,7 +106,7 @@ agent-tools/
 
 **位置**：`tools/wopal-cli/`
 
-**后续扩展**：download、scan、install、check、update 命令
+**后续扩展**：scan、install、check、update 命令
 
 ## 子代理配置
 

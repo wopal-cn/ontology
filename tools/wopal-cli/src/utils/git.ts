@@ -19,7 +19,10 @@ export class GitCloneError extends Error {
   }
 }
 
-export async function cloneRepo(url: string, ref?: string): Promise<string> {
+export async function cloneRepo(
+  url: string,
+  ref?: string
+): Promise<{ tempDir: string; commitSha: string }> {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(7);
   const tempDir = join(tmpdir(), 'wopal', `skills-${timestamp}-${random}`);
@@ -33,7 +36,16 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
 
   try {
     await git.clone(url, tempDir, cloneOptions);
-    return tempDir;
+
+    const repoGit = simpleGit(tempDir);
+    const log = await repoGit.log(['-1']);
+    const commitSha = log.latest?.hash;
+
+    if (!commitSha) {
+      throw new Error('Failed to get commit SHA after clone');
+    }
+
+    return { tempDir, commitSha };
   } catch (error) {
     await rm(tempDir, { recursive: true, force: true }).catch(() => {});
 

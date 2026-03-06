@@ -7,6 +7,7 @@ import { parseSource, getOwnerRepo } from '../utils/source-parser.js';
 import { cloneRepo, cleanupTempDir, GitCloneError } from '../utils/git.js';
 import { discoverSkills, filterSkills, getSkillDisplayName } from '../utils/skills.js';
 import { writeMetadata, type SkillMetadata } from '../utils/metadata.js';
+import { fetchSkillFolderHash, getGitHubToken } from '../utils/skill-lock.js';
 import { Logger } from '../utils/logger.js';
 
 let logger: Logger;
@@ -89,7 +90,8 @@ async function downloadFromRepo(
   repo: string,
   skills: Array<{ skill: string; originalSource: string }>,
   inboxPath: string,
-  force: boolean
+  force: boolean,
+  ref?: string
 ): Promise<{ success: string[]; failed: Array<{ skill: string; error: string }> }> {
   const result = { success: [] as string[], failed: [] as Array<{ skill: string; error: string }> };
 
@@ -99,13 +101,16 @@ async function downloadFromRepo(
     throw new Error('Local paths are not supported by download command.\nUse \'wopal skills install <path>\' to install local skills.');
   }
 
-  logger?.log(`Source URL: ${parsed.url}, ref: ${parsed.ref || 'default'}`);
+  logger?.log(`Source URL: ${parsed.url}, ref: ${ref || parsed.ref || 'default'}`);
   let tempDir: string | null = null;
+  let commitSha: string | null = null;
 
   try {
     logger?.log(`Cloning repository to temp directory...`);
-    tempDir = await cloneRepo(parsed.url, parsed.ref);
-    logger?.log(`Repository cloned to: ${tempDir}`);
+    const cloneResult = await cloneRepo(parsed.url, ref || parsed.ref);
+    tempDir = cloneResult.tempDir;
+    commitSha = cloneResult.commitSha;
+    logger?.log(`Repository cloned to: ${tempDir}, commit: ${commitSha}`);
 
     logger?.log(`Discovering skills in repository...`);
     const discoveredSkills = await discoverSkills(tempDir, parsed.subpath, {
@@ -146,13 +151,31 @@ async function downloadFromRepo(
       await mkdir(skillDestPath, { recursive: true });
       await cp(skill.path, skillDestPath, { recursive: true });
 
+      const token = getGitHubToken();
+      const skillRelativePath = skill.path.replace(tempDir!, '');
+      logger?.log(`Fetching skill folder hash for ${repo}/${skillRelativePath}`);
+      const skillFolderHash = await fetchSkillFolderHash(repo, skillRelativePath, token);
+
+      if (skillFolderHash) {
+        logger?.log(`Got skill folder hash: ${skillFolderHash}`);
+      } else {
+        logger?.log(`Warning: Could not fetch skill folder hash`);
+      }
+
+      const actualRef = ref || parsed.ref;
+      const isTag = actualRef?.match(/^v\d+\.\d+\.\d+/);
+
       const metadata: SkillMetadata = {
         name: skillName,
         description: skill.description,
         source: `${repo}@${skillName}`,
         sourceUrl: parsed.url,
-        skillPath: skill.path.replace(tempDir!, ''),
+        skillPath: skillRelativePath,
         downloadedAt: new Date().toISOString(),
+        skillFolderHash,
+        commit: commitSha!,
+        ref: actualRef,
+        tag: isTag ? actualRef : undefined,
       };
 
       logger?.log(`Writing metadata for skill '${skillName}'`);
@@ -184,7 +207,9 @@ export function registerDownloadCommand(program: Command) {
     .command('download <sources...>')
     .description('Download skills to INBOX for security scanning before installation')
     .option('--force', 'Overwrite existing skills in INBOX')
-    .action(async (sources: string[], options: { force?: boolean }) => {
+    .option('--branch <branch>', 'Download from specific branch')
+    .option('--tag <tag>', 'Download from specific tag')
+    .action(async (sources: string[], options: { force?: boolean; branch?: string; tag?: string }) => {
       try {
         const inboxPath = process.env.SKILL_INBOX_DIR || join(homedir(), '.wopal', 'skills', 'INBOX');
         logger?.log(`INBOX directory: ${inboxPath}`);
@@ -199,9 +224,10 @@ export function registerDownloadCommand(program: Command) {
         const allResults: Array<{ success: string[]; failed: Array<{ skill: string; error: string }> }> = [];
 
         for (const [repo, skills] of grouped.entries()) {
-          console.log(`Downloading from ${repo}...`);
+          console.log(`Downloading from ${repo}${options.branch ? `@${options.branch}` : ''}${options.tag ? `@${options.tag}` : ''}...`);
           logger?.log(`Processing repository: ${repo} with ${skills.length} skills`);
-          const result = await downloadFromRepo(repo, skills, inboxPath, options.force || false);
+          const ref = options.tag || options.branch;
+          const result = await downloadFromRepo(repo, skills, inboxPath, options.force || false, ref);
           allResults.push(result);
         }
 
@@ -252,14 +278,22 @@ EXAMPLES:
   # Download multiple skills from same repository
   wopal skills download forztf/open-skilled-sdd@openspec-proposal-creation,openspec-implementation
 
+  # Download from specific branch
+  wopal skills download owner/repo@skill --branch develop
+
+  # Download from specific tag
+  wopal skills download owner/repo@skill --tag v1.2.3
+
   # Download multiple skills from different repositories
   wopal skills download \\
     forztf/open-skilled-sdd@openspec-proposal-creation \\
     itechmeat/llm-code@openspec
 
 OPTIONS:
-  --force    Overwrite existing skills in INBOX
-  --help     Show this help message
+  --force            Overwrite existing skills in INBOX
+  --branch <branch>  Download from specific branch
+  --tag <tag>        Download from specific tag
+  --help             Show this help message
 
 NOTES:
   - Skills are downloaded to INBOX for security scanning

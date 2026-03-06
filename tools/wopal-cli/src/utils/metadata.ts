@@ -8,6 +8,10 @@ export interface SkillMetadata {
   sourceUrl: string;
   skillPath: string;
   downloadedAt: string;
+  skillFolderHash?: string | null;
+  commit?: string;
+  ref?: string;
+  tag?: string;
 }
 
 export async function writeMetadata(skillDir: string, metadata: SkillMetadata): Promise<void> {
