@@ -10,6 +10,11 @@ import { registerInboxCommand, setLogger as setInboxLogger } from './commands/in
 import { registerListCommand, setLogger as setListLogger } from './commands/list.js';
 import { registerPassthroughCommand, setLogger as setPassthroughLogger } from './commands/passthrough.js';
 import { registerDownloadCommand, setLogger as setDownloadLogger } from './commands/download.js';
+import { registerScanCommand, setLogger as setScanLogger } from './commands/scan.js';
+import { setLogger as setScannerLogger } from './scanner/scanner.js';
+import { setLogger as setIOCLogger } from './scanner/ioc-loader.js';
+import { setLogger as setWhitelistLogger } from './scanner/whitelist.js';
+import { setLogger as setScannerUtilsLogger } from './scanner/scanner-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -46,6 +51,11 @@ program
     setListLogger(logger);
     setPassthroughLogger(logger);
     setDownloadLogger(logger);
+    setScanLogger(logger);
+    setScannerLogger(logger);
+    setIOCLogger(logger);
+    setWhitelistLogger(logger);
+    setScannerUtilsLogger(logger);
 
     logger.log('Debug mode enabled');
   });
@@ -58,6 +68,7 @@ registerInboxCommand(skillsCommand);
 registerListCommand(skillsCommand);
 registerPassthroughCommand(skillsCommand);
 registerDownloadCommand(skillsCommand);
+registerScanCommand(skillsCommand);
 
 program
   .command('help [command...]')
