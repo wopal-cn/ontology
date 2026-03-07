@@ -80,27 +80,43 @@ export async function fetchSkillFolderHash(
         headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const response = await fetch(url, { headers });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      if (!response.ok) {
-        continue;
-      }
+      try {
+        const response = await fetch(url, { 
+          headers, 
+          signal: controller.signal 
+        });
 
-      const data = (await response.json()) as {
-        sha: string;
-        tree: Array<{ path: string; type: string; sha: string }>;
-      };
+        clearTimeout(timeoutId);
 
-      if (!folderPath) {
-        return data.sha;
-      }
+        if (!response.ok) {
+          continue;
+        }
 
-      const folderEntry = data.tree.find(
-        (entry) => entry.type === "tree" && entry.path === folderPath,
-      );
+        const data = (await response.json()) as {
+          sha: string;
+          tree: Array<{ path: string; type: string; sha: string }>;
+        };
 
-      if (folderEntry) {
-        return folderEntry.sha;
+        if (!folderPath) {
+          return data.sha;
+        }
+
+        const folderEntry = data.tree.find(
+          (entry) => entry.type === "tree" && entry.path === folderPath,
+        );
+
+        if (folderEntry) {
+          return folderEntry.sha;
+        }
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          continue;
+        }
+        throw fetchError;
       }
     } catch {
       continue;
