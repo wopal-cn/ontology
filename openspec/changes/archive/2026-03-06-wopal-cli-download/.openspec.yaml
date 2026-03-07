@@ -1,0 +1,6 @@
+change: wopal-cli-download
+status: proposed
+created: 2026-03-05
+priority: high
+depends_on:
+  - wopal-cli-core

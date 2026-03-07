@@ -1,0 +1,6 @@
+change: wopal-cli-scan
+status: proposed
+created: 2026-03-06
+priority: high
+depends_on:
+  - wopal-cli-core
