@@ -160,3 +160,78 @@ Summary: 45 up-to-date, 3 updates available, 2 source missing
 - **WHEN** 锁文件格式错误或损坏
 - **THEN** 系统显示错误"锁文件损坏"
 - **AND** 系统建议重新安装技能
+
+## 使用示例
+
+### 检查所有已安装技能
+
+```bash
+wopal skills check
+```
+
+输出示例：
+```
+Checking 6 skills...
+[===>                ] 17% [1/6] Checking test-skill...
+[=======>            ] 33% [2/6] Checking local-skill...
+[==========>         ] 50% [3/6] Checking force-skill...
+[=============>      ] 67% [4/6] Checking sample-skill...
+[=================>  ] 83% [5/6] Checking openspec-proposal-creation...
+[====================] 100% [6/6] Checking bad-skill...
+
+=== Check Results ===
+
+⚠ Update Available:
+  example-skill (github)
+    Installed: a1b2c3d4
+    Latest:    e5f6g7h8
+
+✓ Up to Date:
+  openspec-proposal-creation (github)
+
+=== Summary ===
+Total:        6
+Up to Date:   1
+Updates:      1
+Missing:      0
+Errors:       4
+
+To update: wopal skills update example-skill
+```
+
+### 检查指定技能
+
+```bash
+wopal skills check openspec-proposal-creation
+```
+
+### 只检查项目级技能
+
+```bash
+wopal skills check --local
+```
+
+### 只检查全局级技能
+
+```bash
+wopal skills check --global
+```
+
+### JSON 格式输出（便于 CI/CD 集成）
+
+```bash
+wopal skills check --json
+```
+
+输出示例：
+```json
+[
+  {
+    "skillName": "openspec-proposal-creation",
+    "sourceType": "github",
+    "status": "up-to-date",
+    "installedHash": "a6e93af834ba80ee490c9ead9df99771c746ba3a",
+    "latestHash": "a6e93af834ba80ee490c9ead9df99771c746ba3a"
+  }
+]
+```
