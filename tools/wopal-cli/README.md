@@ -138,7 +138,10 @@ Create `~/.wopal/.env` for default configuration:
 
 ```bash
 # INBOX directory path (default: ~/.wopal/skills/INBOX)
-SKILL_INBOX_DIR=/path/to/inbox
+WOPAL_SKILL_INBOX_DIR=/path/to/inbox
+
+# IOC database path (absolute path, default: projects/agent-tools/skills/download/openclaw/openclaw-security-monitor/ioc/)
+WOPAL_SKILL_IOCDB_DIR=/absolute/path/to/ioc
 
 # Installed skills directory (default: ~/.wopal/skills)
 WOPAL_SKILLS_DIR=/path/to/skills
@@ -148,8 +151,7 @@ WOPAL_SKILLS_DIR=/path/to/skills
 
 When running with `--debug` or `-d`:
 
-1. Loads `.env` from current working directory instead of `~/.wopal/.env`
-2. Outputs logs to `./logs/wopal-cli.log`
+1. Outputs detailed logs to `./logs/wopal-cli.log`
 
 ## Architecture
 
