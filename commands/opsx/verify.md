@@ -11,6 +11,14 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
 **Steps**
 
+1. **Resolve and change to the correct project directory (CRITICAL)**
+
+   OpenSpec CLI requires running from a directory containing the `openspec/` folder.
+   - Look at the user's current context, active file, or explicit instructions to determine the target sub-project (e.g., `projects/agent-tools`).
+   - If ambiguous, ask the user.
+   - Run `cd <project-path>` before executing ANY `openspec` commands.
+   - NEVER run `openspec` from the workspace root.
+
 1. **If no change name provided, prompt for selection**
 
    Run `openspec list --json` to get available changes. Use the **AskUserQuestion tool** to let the user select.
@@ -102,6 +110,19 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    - If significant deviations found:
      - Add SUGGESTION: "Code pattern deviation: <details>"
      - Recommendation: "Consider following project pattern: <example>"
+
+   **Cross-Spec Consistency** (if delta specs exist):
+   - Read all main specs under `openspec/specs/` that are related to this change's domain
+   - Check if the delta spec introduces behavior definitions that contradict existing specs:
+     - Error handling strategies (e.g., one spec says "block" while another says "ask to continue")
+     - Shared concept definitions (e.g., interface types defined in multiple specs with different fields)
+     - Exit code or status semantics
+   - Check if the delta spec re-defines concepts that already have an authoritative source in another spec
+   - If conflicts found:
+     - Add WARNING: "Cross-spec conflict: <this change> defines <behavior> but <other-spec> defines <conflicting-behavior>"
+     - Recommendation: "Resolve conflict: align both specs or designate a single source of truth"
+   - If duplicate definitions found:
+     - Add SUGGESTION: "Duplicate definition: <concept> is defined in both <this spec> and <other spec>. Consider referencing instead"
 
 8. **Generate Verification Report**
 

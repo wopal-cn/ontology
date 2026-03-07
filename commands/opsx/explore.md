@@ -84,7 +84,11 @@ You have full context of the OpenSpec system. Use it naturally, don't force it.
 
 ### Check for context
 
-At the start, quickly check what exists:
+At the start, you MUST resolve the correct project directory and `cd` into it:
+- Look at the user's current context or active file to determine the target sub-project (e.g., `projects/agent-tools`).
+- Run `cd <project-path>` before executing ANY `openspec` commands. NEVER run `openspec` from the workspace root.
+
+Then, quickly check what exists:
 ```bash
 openspec list --json
 ```

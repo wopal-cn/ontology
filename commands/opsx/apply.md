@@ -11,6 +11,14 @@ Implement tasks from an OpenSpec change.
 
 **Steps**
 
+1. **Resolve and change to the correct project directory (CRITICAL)**
+
+   OpenSpec CLI requires running from a directory containing the `openspec/` folder.
+   - Look at the user's current context, active file, or explicitly specified project to determine the target sub-project (e.g., `projects/agent-tools`).
+   - If ambiguous, ask the user.
+   - Run `cd <project-path>` before executing ANY `openspec` commands.
+   - NEVER run `openspec` from the workspace root.
+
 1. **Select the change**
 
    If a name is provided, use it. Otherwise:
@@ -111,7 +119,12 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! You can archive this change with `/opsx:archive`.
+All tasks complete!
+
+**Next steps:**
+1. `/opsx:verify` - validate implementation matches specs
+2. `/opsx:sync` - merge delta specs to main (if delta specs exist)
+3. `/opsx:archive` - archive the change
 ```
 
 **Output On Pause (Issue Encountered)**
@@ -143,6 +156,11 @@ What would you like to do?
 - Update task checkbox immediately after completing each task
 - Pause on errors, blockers, or unclear requirements - don't guess
 - Use contextFiles from CLI output, don't assume specific file names
+- **实现偏离 spec 时的处理原则**：
+  - 如果发现 spec 本身有缺陷（遗漏、模糊、不合理）→ **暂停 apply**，先更新 delta spec 和 tasks，再继续实现
+  - 如果发现了比 spec 更优的方案 → **暂停 apply**，向用户说明情况，确认后再更新 spec 和代码
+  - 如果只是实现时偏离了 spec 的描述 → **改回代码**，让代码符合 spec
+  - **严禁**一边写代码一边偷偷改 spec，不告知用户就继续推进
 
 **Fluid Workflow Integration**
 

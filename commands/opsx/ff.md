@@ -11,6 +11,14 @@ Fast-forward through artifact creation - generate everything needed to start imp
 
 **Steps**
 
+1. **Resolve and change to the correct project directory (CRITICAL)**
+
+   OpenSpec CLI requires running from a directory containing the `openspec/` folder.
+   - Look at the user's current context, active file, or explicit instructions to determine the target sub-project (e.g., `projects/agent-tools`).
+   - If ambiguous, ask the user.
+   - Run `cd <project-path>` before executing ANY `openspec` commands.
+   - NEVER run `openspec` from the workspace root.
+
 1. **If no input provided, ask what they want to build**
 
    Use the **AskUserQuestion tool** (open-ended, no preset options) to ask:
