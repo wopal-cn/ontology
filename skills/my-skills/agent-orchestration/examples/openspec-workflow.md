@@ -57,18 +57,15 @@ export OPENCODE_PERMISSION='{
 ### Phase 4: Launch OpenCode Agent
 
 ```bash
-bash pty:true \
-  workdir:projects/web/wopal \
-  background:true \
-  command:"OPENCODE_PERMISSION='{\"bash\":{\"*\":\"allow\"},\"edit\":{\"*\":\"allow\"},\"write\":{\"*\":\"allow\"}}' \
-  opencode run 'Read openspec/changes/add-auth/tasks.md and implement all tasks. Follow the specifications in specs.md. Test your implementation with npm test. Report a completion summary listing all files modified.'"
+WORKSPACE_ROOT="/Users/sam/coding/wopal/wopal-workspace"
+SESSION=$(process-adapter start \
+  "PROCESS_ADAPTER_SESSION_ID=add-auth \
+   OPENCODE_PERMISSION='{\"bash\":{\"*\":\"allow\"},\"edit\":{\"*\":\"allow\"},\"write\":{\"*\":\"allow\"}}' \
+   opencode run 'Read $WORKSPACE_ROOT/openspec/changes/add-auth/tasks.md and implement all tasks. Follow the specifications in specs.md. Test your implementation with npm test. Report a completion summary listing all files modified.'" \
+  --name add-auth-impl \
+  --cwd projects/web/wopal | awk '{print $3}')
+echo "Session ID: $SESSION"
 ```
-
-**Parameters:**
-- `pty:true` - Terminal support
-- `workdir` - Limit to wopal project
-- `background:true` - Long-running task
-- `command` - OpenCode with inline permissions
 
 **Prompt Strategy:**
 1. Read `tasks.md` (implementation checklist)
@@ -79,11 +76,8 @@ bash pty:true \
 ### Phase 5: Monitor Progress
 
 ```bash
-# Get sessionId from Phase 4 output
-# Example: sessionId: abc123
-
 # Check initial output
-process-adapter log abc123
+process-adapter log $SESSION
 
 # Example output:
 Reading openspec/changes/add-auth/tasks.md...
@@ -101,7 +95,7 @@ Starting implementation...
 
 ```bash
 # Monitor for milestones
-process-adapter log abc123 --limit 50
+process-adapter log $SESSION --limit 50
 
 # Example milestone outputs:
 ✓ Installed jsonwebtoken and bcryptjs
@@ -118,18 +112,18 @@ Running tests...
 
 ```bash
 # Check if agent asks questions
-process-adapter poll abc123
+process-adapter poll $SESSION
 
 # If agent asks question:
 # "Should I use RS256 or HS256 algorithm for JWT?"
-process-adapter write abc123 "HS256"
+process-adapter write $SESSION "HS256"
 ```
 
 ### Phase 8: Verify Completion
 
 ```bash
 # Check final status
-process-adapter log abc123 --limit 100
+process-adapter log $SESSION --limit 100
 
 # Example completion summary:
 Implementation complete!
@@ -176,6 +170,12 @@ npm run dev
 # Moves to: openspec/changes/archive/add-auth/
 ```
 
+### Cleanup
+
+```bash
+process-adapter remove $SESSION
+```
+
 ## Key Learnings
 
 ### What Worked
@@ -209,49 +209,6 @@ bash pty:true \
 
 **Pros:** Can guide agent in real-time
 **Cons:** Requires active monitoring
-
-### Variation 2: Claude Code with Plan Mode
-
-For features needing analysis first:
-
-```bash
-# Step 1: Plan
-bash pty:true \
-  workdir:projects/web/wopal \
-  command:"claude -p 'Read openspec/changes/add-auth/specs.md and create an implementation plan.' --permission-mode plan"
-
-# Step 2: Execute
-bash pty:true \
-  workdir:projects/web/wopal \
-  background:true \
-  command:"claude -p 'Implement the authentication feature according to openspec/changes/add-auth/specs.md' --allowedTools 'Bash,Read,Edit,Write'"
-```
-
-**Pros:** Better for complex analysis
-**Cons:** Two-step process
-
-### Variation 3: Parallel Task Execution
-
-For independent tasks:
-
-```bash
-# Split tasks.md into task-1.md, task-2.md, task-3.md
-
-# Launch parallel agents
-bash pty:true workdir:projects/web/wopal background:true \
-  command:"OPENCODE_PERMISSION='{\"bash\":{\"*\":\"allow\"},\"edit\":{\"*\":\"allow\"},\"write\":{\"*\":\"allow\"}}' \
-  opencode run 'Read openspec/changes/add-auth/task-1.md and implement.'"
-
-bash pty:true workdir:projects/web/wopal background:true \
-  command:"OPENCODE_PERMISSION='{\"bash\":{\"*\":\"allow\"},\"edit\":{\"*\":\"allow\"},\"write\":{\"*\":\"allow\"}}' \
-  opencode run 'Read openspec/changes/add-auth/task-2.md and implement.'"
-
-# Monitor both
-process-adapter list
-```
-
-**Pros:** Faster for independent tasks
-**Cons:** Risk of merge conflicts
 
 ## Best Practices
 

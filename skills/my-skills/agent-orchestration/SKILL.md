@@ -1,590 +1,106 @@
 ---
 name: agent-orchestration
 description: >
-  Orchestrate Coding Agents (OpenCode, Claude Code, Gemini, Codex) with OpenSpec-driven workflows.
-  Use when you need to: (1) Drive agents with OpenSpec artifacts (proposal/design/specs/tasks),
-  (2) Execute tasks in parallel with multiple agents, (3) Monitor and interact with background agent sessions,
-  (4) Configure agent permissions and execution modes. This skill is for Wopal to coordinate AI agents as execution units.
+  Orchestrate OpenCode agent with OpenSpec-driven workflows and worktree isolation.
+  Use when you need to: (1) Drive OpenCode with OpenSpec artifacts (proposal/design/specs/tasks),
+  (2) Execute tasks in background with process-adapter, (3) Monitor and interact with background agent sessions,
+  (4) Use worktree for isolated development. This skill is for Wopal to coordinate OpenCode as an execution unit.
 ---
 
-# Agent Orchestration
+# Agent Orchestration (OpenCode)
 
-Coordinate Coding Agents through process-adapter tool, using OpenSpec artifacts as execution contracts.
+编排 OpenCode 代理，通过 OpenSpec 驱动的工作流和 Worktree 隔离实现高效开发。
 
-## Prerequisites
+## 前置要求
 
-- ✅ macOS + zsh
-- ✅ Node.js 18+
-- ✅ @wopal/process installed globally
-- ✅ Coding agents installed (opencode, claude, gemini, codex)
+- ✅ `process-adapter`（`@wopal/process` npm 包，全局安装）
+- ✅ `opencode` 命令行工具
+- ✅ `git-worktrees` 技能（可选，用于 Worktree 集成）
 
-## Installation
-
-```bash
-# Install @wopal/process tool
-cd projects/agent-tools/tools/process
-npm install
-npm link
-
-# Verify
-process-adapter --help
-```
-
-## Quick Start
-
-### Launch Agent
+安装 `@wopal/process`：
 
 ```bash
-# Start background task
-process-adapter start "opencode run 'Implement feature X'" --name my-task
-
-# Output: Started session: <session-id>
+cd projects/agent-tools/tools/process && npm install && npm link
 ```
 
-### Monitor Progress
+检查所有依赖：
 
 ```bash
-# List all sessions
-process-adapter list
-
-# View output
-process-adapter log <session-id>
-
-# Check status
-process-adapter poll <session-id>
-
-# Terminate
-process-adapter kill <session-id>
-
-# Clean up
-process-adapter remove <session-id>
+.agents/skills/agent-orchestration/scripts/check-dependencies.sh
 ```
 
-## Core Workflow: OpenSpec-Driven Development
+## 快速开始
 
-### Pattern: Spec → Worktree → OpenCode → Verify
-
-```
-Create OpenSpec → Create worktree (subproject) → OpenCode implements (with tests) → Verify
-```
-
-### Step 1: Create OpenSpec Artifacts
+### 1. 简单任务（无 Worktree）
 
 ```bash
-/openspec-new-change "add-feature-x"
-# Or use: /openspec-ff-change to fast-forward all artifacts
-
-# Verify completion
-openspec status --change add-feature-x
-```
-
-### Step 2: Create Worktree (Subproject Level)
-
-**IMPORTANT**: Create worktree in the **subproject** directory, not workspace root.
-
-**Option A: Using worktree.sh script (Recommended)**
-
-```bash
-# From workspace root
-./scripts/worktree.sh create add-feature-x --subproject agent-tools
-
-# Auto-generates:
-# - Worktree directory: .worktrees/agent-tools-add-feature-x/
-# - OpenCode config: .worktrees/agent-tools-add-feature-x/opencode.jsonc
-# - Plugin path: absolute path to task-notify.js
-```
-
-**Option B: Manual creation**
-
-```bash
-# Navigate to subproject
-cd projects/agent-tools
-
-# Create worktree (will create .worktrees/add-feature-x/)
-git worktree add .worktrees/add-feature-x -b add-feature-x
-
-# Verify
-ls .worktrees/add-feature-x/
-```
-
-**Why subproject level?**
-- Worktree shares Git history with subproject
-- Isolates changes within subproject context
-- Avoids cross-project contamination
-
-**Worktree naming convention**:
-- Format: `<subproject>-<branch-name>`
-- Branch name `/` replaced with `-` (e.g., `feature/add-auth` → `agent-tools-feature-add-auth`)
-- Directory: `.worktrees/<subproject>-<branch-name>/`
-
-### Step 3: Prepare Task Prompt
-
-**IMPORTANT**: Use **absolute paths** for OpenSpec files when running in worktree mode.
-
-**Option A: Absolute path reference (Recommended for worktree mode)**
-
-```bash
-# Use absolute path to main repository
-WORKSPACE_ROOT="/Users/sam/coding/wopal/wopal-workspace"
-OPENSPEC_PATH="$WORKSPACE_ROOT/openspec/changes/add-feature-x"
-
-opencode run "Read $OPENSPEC_PATH/tasks.md and implement all tasks. IMPORTANT: Run npm test and ensure ALL tests pass."
-```
-
-**Why absolute paths?**
-- OpenCode runs in worktree (subproject directory)
-- OpenSpec files are in main repository
-- Relative paths won't work across worktree boundary
-- `external_directory` permission allows reading from main repository
-
-**Option B: Inline task description**
-
-```bash
-# Extract task summary and inline it
-cat openspec/changes/add-feature-x/tasks.md | grep -A 100 "Implementation Tasks"
-
-# Prompt template:
-```
-
-```
-Implement [feature description]. 
-
-TASKS:
-[List tasks from tasks.md]
-
-IMPORTANT:
-1. Write comprehensive tests
-2. Run npm test and ensure ALL tests pass
-3. Fix any failing tests before completion
-
-Report:
-- What you implemented
-- Test results (pass/fail counts)
-- Files created/modified
-```
-
-### Step 4: Launch OpenCode
-
-**Pattern: Background execution with completion notification**
-
-```bash
-# 0. Clean up any residual marker files (CRITICAL)
-rm -f /tmp/opencode-done-my-task
-
-# 1. Launch OpenCode in background with task ID
-WORKSPACE_ROOT="/Users/sam/coding/wopal/wopal-workspace"
-SESSION1=$(process-adapter start \
-  "PROCESS_ADAPTER_SESSION_ID=my-task \
-   opencode run 'Read $WORKSPACE_ROOT/openspec/changes/add-feature-x/tasks.md and implement all tasks.'" \
-  --name feature-x-impl \
-  --cwd .worktrees/agent-tools-add-feature-x | awk '{print $3}')
-
-echo "Session ID: $SESSION1"
-
-# 2. Monitor completion (blocks until done)
-./scripts/wait-for-opencode.sh my-task 300
-
-# 3. View results
-process-adapter log $SESSION1
-
-# 4. Clean up marker file
-rm -f /tmp/opencode-done-my-task
-```
-
-**Key points**:
-- **Task ID** (`PROCESS_ADAPTER_SESSION_ID`): User-defined short name for marker file
-- **Session ID** (`$SESSION1`): Auto-generated by process-adapter for management
-- **Marker file**: `/tmp/opencode-done-<task-id>` created by plugin when task completes
-- **Must clean marker files** before launch to avoid false positives
-
-**Parallel execution example**:
-
-```bash
-# 0. Clean up residual marker files
-rm -f /tmp/opencode-done-task-1 /tmp/opencode-done-task-2
-
-# 1. Launch multiple tasks in parallel
-SESSION1=$(process-adapter start \
-  "PROCESS_ADAPTER_SESSION_ID=task-1 opencode run '...'" \
-  --name task-1 | awk '{print $3}')
-
-SESSION2=$(process-adapter start \
-  "PROCESS_ADAPTER_SESSION_ID=task-2 opencode run '...'" \
-  --name task-2 | awk '{print $3}')
-
-# 2. Parallel monitoring with bash background jobs
-bash "while [ ! -f /tmp/opencode-done-task-1 ]; do sleep 1; done && echo '✅ Task 1 done'" &
-bash "while [ ! -f /tmp/opencode-done-task-2 ]; do sleep 1; done && echo '✅ Task 2 done'" &
-wait
-
-# 3. View results
-process-adapter log $SESSION1
-process-adapter log $SESSION2
-
-# 4. Clean up
-rm -f /tmp/opencode-done-task-1 /tmp/opencode-done-task-2
-```
-
-**Alternative: Using wait-for-opencode.sh script**
-
-```bash
-# Monitor with timeout (5 minutes)
-./scripts/wait-for-opencode.sh my-task 300
-
-# Output on success:
-# ✅ 任务 my-task 完成
-
-# Output on timeout:
-# ❌ 任务 my-task 超时（300s）
-# 排查步骤：
-#   1. process-adapter list
-#   2. process-adapter log <session-id>
-#   3. process-adapter poll <session-id>
-```
-
-### Step 5: Verify Implementation
-
-```bash
-# Navigate to worktree
-cd .worktrees/agent-tools-add-feature-x
-
-# Run tests
-npm test
-
-# Manual verification
-git diff main
-
-# If satisfied, commit in worktree
-git add .
-git commit -m "feat: add feature x"
-```
-
-### Step 6: Cleanup
-
-```bash
-# Remove session
-process-adapter remove <session-id>
-
-# Remove worktree (after merging or abandoning)
-cd projects/agent-tools
-git worktree remove .worktrees/add-feature-x
-git branch -D add-feature-x
-```
-
-## Agent Selection Guide
-
-### Decision Tree
-
-```
-Is task defined by OpenSpec artifacts?
-├─ Yes → OpenCode (headless mode)
-└─ No
-   ├─ Quick Q&A/Summary? → Gemini (one-shot)
-   ├─ Complex refactor? → Claude Code (Plan Mode)
-   └─ Parallel batch work? → Codex (--full-auto)
-```
-
-### Detailed Comparison
-
-See [references/agent-comparison.md](references/agent-comparison.md) for:
-- Full feature matrix
-- Strengths/weaknesses per agent
-- Recommended use cases
-
-## Permission Configuration
-
-### OpenCode (Non-Interactive Mode)
-
-**Critical**: Non-interactive mode auto-rejects permission requests. Pre-authorize via environment variable:
-
-```bash
-export OPENCODE_PERMISSION='{
-  "bash": {"*": "allow"},
-  "edit": {"*": "allow"},
-  "write": {"*": "allow"},
-  "read": {"*": "allow"},
-  "external_directory": {"*": "allow"}
-}'
-opencode run "Your task"
-```
-
-**Required permissions for OpenSpec-driven tasks**:
-- `bash`, `edit`, `write`, `read` - Basic implementation permissions
-- `external_directory` - **Critical for worktree mode**: Allows OpenCode to read OpenSpec files from main repository
-
-**Why `external_directory` is needed**:
-- OpenCode runs in worktree (subproject directory)
-- OpenSpec files are in main repository (outside worktree)
-- Without this permission, OpenCode cannot read tasks.md or other artifacts
-
-### Standard opencode.jsonc Template
-
-For worktree-based OpenSpec tasks, use this configuration (auto-generated by `worktree.sh --subproject`):
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    "/absolute/path/to/projects/agent-tools/plugins/opencode/task-notify.js"
-  ],
-  "permission": {
-    "bash": {"*": "allow"},
-    "edit": {"*": "allow"},
-    "write": {"*": "allow"},
-    "read": {"*": "allow"},
-    "external_directory": {"*": "allow"}
-  }
-}
-```
-
-**Key points**:
-- Plugin path must be **absolute** (generated by script)
-- Permissions use wildcard `{"*": "allow"}` (safe in isolated worktree)
-- Auto-generated when using `worktree.sh --subproject`
-
-### Claude Code
-
-Use `--allowedTools` to auto-approve specific tools:
-
-```bash
-# Read-only planning
-claude -p "Analyze codebase" --permission-mode plan
-
-# Execution with auto-approve
-claude -p "Fix bugs" --allowedTools "Bash,Read,Edit,Write"
-```
-
-### Permission Scopes
-
-| Scope | Risk Level | Use Case |
-|-------|------------|----------|
-| `"*"` | High | Trusted sandbox only |
-| `"Bash(npm test)"` | Low | Specific commands |
-| `"Read,Edit"` | Medium | Code modification |
-
-See [references/permission-configs.md](references/permission-configs.md) for complete patterns.
-
-## Session Management
-
-### Basic Commands
-
-```bash
-# List sessions
-process-adapter list              # All sessions
-process-adapter list --running    # Running only
-process-adapter list --finished   # Finished only
-
-# View output
-process-adapter log <session-id>                    # Last 200 lines
-process-adapter log <session-id> --limit 100        # Last 100 lines
-process-adapter log <session-id> --offset 50        # From line 50
-
-# Check status
-process-adapter poll <session-id>
-
-# Terminate
-process-adapter kill <session-id>     # SIGTERM
-process-adapter kill <session-id> --force  # SIGKILL
-
-# Clean up
-process-adapter remove <session-id>   # Kill or clear
-```
-
-### Monitor Script
-
-```bash
-# Using monitor_session.py
-python3 scripts/monitor_session.py <session-id>
-
-# With options
-python3 scripts/monitor_session.py <session-id> --limit 100
-python3 scripts/monitor_session.py <session-id> --filter "Error|Warning"
-python3 scripts/monitor_session.py <session-id> --watch  # Continuous monitoring
-```
-
-## End-to-End Example: Adding a Stats Command
-
-This example demonstrates the complete workflow from spec to verification.
-
-### Scenario
-
-Add a `stats` command to `@wopal/process` tool that reports session statistics.
-
-### Execution
-
-**1. Create OpenSpec**
-
-```bash
-/openspec-new-change "add-stats-command"
-# Create: proposal.md, design.md, specs/, tasks.md
-```
-
-**2. Create Worktree in Subproject**
-
-```bash
-# Using worktree.sh script (auto-generates opencode.jsonc)
-./scripts/worktree.sh create add-stats --subproject agent-tools
-
-# Output:
-# - Worktree: .worktrees/agent-tools-add-stats/
-# - Config: .worktrees/agent-tools-add-stats/opencode.jsonc
-# - Workspace root: /Users/sam/coding/wopal/wopal-workspace
-```
-
-**3. Prepare Task Prompt**
-
-```bash
-# Use absolute path to OpenSpec files
-WORKSPACE_ROOT="/Users/sam/coding/wopal/wopal-workspace"
-OPENSPEC_PATH="$WORKSPACE_ROOT/openspec/changes/add-stats-command"
-
-# Task prompt:
-cat << 'EOF'
-Implement a stats command for process-adapter tool.
-
-Read /Users/sam/coding/wopal/wopal-workspace/openspec/changes/add-stats-command/tasks.md for full task details.
-
-IMPORTANT: Run npm test and ensure ALL tests pass.
-EOF
-```
-
-**4. Launch OpenCode**
-
-```bash
-# 0. Clean up marker files
-rm -f /tmp/opencode-done-stats-impl
-
-# 1. Launch with task ID
-WORKSPACE_ROOT="/Users/sam/coding/wopal/wopal-workspace"
+# 启动后台任务
 SESSION=$(process-adapter start \
-  "PROCESS_ADAPTER_SESSION_ID=stats-impl \
-   opencode run 'Read $WORKSPACE_ROOT/openspec/changes/add-stats-command/tasks.md and implement all tasks. Run npm test and ensure ALL tests pass.'" \
-  --name stats-impl \
-  --cwd .worktrees/agent-tools-add-stats/tools/process | awk '{print $3}')
+  "OPENCODE_PERMISSION='{\"bash\":{\"*\":\"allow\"},\"edit\":{\"*\":\"allow\"},\"write\":{\"*\":\"allow\"}}' \
+   opencode run 'Read AGENTS.md and summarize project architecture.'" \
+  --name my-task \
+  --cwd projects/agent-tools | awk '{print $3}')
 
-echo "Session ID: $SESSION"
-
-# 2. Wait for completion (5 minutes timeout)
-./scripts/wait-for-opencode.sh stats-impl 300
-
-# 3. View results
+# 查看进度
 process-adapter log $SESSION
-
-# 4. Clean up
-rm -f /tmp/opencode-done-stats-impl
 ```
 
-**5. Verify**
+### 2. OpenSpec 工作流（带 Worktree）
 
 ```bash
-cd .worktrees/agent-tools-add-stats/tools/process
-npm test
-process-adapter stats  # Test the new command
+WORKSPACE_ROOT="/Users/sam/coding/wopal/wopal-workspace"
+CHANGE="add-auth"
+
+# 1. 创建 worktree
+.agents/skills/git-worktrees/scripts/worktree.sh create agent-tools feature/auth
+
+# 2. 清理标记文件
+rm -f /tmp/opencode-done-$CHANGE
+
+# 3. 启动 OpenCode（使用绝对路径）
+SESSION=$(process-adapter start \
+  "PROCESS_ADAPTER_SESSION_ID=$CHANGE \
+   OPENCODE_PERMISSION='{\"bash\":{\"*\":\"allow\"},\"edit\":{\"*\":\"allow\"},\"write\":{\"*\":\"allow\"}}' \
+   opencode run 'Read $WORKSPACE_ROOT/openspec/changes/$CHANGE/tasks.md and implement all tasks. Run tests.'" \
+  --name $CHANGE \
+  --cwd .worktrees/agent-tools-feature-auth | awk '{print $3}')
+
+# 4. 监控完成
+.agents/skills/agent-orchestration/scripts/wait-for-opencode.sh $CHANGE 300
+
+# 5. 查看结果
+process-adapter log $SESSION
 ```
 
-**6. Cleanup**
+### 3. 一键启动（推荐）
 
 ```bash
-process-adapter remove $SESSION
-cd projects/agent-tools
-git worktree remove .worktrees/add-stats
+.agents/skills/agent-orchestration/scripts/quick-start.sh \
+  agent-tools feature/auth add-auth 300
 ```
 
-### Key Learnings
+## 核心概念
 
-- **Worktree level**: Use `worktree.sh --subproject` to create in subproject with auto-config
-- **Task delivery**: Use **absolute paths** to OpenSpec files (main repository)
-- **Permissions**: Include `external_directory` permission for worktree mode
-- **Completion notification**: Use `PROCESS_ADAPTER_SESSION_ID` + wait-for-opencode.sh
-- **Marker files**: Always clean up before launch and after completion
-
-### Pattern 2: Parallel Issue Fixing
+### process-adapter 会话管理
 
 ```bash
-# Create worktrees
-git worktree add -b fix/issue-78 /tmp/issue-78 main
-git worktree add -b fix/issue-99 /tmp/issue-99 main
-
-# Launch parallel agents
-process-adapter start \
-  "codex exec --full-auto 'Fix issue #78. Commit and push.'" \
-  --name issue-78 \
-  --cwd /tmp/issue-78
-
-process-adapter start \
-  "codex exec --full-auto 'Fix issue #99. Commit and push.'" \
-  --name issue-99 \
-  --cwd /tmp/issue-99
-
-# Monitor both
-process-adapter list
+process-adapter list                          # 列出所有会话
+process-adapter log <session-id>              # 查看输出（最后 200 行）
+process-adapter log <session-id> --limit 100  # 限制行数
+process-adapter poll <session-id>             # 检查状态
+process-adapter kill <session-id>             # 终止进程
+process-adapter remove <session-id>           # 清理会话
 ```
 
-See [examples/parallel-agents.md](examples/parallel-agents.md) for details.
+### OpenCode 权限配置
 
-### Pattern 3: Quick Analysis
-
-```bash
-# One-shot summary (foreground)
-gemini 'Summarize the architecture of this scheduler system.'
-
-# Background analysis
-process-adapter start \
-  "gemini 'Analyze codebase architecture and generate report.'" \
-  --name analysis
-```
-
-## Common Pitfalls
-
-### Pitfall 1: Wrong Worktree Level
-
-**Problem**: Creating worktree in workspace root instead of subproject.
+非交互模式下，权限请求会被自动拒绝。必须通过环境变量预授权：
 
 ```bash
-# ❌ Wrong (workspace level)
-git worktree add .worktrees/feature-x -b feature-x
-
-# ✅ Correct (subproject level)
-cd projects/agent-tools
-git worktree add .worktrees/feature-x -b feature-x
-```
-
-**Why it matters**: Worktree must share Git history with the subproject being modified.
-
-### Pitfall 2: External File Access
-
-**Problem**: OpenCode tries to read files outside worktree directory.
-
-```bash
-# ❌ Wrong (relative path from worktree)
-opencode run 'Read openspec/changes/x/tasks.md and implement'
-# Result: File not found
-
-# ❌ Wrong (missing external_directory permission)
-opencode run 'Read /workspace/openspec/changes/x/tasks.md and implement'
-# Result: "permission requested: external_directory" → auto-reject
-
-# ✅ Correct (absolute path + external_directory permission)
-# 1. Use worktree.sh --subproject (auto-generates config with external_directory)
-./scripts/worktree.sh create feature-x --subproject agent-tools
-
-# 2. Use absolute path in task
-opencode run 'Read /Users/sam/workspace/openspec/changes/x/tasks.md and implement'
-```
-
-**Solution**: 
-1. Use `worktree.sh --subproject` to auto-generate `opencode.jsonc` with `external_directory` permission
-2. Use absolute paths to OpenSpec files in main repository
-
-### Pitfall 3: Insufficient Permissions
-
-**Problem**: Using partial permissions causes failures.
-
-```bash
-# ❌ Wrong (missing read and external_directory)
+# 完整权限（OpenSpec 实现任务）
 OPENCODE_PERMISSION='{"bash":{"*":"allow"},"edit":{"*":"allow"},"write":{"*":"allow"}}'
 
-# ✅ Correct (full permissions for worktree mode)
+# Worktree 模式（需要读取主仓库 OpenSpec 文件）
 OPENCODE_PERMISSION='{
   "bash": {"*": "allow"},
   "edit": {"*": "allow"},
@@ -594,159 +110,103 @@ OPENCODE_PERMISSION='{
 }'
 ```
 
-**Why it matters**: 
-- OpenCode needs `bash`, `edit`, `write` for implementation
-- OpenCode needs `read` and `external_directory` to access OpenSpec files from main repository
+详见 [references/permission-configs.md](references/permission-configs.md)。
 
-### Pitfall 4: Marker File Residue
+### 完成通知机制
 
-**Problem**: Residual marker files cause false completion detection.
+通过 `task-notify.js` 插件监听 OpenCode 任务完成：
 
-```bash
-# ❌ Wrong (forgot to clean up marker files)
-# Previous run left /tmp/opencode-done-task-1
-# New run immediately thinks task is done
+1. 启动时设置 `PROCESS_ADAPTER_SESSION_ID=<task-id>`
+2. 任务完成后插件创建标记文件 `/tmp/opencode-done-<task-id>`
+3. `wait-for-opencode.sh` 轮询该文件直到存在或超时
 
-# ✅ Correct (always clean before launch)
-rm -f /tmp/opencode-done-task-1
-SESSION=$(process-adapter start "PROCESS_ADAPTER_SESSION_ID=task-1 ..." | awk '{print $3}')
-./scripts/wait-for-opencode.sh task-1
+**重要**：启动前必须清理残余标记文件，避免误判完成。
 
-# ✅ Correct (clean after completion)
-rm -f /tmp/opencode-done-task-1
-```
+### Worktree 隔离
 
-**Why it matters**: Marker files persist across sessions, causing immediate false positives if not cleaned.
-
-### Pitfall 5: OpenCode Crash (No Completion Notification)
-
-**Problem**: OpenCode crashes without triggering `session.idle`, marker file never created.
+新格式（`create <project> <branch>`）：
 
 ```bash
-# Task hangs forever
-./scripts/wait-for-opencode.sh my-task  # Never completes
+# 创建
+.agents/skills/git-worktrees/scripts/worktree.sh create <project> <branch>
 
-# ✅ Correct (use timeout + check session status)
-./scripts/wait-for-opencode.sh my-task 300  # 5 minutes timeout
+# 生成路径：.worktrees/<project>-<branch-dir>/
+# 分支中的 / 自动转换为 -，如 feature/auth → agent-tools-feature-auth
 
-# On timeout, script outputs:
-# ❌ 任务 my-task 超时（300s）
-# 排查步骤：
-#   1. process-adapter list
-#   2. process-adapter log <session-id>
-#   3. process-adapter poll <session-id>
+# 清理
+.agents/skills/git-worktrees/scripts/worktree.sh remove <project> <branch>
 ```
 
-**Why it matters**: Non-normal exits (crashes, kills) don't trigger completion plugin, causing infinite waits.
+**重要**：OpenCode 运行在 worktree 目录，必须使用**绝对路径**读取主仓库的 OpenSpec 文件。
 
-## PTY Mode Limitations
+详见 [examples/worktree-integration.md](examples/worktree-integration.md)。
 
-**Important**: PTY (interactive) mode is **limited on macOS** due to system constraints.
+## 常见场景
 
-### What Doesn't Work
+### 并行执行多个任务
 
-- ❌ Interactive input via `process-adapter write` (macOS PTY device limit)
-- ❌ Interactive commands requiring real-time input (vim, top, etc.)
-
-### What Still Works
-
-- ✅ All background task execution
-- ✅ All monitoring and management commands
-- ✅ All coding agents with pre-configured permissions
-
-### Workarounds
-
-1. **Pre-configure permissions** (recommended):
-   ```bash
-   OPENCODE_PERMISSION='{"bash":{"*":"allow"},"edit":{"*":"allow"},"write":{"*":"allow"}}' opencode run "task"
-   ```
-
-2. **Use auto-confirm flags**:
-   ```bash
-   npm install --yes
-   git commit -m "message"  # Avoid opening editor
-   ```
-
-3. **Use tmux for interactive sessions**:
-   ```bash
-   tmux new-session -d -s agent1 "opencode"
-   tmux attach -t agent1  # Attach to interact
-   ```
-
-## Troubleshooting
-
-### Agent Hangs
-
-**Cause**: Process not properly backgrounded
-
-**Fix**: Always use `process-adapter start`:
 ```bash
-# ✅ Correct
-process-adapter start "opencode run 'task'"
+WORKSPACE_ROOT="/Users/sam/coding/wopal/wopal-workspace"
 
-# ❌ Wrong (will block terminal)
-opencode run 'task'
+# 清理标记文件
+rm -f /tmp/opencode-done-task-1 /tmp/opencode-done-task-2
+
+# 并行启动
+S1=$(process-adapter start \
+  "PROCESS_ADAPTER_SESSION_ID=task-1 OPENCODE_PERMISSION='...' \
+   opencode run 'Read $WORKSPACE_ROOT/openspec/changes/change-1/tasks.md and implement.'" \
+  --name task-1 --cwd .worktrees/project-branch-1 | awk '{print $3}')
+
+S2=$(process-adapter start \
+  "PROCESS_ADAPTER_SESSION_ID=task-2 OPENCODE_PERMISSION='...' \
+   opencode run 'Read $WORKSPACE_ROOT/openspec/changes/change-2/tasks.md and implement.'" \
+  --name task-2 --cwd .worktrees/project-branch-2 | awk '{print $3}')
+
+# 依次等待完成
+.agents/skills/agent-orchestration/scripts/wait-for-opencode.sh task-1 300
+.agents/skills/agent-orchestration/scripts/wait-for-opencode.sh task-2 300
 ```
 
-### Permission Rejected (OpenCode)
+### 会话监控
 
-**Cause**: Non-interactive mode auto-rejects permission requests
-
-**Fix**: Use `OPENCODE_PERMISSION` environment variable (see Permission Configuration)
-
-### Session Not Found
-
-**Cause**: Invalid sessionId or session expired
-
-**Fix**: List sessions with `process-adapter list` to find valid IDs
-
-### Log Output Truncated
-
-**Cause**: Long output exceeds buffer (10MB auto-truncation)
-
-**Fix**: Use offset/limit:
 ```bash
-process-adapter log <session-id> --limit 100 --offset 50
+# 基础监控
+python3 .agents/skills/agent-orchestration/scripts/monitor_session.py <session-id>
+
+# 过滤输出
+python3 .agents/skills/agent-orchestration/scripts/monitor_session.py <session-id> --filter "Error|Warning"
+
+# 持续监控
+python3 .agents/skills/agent-orchestration/scripts/monitor_session.py <session-id> --watch
 ```
 
-### PTY Mode Falls Back to Normal
+## 常见错误排查
 
-**Expected**: On macOS, PTY mode often falls back to normal spawn mode
+| 症状 | 原因 | 解决方案 |
+|------|------|----------|
+| Permission denied | 非交互模式未预授权 | 设置 `OPENCODE_PERMISSION` 环境变量 |
+| 读不到 OpenSpec 文件 | Worktree 使用相对路径 | 改用绝对路径 + `external_directory` 权限 |
+| 任务立即"完成" | 残余标记文件 | 启动前 `rm -f /tmp/opencode-done-<task-id>` |
+| 任务超时无响应 | OpenCode 崩溃 | 使用 `process-adapter log/poll` 排查 |
 
-**Impact**: Only affects `write()` command, all other functionality works
+详见 [references/troubleshooting.md](references/troubleshooting.md)。
 
-**Action**: No action needed, this is expected behavior
+## 资源
 
-See [references/troubleshooting.md](references/troubleshooting.md) for complete guide.
+**脚本**：
+- `scripts/quick-start.sh` — 一键启动 OpenSpec 任务
+- `scripts/check-dependencies.sh` — 依赖检查
+- `scripts/wait-for-opencode.sh` — 监控任务完成（支持超时）
+- `scripts/monitor_session.py` — 会话输出监控
+- `scripts/prepare_openspec_context.sh` — 生成 OpenSpec 执行摘要
 
-## Resources
+**示例**：
+- `examples/openspec-workflow.md` — 完整 OpenSpec 驱动工作流
+- `examples/simple-task.md` — 简单任务示例
+- `examples/worktree-integration.md` — Worktree 集成详细指南
+- `examples/parallel-agents.md` — 并行任务示例
 
-### Scripts
-- `scripts/worktree.sh` - Git worktree management (supports `--subproject` for auto-config)
-- `scripts/wait-for-opencode.sh` - Monitor OpenCode task completion with timeout
-- `scripts/monitor_session.py` - Monitor agent session progress with filtering
-- `scripts/prepare_openspec_context.sh` - Generate execution summary from OpenSpec artifacts
+**参考**：
+- `references/permission-configs.md` — 权限配置模式
+- `references/troubleshooting.md` — 常见问题排查
 
-### References
-- `references/agent-comparison.md` - Detailed agent feature matrix
-- `references/permission-configs.md` - Complete permission configuration patterns
-- `references/troubleshooting.md` - Common issues and solutions
-
-### Examples
-- `examples/simple-task.md` - Basic task execution
-- `examples/openspec-workflow.md` - Complete OpenSpec-driven workflow
-- `examples/parallel-agents.md` - Parallel agent coordination
-
-## Key Learnings
-
-1. **Use process-adapter** - Provides reliable background process management
-2. **Pre-authorize permissions** - Non-interactive mode rejects permission requests
-3. **Context boundary matters** - Use `--cwd` to run agents in target directory
-4. **OpenSpec as contract** - Artifacts serve as execution specification
-5. **Use absolute paths** - Worktree mode requires absolute paths to main repository files
-6. **Enable external_directory** - Critical for worktree mode to access OpenSpec files
-7. **Completion notification** - Use `PROCESS_ADAPTER_SESSION_ID` + wait-for-opencode.sh
-8. **Clean marker files** - Always clean before launch and after completion
-9. **Handle timeouts** - Use timeout in wait-for-opencode.sh to detect crashes
-10. **Parallel is powerful** - Multiple agents can work simultaneously on isolated contexts
-11. **PTY has limits** - macOS PTY limitations, use pre-configuration instead

@@ -62,9 +62,12 @@ BRANCH=$2
 CHANGE=$3
 TIMEOUT=${4:-300}
 
-# 路径计算
+# 路径计算（兼容源码和部署路径，通过 .workspace.md 定位 workspace root）
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-WORKSPACE_ROOT=$(cd "$SCRIPT_DIR/../../../../../../" && pwd)
+WORKSPACE_ROOT="$SCRIPT_DIR"
+while [ "$WORKSPACE_ROOT" != "/" ] && [ ! -f "$WORKSPACE_ROOT/.workspace.md" ]; do
+    WORKSPACE_ROOT=$(dirname "$WORKSPACE_ROOT")
+done
 
 # 分支名转目录名（/ -> -）
 BRANCH_DIR=$(echo "$BRANCH" | tr '/' '-')

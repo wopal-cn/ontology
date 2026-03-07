@@ -54,8 +54,12 @@ check_command "process-adapter" "cd projects/agent-tools/tools/process && npm in
 check_command "opencode" "参考 https://opencode.ai 安装 OpenCode CLI" || ((errors++))
 
 # 可选依赖（Worktree 集成）
+# 通过向上查找 .workspace.md 定位 workspace root（兼容源码和部署路径）
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-WORKSPACE_ROOT=$(cd "$SCRIPT_DIR/../../../../../../" && pwd)
+WORKSPACE_ROOT="$SCRIPT_DIR"
+while [ "$WORKSPACE_ROOT" != "/" ] && [ ! -f "$WORKSPACE_ROOT/.workspace.md" ]; do
+    WORKSPACE_ROOT=$(dirname "$WORKSPACE_ROOT")
+done
 WORKTREE_SCRIPT="$WORKSPACE_ROOT/.agents/skills/git-worktrees/scripts/worktree.sh"
 
 echo ""

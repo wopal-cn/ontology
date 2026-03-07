@@ -129,32 +129,6 @@ export OPENCODE_PERMISSION='{"bash":{"*":"allow"},"edit":{"*":"allow"},"write":{
 
 ---
 
-### 6. Git Repository Required (Codex)
-
-**Symptoms:**
-- Codex refuses to run
-- Error: "Not a git repository"
-- Codex exits immediately
-
-**Cause:** Codex requires a git repository to run
-
-**Solution 1:** Use existing project with git:
-
-```bash
-process-adapter start "codex exec 'task'" --cwd projects/web/wopal
-```
-
-**Solution 2:** Create temporary git repo:
-
-```bash
-SCRATCH=$(mktemp -d)
-cd $SCRATCH
-git init
-codex exec "Your task here"
-```
-
----
-
 ### 7. Vite Dev Server Blocked by ngrok
 
 **Symptoms:**
@@ -302,15 +276,6 @@ git commit -m "message"
 ```bash
 # OpenCode
 opencode --version
-
-# Claude Code
-claude --version
-
-# Gemini
-gemini --version
-
-# Codex
-codex --version
 ```
 
 ### Test Minimal Execution
@@ -318,15 +283,6 @@ codex --version
 ```bash
 # OpenCode
 process-adapter start "opencode run 'Return only: OK'"
-
-# Claude Code
-process-adapter start "claude -p 'Return only: OK'"
-
-# Gemini
-process-adapter start "gemini 'Return only: OK'"
-
-# Codex
-process-adapter start "codex exec 'Return only: OK'"
 ```
 
 ### List Active Sessions
@@ -359,21 +315,11 @@ python3 scripts/monitor_session.py <session-id> --watch
 
 ### "Permission denied"
 
-**Agent:** OpenCode, Claude Code
+**Agent:** OpenCode
 
 **Cause:** Insufficient permissions
 
 **Fix:** Add permission configuration (see Permission Denied sections above)
-
----
-
-### "Not a git repository"
-
-**Agent:** Codex
-
-**Cause:** Running outside git directory
-
-**Fix:** Initialize git repo or use existing project
 
 ---
 
@@ -414,7 +360,6 @@ Before launching agent:
 - [ ] Process properly backgrounded with `process-adapter start`
 - [ ] `--cwd` specified for context boundary
 - [ ] Permissions pre-configured (OpenCode)
-- [ ] Git repository exists (Codex)
 - [ ] Task description is specific
 - [ ] Timeout appropriate for task complexity
 
