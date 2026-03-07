@@ -49,3 +49,4 @@ globs:
 - 安装依赖：`pnpm install`
 - 运行开发：`pnpm dev`
 - 运行检查：`pnpm check`
+- 锁文件仅保留 `pnpm-lock.yaml`，禁止提交 `package-lock.json` 或 `yarn.lock`

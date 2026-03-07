@@ -15,6 +15,7 @@ import { setLogger as setScannerLogger } from './scanner/scanner.js';
 import { setLogger as setIOCLogger } from './scanner/ioc-loader.js';
 import { setLogger as setWhitelistLogger } from './scanner/whitelist.js';
 import { setLogger as setScannerUtilsLogger } from './scanner/scanner-utils.js';
+import { createInstallCommand } from './commands/install.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -69,6 +70,7 @@ registerListCommand(skillsCommand);
 registerPassthroughCommand(skillsCommand);
 registerDownloadCommand(skillsCommand);
 registerScanCommand(skillsCommand);
+skillsCommand.addCommand(createInstallCommand());
 
 program
   .command('help [command...]')

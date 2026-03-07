@@ -12,11 +12,8 @@ export class Logger {
 
   log(message: string): void {
     if (!this.isDebug) return;
-
     const timestamp = new Date().toISOString();
-    const logLine = `[${timestamp}] ${message}\n`;
-
-    console.log(logLine.trim());
+    const logLine = `[${timestamp}] [DEBUG] ${message}\n`;
 
     if (!existsSync(this.logDir)) {
       mkdirSync(this.logDir, { recursive: true });

@@ -37,13 +37,98 @@ wopal inbox remove <skill>    # Remove a skill from INBOX
 wopal list            # List all skills (INBOX + installed)
 wopal list --info     # Show skill descriptions
 wopal list -i         # Short form
+wopal list --local    # Show only project-level installed skills
+wopal list --global   # Show only global-level installed skills
 ```
+
+### Install Command
+
+Install skills from INBOX or local path to Agent directories.
+
+**Basic Usage:**
+
+```bash
+# Install from INBOX (project-level, default)
+wopal skills install <skill-name>
+
+# Install from INBOX (global-level)
+wopal skills install <skill-name> -g
+
+# Install from local path
+wopal skills install ./my-skills/<skill-name>
+
+# Force overwrite existing skill
+wopal skills install <skill-name> --force
+
+# Skip security scan for INBOX skills
+wopal skills install <skill-name> --skip-scan
+```
+
+**Options:**
+
+- `-g, --global` - Install to global scope (~/.agents/skills/)
+- `--force` - Force overwrite if skill already exists
+- `--skip-scan` - Skip security scan for INBOX skills
+- `--mode <mode>` - Install mode (copy or symlink, default: copy)
+- `-d, --debug` - Enable debug logging
+
+**Examples:**
+
+```bash
+# Install a skill downloaded to INBOX
+wopal skills download owner/repo/skill-name
+wopal skills install skill-name
+
+# Install local skill in development
+wopal skills install ./my-skills/my-custom-skill
+
+# Install globally for all projects
+wopal skills install skill-name -g
+```
+
+**Lock Files:**
+
+- Project-level: `./skills-lock.json` (committed to Git)
+- Global-level: `~/.agents/.skill-lock.json` (local management)
+- Both use unified v3 format with version fingerprints
+
+**Notes:**
+
+- INBOX skills are automatically scanned for security (use `--skip-scan` to disable)
+- INBOX skills are removed after successful installation
+- Local skills remain in source location after installation
+- Symlink mode is not yet implemented
 
 ### Passthrough Commands
 
 ```bash
 wopal find [query]    # Search for skills (via Skills CLI)
 ```
+
+### Download Command
+
+Download skills from GitHub repositories.
+
+```bash
+# Download skill from default branch (main/master)
+wopal skills download owner/repo/skill-name
+
+# Download from specific branch
+wopal skills download owner/repo/skill-name --branch develop
+
+# Download from tag
+wopal skills download owner/repo/skill-name --tag v1.0.0
+
+# Force re-download
+wopal skills download owner/repo/skill-name --force
+```
+
+**Options:**
+
+- `--branch <branch>` - Download from specific branch
+- `--tag <tag>` - Download from specific tag
+- `--force` - Force re-download if already in INBOX
+- `-d, --debug` - Enable debug logging
 
 ## Configuration
 
@@ -73,13 +158,22 @@ src/
 ├── cli.ts              # CLI entry point
 ├── commands/
 │   ├── inbox.ts        # INBOX management commands
+│   ├── install.ts      # Skill installation command
 │   ├── list.ts         # Skills list command
+│   ├── download.ts     # Download skills from GitHub
 │   └── passthrough.ts  # Passthrough to Skills CLI
+├── types/
+│   └── lock.ts         # Lock file type definitions
 └── utils/
     ├── env-loader.ts   # Environment variable loader
+    ├── hash.ts         # Skill folder hash computation
     ├── inbox-utils.ts  # INBOX utility functions
+    ├── lock-manager.ts # Lock file management
     ├── logger.ts       # Logging utility
-    └── skill-utils.ts  # Skill parsing utilities
+    ├── metadata.ts     # Skill metadata handling
+    ├── skill-lock.ts   # GitHub Tree SHA fetching
+    ├── skill-utils.ts  # Skill parsing utilities
+    └── source-parser.ts # Source URL parsing
 ```
 
 ## Dependencies
@@ -88,20 +182,22 @@ src/
 - `picocolors` - Terminal colors
 - `gray-matter` - Markdown frontmatter parsing
 - `dotenv` - Environment variable loading
+- `fs-extra` - Enhanced file system operations
+- `simple-git` - Git operations
 
 ## Development
 
 ```bash
-pnpm build     # Build TypeScript
-pnpm dev       # Run in development mode
+npm run build     # Build TypeScript
+npm run dev       # Run in development mode
+npm run test      # Run tests in watch mode
+npm run test:run  # Run tests once
 ```
 
 ## Next Steps
 
 This CLI will be extended with the following commands:
 
-- `wopal download` - Download skills from GitHub
-- `wopal scan` - Security scan for skills
-- `wopal install` - Install skills from INBOX
-- `wopal check` - Check for updates
-- `wopal update` - Update installed skills
+- `wopal skills scan` - Security scan for skills (in progress)
+- `wopal skills check` - Check for updates
+- `wopal skills update` - Update installed skills

@@ -6,6 +6,12 @@ export function getInboxDir(): string {
   return process.env.SKILL_INBOX_DIR || join(homedir(), '.wopal', 'skills', 'INBOX');
 }
 
+export function isInboxPath(skillPath: string): boolean {
+  const inboxDir = getInboxDir();
+  const absolutePath = skillPath.startsWith('/') ? skillPath : join(process.cwd(), skillPath);
+  return absolutePath.startsWith(inboxDir);
+}
+
 export function getDirectorySize(dirPath: string): number {
   if (!existsSync(dirPath)) return 0;
 
