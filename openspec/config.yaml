@@ -22,6 +22,8 @@ rules:
     - "Spec titles MUST use the format '# Capability: <directory-name>'"
     - "Before creating a new spec, read ALL existing specs under openspec/specs/ to check for duplicate definitions or semantic conflicts"
     - "If multiple specs reference the same concept (e.g., interface definitions, version mechanisms), designate ONE spec as the authoritative source and use references in others"
+    - "When referencing shared concepts, use the standard format: '**WHEN** 系统需要使用 <共享概念>, **THEN** 系统按照 `<权威规格名>` 规格中的 <具体章节> 定义处理'"
+    - "When modifying shared concepts, MUST check all specs that reference this concept to ensure consistency"
     - "Cross-spec behavior definitions (e.g., error handling strategies, exit code semantics) MUST be consistent. Flag any inconsistencies in the proposal"
   
   proposal:
@@ -39,6 +41,7 @@ rules:
     - "标准错误码：MISSING_ARGUMENT / INVALID_ARGUMENT / SKILL_NOT_FOUND / SKILL_EXISTS / PERMISSION_DENIED / NETWORK_ERROR"
     - "所有列表和查询命令 SHALL 支持 `--json` 选项，输出结构化 JSON 数据"
     - "所有命令 SHALL 使用统一的状态指示符：✓（成功）/ ✗（失败）/ ⚠（警告）"
+    - "所有命令参数输入错误,提示错误之后,要展现本命令的 help 信息"
     # === 设计文档规范 ===
     - "Document any platform-specific behavior or limitations"
     - "Use existing shared definitions from the authoritative spec rather than redefining concepts"

@@ -201,7 +201,3 @@ WORKFLOW:
 - **WHEN** 系统调用 GitHub API
 - **THEN** Token 获取逻辑参见 `wopal-cli-skills-lock-management` 规格中的 GitHub Token 认证机制
 
-#### Scenario: 元数据向后兼容
-- **WHEN** check 或 update 命令读取 `.source.json`
-- **AND** 文件缺少 `skillFolderHash` 字段（旧版本下载）
-- **THEN** 兼容处理逻辑参见 `wopal-cli-skills-lock-management` 规格中的元数据向后兼容机制

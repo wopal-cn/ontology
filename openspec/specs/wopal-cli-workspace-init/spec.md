@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD
+初始化一个 wopal space, 根据默认规则生成配置文件.
 
 ## Requirements
 
