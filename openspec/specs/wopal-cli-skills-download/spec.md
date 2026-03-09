@@ -10,6 +10,14 @@
 
 ## Requirements
 
+### Requirement: 获取技能下载(INBOX)目录和提供兜底日志
+`wopal skills download` 命令 SHALL 从最新的全局配置中心 (`ConfigService`) 获取 `skillsInboxDir` (`WOPAL_SKILLS_INBOX_DIR`) 。如果有用户设定的参数直接执行，如没有将使用合理的硬编码默认值并警告日志。
+
+#### Scenario: 从新一代配置项设定写入靶位
+- **WHEN** 用户执行 `wopal skills download <skill>`
+- **THEN** CLI 优先获取基于洋葱模型决议的真实物理路径作为写入目标。
+- **AND** 若并未得到用户的显式配置（例如只找到默认空白空间或者配置被污染），`ConfigService` SHALL 决议出预设的一串合理相对绝对路径替换，并触发大级别日志告知用户缺失对应的配置，例如："Warning: WOPAL_SKILLS_INBOX_DIR is not configured, using default value."
+
 ### Requirement: 下载单个技能
 
 系统应当支持从远程仓库下载单个技能到 INBOX。

@@ -10,11 +10,16 @@
 
 系统应当管理两个锁文件，**两者都使用 v3 格式**（简化设计，便于维护）。
 
-#### Scenario: 项目级锁文件
-- **WHEN** 系统安装或更新技能（项目级或全局级）
-- **THEN** 项目级锁文件必须存储在 `./skills-lock.json`
+#### Scenario: 项目级锁文件路径由配置中心管理
+- **WHEN** 系统需要获取或写入项目级锁文件
+- **THEN** 锁文件路径必须由 `ConfigService.getProjectLockPath()` 返回
+- **AND** 该方法实现逻辑为：`${ConfigService.getSkillsInstallDir()}/.skill-lock.json`
+- **AND** `getSkillsInstallDir()` 优先级为：环境变量 `WOPAL_SKILLS_DIR` > 配置文件 `skillsDir` > 默认值 `.wopal/skills`
 - **AND** 项目级锁文件应当被提交到版本控制
-- **AND** 项目级锁文件格式为 v3（与全局锁相同）：
+
+#### Scenario: 项目级锁文件格式
+- **WHEN** 系统写入项目级锁文件
+- **THEN** 锁文件格式为 v3（与全局锁相同）：
   ```json
   {
     "version": 3,
@@ -62,7 +67,7 @@
 - **WHEN** 技能安装成功
 - **THEN** 全局锁和项目锁使用**完全相同的 v3 格式**
 - **AND** 两者的 `SkillLockEntry` 字段完全一致
-- **AND** 唯一差异是文件位置（`~/.agents/` vs `./`）和 `dismissed` 字段（仅全局锁有）
+- **AND** 唯一差异是文件位置（`~/.agents/.skill-lock.json` vs `./agents/.skill-lock.json`）和 `dismissed` 字段（仅全局锁有）
 
 ### Requirement: SkillMetadata 接口定义（单一真相来源）
 

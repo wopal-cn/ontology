@@ -17,15 +17,28 @@ context: |
 
 rules:
   specs:
+    # === 规格结构规范 ===
     - "Spec directory names MUST follow the Capability naming convention: <product>-<domain>-<capability>. Example: wopal-cli-skills-download"
     - "Spec titles MUST use the format '# Capability: <directory-name>'"
     - "Before creating a new spec, read ALL existing specs under openspec/specs/ to check for duplicate definitions or semantic conflicts"
     - "If multiple specs reference the same concept (e.g., interface definitions, version mechanisms), designate ONE spec as the authoritative source and use references in others"
     - "Cross-spec behavior definitions (e.g., error handling strategies, exit code semantics) MUST be consistent. Flag any inconsistencies in the proposal"
+  
   proposal:
     - "In the ## Capabilities section, list all new/modified Capabilities and note their interaction with existing Capabilities"
     - "If shared concepts span multiple specs, explicitly state which spec is the 'single source of truth' for each concept"
     - "List all downstream consumers of this Capability and verify the spec meets their needs"
+  
   design:
+    # === 全局 CLI UX 规范（原 wopal-cli-cli-ux-guidelines）===
+    - "所有用户界面输出 SHALL 使用英文，包括命令描述、帮助文档、错误提示、运行时输出"
+    - "所有命令的 description SHALL 遵循格式：`<Action> <Object> [Context]`（祈使句，不超过 80 字符）"
+    - "所有命令 SHALL 使用 `addHelpText('after', ...)` 提供结构化帮助文档"
+    - "帮助文档 SHALL 包含以下章节（按适用性）：SOURCE FORMAT / EXAMPLES / OPTIONS / NOTES / WORKFLOW"
+    - "所有命令 SHALL 使用统一的错误提示格式，包含错误码、消息和建议"
+    - "标准错误码：MISSING_ARGUMENT / INVALID_ARGUMENT / SKILL_NOT_FOUND / SKILL_EXISTS / PERMISSION_DENIED / NETWORK_ERROR"
+    - "所有列表和查询命令 SHALL 支持 `--json` 选项，输出结构化 JSON 数据"
+    - "所有命令 SHALL 使用统一的状态指示符：✓（成功）/ ✗（失败）/ ⚠（警告）"
+    # === 设计文档规范 ===
     - "Document any platform-specific behavior or limitations"
     - "Use existing shared definitions from the authoritative spec rather than redefining concepts"

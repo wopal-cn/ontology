@@ -6,6 +6,21 @@
 
 ## Requirements
 
+### Requirement: 获取技能 INBOX 目录和默认参数提示
+`wopal skills install` 命令 SHALL 从最新的全局配置中心 (`ConfigService`) 获取 `skillsInboxDir` (`WOPAL_SKILLS_INBOX_DIR`)。若未查找到有效配置项，系统则应用硬编码的代码级默认值（指向全局相对的兜底路径）并显示一条"正在使用未配置的默认值"的警告日志。
+
+#### Scenario: 从新一代配置项获取缓存目录
+- **WHEN** 用户执行 `wopal skills install <skill>`
+- **THEN** 系统解析配置洋葱模型获取到的 `skillsInboxDir` 取代之前依赖硬编码获取的值，执行查找对应的压缩包。
+- **AND** 如果这期间任何阶段均没能收集到对应的 `WOPAL_SKILLS_INBOX_DIR` 或相应的配置定义字段，系统使用事先准备合理的绝对路径计算返回结果，并在同一时间往控制台或 Logger 大声输出提醒（例如 `"Warning: WOPAL_SKILLS_INBOX_DIR is not configured. Falling back to default: [...]"`）。
+
+### Requirement: 获取技能安装目录和默认回拉
+`wopal skills install` 命令 SHALL 同样对获取当前工作空间的 `skillsInstallDir` 进行判断和默认配置覆盖，并在丢失时给出警告日志。
+
+#### Scenario: 缺失配置时的兜底打印
+- **WHEN** 参数丢失引发的安装
+- **THEN** CLI 使用 `ConfigService` 获取并使用默认地址，将警告明确打印后，仍然尽最大的努力把功能拉通（成功解压和安装）。
+
 ### Requirement: 从 INBOX 或 my-skills 安装技能到 Agent 目录
 
 系统应当将技能从 INBOX 或 my-skills 安装到 Agent 目录，使用 copy 模式。
@@ -137,3 +152,19 @@
 #### Scenario: 自动识别源类型
 - **IF** 参数是 `skill-name`（不含 `/`）→ 从 INBOX 安装
 - **IF** 参数包含 `/` 或 `./` → 从本地路径安装
+
+### Requirement: install 命令参数验证
+
+`wopal skills install` 命令 SHALL 提供友好的参数缺失错误提示。
+
+#### Scenario: 参数缺失错误
+- **WHEN** 用户执行 `wopal skills install`（无参数）
+- **THEN** 显示 "Missing required argument 'source'"
+- **AND** 显示建议：
+  ```
+  Usage: wopal skills install <source>
+  
+  SOURCE can be:
+    - Skill name (for INBOX skills)
+    - Local path to skill directory
+  ```

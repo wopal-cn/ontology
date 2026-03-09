@@ -6,6 +6,14 @@
 
 ## Requirements
 
+### Requirement: 获取技能分析相关的必须目录和容错提醒机制
+`wopal skills scan` 命令 SHALL 默认从最新的全局配置中心 (`ConfigService`) 获取 `skillsInboxDir` (`WOPAL_SKILLS_INBOX_DIR`) 和 IOC 特征库地址 `skillsIocdbDir` (`WOPAL_SKILLS_IOCDB_DIR`)。
+
+#### Scenario: 缺失对应目录变量配置时从新一代配置项设定读取来源
+- **WHEN** 用户执行 `wopal skills scan <skill>`
+- **THEN** CLI 获取基于洋葱模型决议的 `skillsInboxDir` 和 `skillsIocdbDir` 并进行扫描。
+- **AND** 若并未得到用户的显式配置（洋葱模型和 `settings.jsonc` 均为空），系统 SHALL 决议出预设的一串合理默认相对绝对路径（例如相对于 `~/.wopal/` 的路径）并且在 Logger 控制台中大声提示出警告："Warning: WOPAL_SKILLS_IOCDB_DIR configuration missing, using default value."
+
 ### Requirement: 对 INBOX 技能进行安全扫描
 
 系统应当对 INBOX 中的技能进行安全扫描，检测潜在的恶意代码。
@@ -24,7 +32,7 @@
 #### Scenario: 技能不存在
 - **WHEN** 用户运行 `wopal skills scan skill-name`
 - **AND** INBOX 中不存在该技能
-- **THEN** 系统显示错误"技能不存在：skill-name"
+- **THEN** 系统显示 "Skill 'skill-name' not found in INBOX"
 - **AND** 系统返回退出码 2
 
 ### Requirement: 实现 20 项安全检查
@@ -64,14 +72,14 @@
 
 #### Scenario: IOC 数据库存放路径（默认）
 - **WHEN** 系统初始化 IOC 数据库
-- **AND** 环境变量 `WOPAL_SKILL_IOCDB_DIR` 未设置
+- **AND** 环境变量 `WOPAL_SKILLS_IOCDB_DIR` 未设置
 - **THEN** 系统使用默认路径 `projects/agent-tools/skills/download/openclaw/openclaw-security-monitor/ioc/`
 - **AND** 该目录是 git submodule，通过 `git submodule update` 更新
 - **AND** 用户无需额外的 IOC 更新命令
 
 #### Scenario: IOC 数据库存放路径（环境变量）
 - **WHEN** 系统初始化 IOC 数据库
-- **AND** 环境变量 `WOPAL_SKILL_IOCDB_DIR` 已设置
+- **AND** 环境变量 `WOPAL_SKILLS_IOCDB_DIR` 已设置
 - **THEN** 系统使用环境变量指定的路径
 - **AND** 环境变量优先级高于默认路径
 

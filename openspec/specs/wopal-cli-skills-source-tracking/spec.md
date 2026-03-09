@@ -91,7 +91,7 @@
 
 #### Scenario: 显示检查进度
 - **WHEN** 检查多个技能
-- **THEN** 系统显示 "Checking skill 1/50: skill-name"
+- **THEN** 系统显示 "Checking N skills..."
 - **AND** 系统显示 "Fetching GitHub Tree SHA..."（远程技能）
 - **OR** 系统显示 "Computing local hash..."（本地技能）
 - **AND** 系统显示进度百分比
@@ -107,13 +107,12 @@
 
 #### Scenario: 无变更时显示提示
 - **WHEN** 所有技能都是最新版本
-- **THEN** 系统显示"所有技能都是最新版本"
+- **THEN** 系统显示 "All skills are up to date"
 
 #### Scenario: 建议更新操作
 - **WHEN** 检测到技能有更新
 - **THEN** 系统在变更报告中建议更新命令
-- **AND** 系统显示"运行 'wopal skills update --all' 更新所有技能"
-- **OR** 系统显示"运行 'wopal skills update <skill-name>' 更新指定技能"
+- **AND** 系统显示 "To update: wopal skills update skill-name"
 
 #### Scenario: 详细报告格式
 - **WHEN** 检查完成且有变更
@@ -156,17 +155,17 @@ Summary: 45 up-to-date, 3 updates available, 2 source missing
 
 #### Scenario: GitHub API 限流
 - **WHEN** GitHub API 请求被限流
-- **THEN** 系统显示警告"GitHub API 限流，稍后重试"
-- **AND** 系统建议等待或使用 GitHub Token
+- **THEN** 系统显示 "GitHub API rate limit exceeded, please retry later"
+- **AND** 系统建议使用 GitHub Token
 
 #### Scenario: 本地源码路径不存在
 - **WHEN** my-skills 源码路径不存在
-- **THEN** 系统标记技能为"source-missing"
-- **AND** 系统显示警告"源码路径不存在"
+- **THEN** 系统标记技能为 "source-missing"
+- **AND** 系统显示 "Source path not found"
 
 #### Scenario: 锁文件损坏
 - **WHEN** 锁文件格式错误或损坏
-- **THEN** 系统显示错误"锁文件损坏"
+- **THEN** 系统显示 "Lock file corrupted"
 - **AND** 系统建议重新安装技能
 
 ## 使用示例

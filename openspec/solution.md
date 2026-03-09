@@ -537,15 +537,16 @@ install → Agent 目录
 
 **思考过程**：
 - Skills CLI 使用两个锁文件（全局 + 本地）
-- wopal 需要追踪源头信息
-- 解决：单一锁文件，记录所有必要信息
+- wopal 需要追踪源头信息，且同时支持灵活配置
+- 解决：双锁文件设计（项目级 + 全局级），两端使用完全相同的 v3 格式
 
 **设计思路**：
 
 ```typescript
 interface WpSkiLockFile {
-  version: number;  // 当前版本 1
+  version: number;  // 当前版本 3
   skills: Record<string, WpSkiLockEntry>;
+  dismissed?: Record<string, boolean>; // 仅全局锁使用
 }
 
 interface WpSkiLockEntry {
@@ -566,12 +567,14 @@ interface WpSkiLockEntry {
 }
 ```
 
-**存放位置**：`.agents/skills-lock.json`
+**存放位置**：
+- 项目级锁文件：`./skills-lock.json`
+- 全局级锁文件：`~/.agents/.skill-lock.json`
 
 **设计优势**：
-- 单一文件，简化管理
-- 包含源头和安装信息
-- 支持 check 命令比较源头变更
+- 分层管理，清晰界定项目范围与全局范围
+- 两个锁文件数据结构一致，简化代码实现
+- 包含源头和安装信息，支持 check 命令比较源头变更
 
 ### 8. 命令设计
 
@@ -728,19 +731,18 @@ wopal skills ioc update --check   # 检查更新
 **依赖关系**：
 - download 命令：获取并记录版本指纹
 - check 命令：比较 `skillFolderHash` 检测更新（待实现）
-- update 命令：根据 `skillFolderHash` 决定是否更新（待实现）
 
-### 决策 7：单一锁文件
+### 决策 7：双锁文件设计（统一 v3 格式）
 
 **理由**：
-- 简化实现，避免多个文件同步问题
-- 所有信息集中管理
-- 易于检查和调试
+- 隔离全局技能与项目级技能的安装状态
+- 满足团队协作时将项目锁（`skills-lock.json`）提交至 Git 仓库的需求
+- 统一个数据格式（v3）可大幅降低维护成本
 
 **实施**：
-- `.agents/skills-lock.json` 存放所有技能信息
-- 区分 sourceType（github/local）
-- 包含源头标识（sourceHash）
+- `./skills-lock.json`：项目级锁文件，记录该项目下的技能
+- `~/.agents/.skill-lock.json`：全局级锁文件，记录全局范围的技能
+- 区分 sourceType（github/local）并包含源头标识（sourceHash）
 
 
 ### 11. 目录结构
@@ -833,10 +835,6 @@ projects/agent-tools/tools/wopal-cli/
 - ⏳ 检查命令实现
 - ⏳ 版本比较逻辑（skillFolderHash）
 
-**变更：wopal-cli-update**
-- ⏳ 更新命令实现
-- ⏳ download + scan + install 流程
-
 ### 变更目录
 
 - openspec/changes/create-wopal-cli - 整体规划（本文档）
@@ -845,6 +843,5 @@ projects/agent-tools/tools/wopal-cli/
 - openspec/changes/wopal-cli-scan - 安全扫描（待启动）
 - openspec/changes/wopal-cli-install - 安装命令（待启动）
 - openspec/changes/wopal-cli-check - 检查更新（待启动）
-- openspec/changes/wopal-cli-update - 更新命令（待启动）
 
 
