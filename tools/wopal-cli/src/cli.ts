@@ -35,6 +35,10 @@ import {
   registerCheckCommand,
   setLogger as setCheckLogger,
 } from "./commands/check.js";
+import {
+  registerInitCommand,
+  setLogger as setInitLogger,
+} from "./commands/init.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -77,6 +81,7 @@ program
     setWhitelistLogger(logger);
     setScannerUtilsLogger(logger);
     setCheckLogger(logger);
+    setInitLogger(logger);
 
     logger.log("Debug mode enabled");
   });
@@ -84,6 +89,8 @@ program
 const skillsCommand = program
   .command("skills")
   .description("Manage AI agent skills");
+
+registerInitCommand(program);
 
 registerInboxCommand(skillsCommand);
 registerListCommand(skillsCommand);

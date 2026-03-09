@@ -3,6 +3,7 @@ import * as fs from "fs";
 import { Logger } from "../utils/logger.js";
 import { IOCData } from "./types.js";
 import { IOC_FILES } from "./constants.js";
+import { getConfig } from "../utils/config.js";
 
 let logger: Logger;
 
@@ -13,18 +14,9 @@ export function setLogger(l: Logger): void {
 let cachedIOCData: IOCData | null = null;
 
 export function getIOCPath(): string {
-  const envPath = process.env.WOPAL_SKILL_IOCDB_DIR;
-
-  if (envPath) {
-    logger.debug(`使用环境变量指定的 IOC 路径: ${envPath}`);
-    return envPath;
-  }
-
-  const defaultPath =
-    "projects/agent-tools/skills/download/openclaw/openclaw-security-monitor/ioc/";
-
-  logger.debug(`使用默认 IOC 路径: ${defaultPath}`);
-  return defaultPath;
+  const pathVal = getConfig().getSkillIocdbDir();
+  logger.debug(`使用 IOC 路径: ${pathVal}`);
+  return pathVal;
 }
 
 export function loadIOCFile(filePath: string): string[] {

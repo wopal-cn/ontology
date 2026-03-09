@@ -1,12 +1,10 @@
 import { existsSync, statSync, readdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { getConfig } from "./config.js";
 
 export function getInboxDir(): string {
-  return (
-    process.env.WOPAL_SKILL_INBOX_DIR ||
-    join(homedir(), ".wopal", "skills", "INBOX")
-  );
+  return getConfig().getSkillInboxDir();
 }
 
 export function isInboxPath(skillPath: string): boolean {

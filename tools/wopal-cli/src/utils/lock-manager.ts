@@ -2,6 +2,7 @@ import fs from "fs-extra";
 import path from "path";
 import os from "os";
 import type { SkillLockFile, SkillLockEntry } from "../types/lock.js";
+import type { ConfigService } from "./config.js";
 
 /**
  * 锁文件管理器
@@ -12,8 +13,8 @@ export class LockManager {
   private projectLockPath: string;
   private globalLockPath: string;
 
-  constructor(projectRoot: string = process.cwd()) {
-    this.projectLockPath = path.join(projectRoot, "skills-lock.json");
+  constructor(configService: ConfigService) {
+    this.projectLockPath = configService.getProjectLockPath();
     this.globalLockPath = path.join(
       os.homedir(),
       ".agents",

@@ -7,18 +7,23 @@ function expandHomeDir(path: string): string {
   return path.replace(/^~(?=$|\/|\\)/, homedir());
 }
 
-export function loadEnv(debug: boolean = false): void {
-  const cwdEnvPath = join(process.cwd(), ".env");
+export function loadEnv(debug: boolean = false, spaceDir?: string): void {
+  const targetDir = spaceDir || process.cwd();
+  const cwdEnvPath = join(targetDir, ".env");
   const globalEnvPath = join(homedir(), ".wopal", ".env");
 
+  // Load space .env first
   if (existsSync(cwdEnvPath)) {
     const result = dotenv.config({ path: cwdEnvPath });
-    if (result.error) {
+    if (result.error && debug) {
       console.error(`Failed to load .env from ${cwdEnvPath}:`, result.error);
     }
-  } else if (existsSync(globalEnvPath)) {
+  }
+
+  // Then load global .env as a fallback
+  if (existsSync(globalEnvPath)) {
     const result = dotenv.config({ path: globalEnvPath });
-    if (result.error) {
+    if (result.error && debug) {
       console.error(`Failed to load .env from ${globalEnvPath}:`, result.error);
     }
   }

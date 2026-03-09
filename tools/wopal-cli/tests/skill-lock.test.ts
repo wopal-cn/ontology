@@ -82,13 +82,14 @@ describe("skill-lock utils", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.github.com/repos/owner/repo/git/trees/main?recursive=1",
-      {
+      expect.objectContaining({
         headers: {
           Accept: "application/vnd.github.v3+json",
           Authorization: "Bearer token-1",
           "User-Agent": "wopal-cli",
         },
-      },
+        signal: expect.any(AbortSignal),
+      })
     );
   });
 

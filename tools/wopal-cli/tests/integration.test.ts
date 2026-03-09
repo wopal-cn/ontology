@@ -3,6 +3,7 @@ import fs from "fs-extra";
 import path from "path";
 import os from "os";
 import { execSync } from "child_process";
+import { resetConfigForTest } from "../src/utils/config.js";
 
 const CLI_PATH = path.join(process.cwd(), "bin", "cli.js");
 const TEST_REPO_SKILL = "forztf/open-skilled-sdd@openspec-proposal-creation";
@@ -13,6 +14,7 @@ describe("Install Command Integration Tests", () => {
   let projectDir: string;
 
   beforeEach(async () => {
+    resetConfigForTest();
     tempDir = await fs.mkdtemp(
       path.join(os.tmpdir(), "wopal-cli-integration-"),
     );
@@ -22,12 +24,15 @@ describe("Install Command Integration Tests", () => {
     await fs.ensureDir(inboxDir);
     await fs.ensureDir(projectDir);
 
-    process.env.WOPAL_SKILL_INBOX_DIR = inboxDir;
+    process.env.WOPAL_SKILLS_INBOX_DIR = inboxDir;
+    process.env.WOPAL_SETTINGS_PATH = path.join(tempDir, "settings.jsonc");
   });
 
   afterEach(async () => {
+    resetConfigForTest();
     await fs.remove(tempDir);
-    delete process.env.WOPAL_SKILL_INBOX_DIR;
+    delete process.env.WOPAL_SKILLS_INBOX_DIR;
+    delete process.env.WOPAL_SETTINGS_PATH;
   });
 
   async function createTestSkill(
@@ -65,13 +70,13 @@ describe("Install Command Integration Tests", () => {
     expect(output).toContain("Installation complete");
     expect(output).toContain("Security scan passed");
 
-    const installedDir = path.join(projectDir, ".agents", "skills", skillName);
+    const installedDir = path.join(projectDir, ".wopal", "skills", skillName);
     expect(await fs.pathExists(installedDir)).toBe(true);
     expect(await fs.pathExists(path.join(installedDir, "SKILL.md"))).toBe(true);
 
     expect(await fs.pathExists(inboxSkillDir)).toBe(false);
 
-    const lockPath = path.join(projectDir, "skills-lock.json");
+    const lockPath = path.join(projectDir, ".wopal", ".skill-lock.json");
     expect(await fs.pathExists(lockPath)).toBe(true);
 
     const lock = await fs.readJson(lockPath);
@@ -93,7 +98,7 @@ describe("Install Command Integration Tests", () => {
 
     expect(output).toContain("Installation complete");
 
-    const installedDir = path.join(projectDir, ".agents", "skills", skillName);
+    const installedDir = path.join(projectDir, ".wopal", "skills", skillName);
     expect(await fs.pathExists(installedDir)).toBe(true);
 
     expect(await fs.pathExists(localSkillDir)).toBe(true);
@@ -192,7 +197,7 @@ describe("Install Command Integration Tests", () => {
       expect(message).toContain("Security scan failed");
     }
 
-    const installedDir = path.join(projectDir, ".agents", "skills", skillName);
+    const installedDir = path.join(projectDir, ".wopal", "skills", skillName);
     expect(await fs.pathExists(installedDir)).toBe(false);
     expect(await fs.pathExists(inboxSkillDir)).toBe(true);
   });
@@ -205,8 +210,7 @@ describe("Install Command Integration Tests", () => {
         encoding: "utf-8",
         env: {
           ...process.env,
-          WOPAL_SKILL_INBOX_DIR: inboxDir,
-          SKILL_INBOX_DIR: inboxDir,
+          WOPAL_SKILLS_INBOX_DIR: inboxDir,
         },
       },
     );
@@ -235,8 +239,7 @@ describe("Install Command Integration Tests", () => {
         encoding: "utf-8",
         env: {
           ...process.env,
-          WOPAL_SKILL_INBOX_DIR: inboxDir,
-          SKILL_INBOX_DIR: inboxDir,
+          WOPAL_SKILLS_INBOX_DIR: inboxDir,
         },
       },
     );
@@ -261,8 +264,7 @@ describe("Install Command Integration Tests", () => {
           encoding: "utf-8",
           env: {
             ...process.env,
-            WOPAL_SKILL_INBOX_DIR: inboxDir,
-            SKILL_INBOX_DIR: inboxDir,
+            WOPAL_SKILLS_INBOX_DIR: inboxDir,
           },
           stdio: "pipe",
         },

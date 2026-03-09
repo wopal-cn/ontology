@@ -14,6 +14,8 @@ import type {
   InstallMode,
   InstallScope,
 } from "../types/lock.js";
+import { getConfig } from "../utils/config.js";
+import { buildHelpText } from "../utils/help-texts.js";
 
 interface InstallOptions {
   global: boolean;
@@ -50,6 +52,39 @@ export function createInstallCommand(): Command {
         process.exit(1);
       }
     });
+
+  command.addHelpText(
+    "after",
+    buildHelpText({
+      examples: [
+        "# Install from INBOX (after scanning)\nwopal skills install my-skill",
+        "# Install from local path\nwopal skills install /path/to/my-skill",
+        "# Install globally\nwopal skills install my-skill --global",
+        "# Force overwrite existing\nwopal skills install my-skill --force",
+        "# Skip security scan (not recommended)\nwopal skills install my-skill --skip-scan",
+      ],
+      options: [
+        "-g, --global        Install to global scope (~/.agents/skills/)",
+        "--force             Force overwrite if skill already exists",
+        "--skip-scan         Skip security scan for INBOX skills",
+        "--mode <mode>       Install mode (copy or symlink, default: copy)",
+        "-d, --debug         Enable debug logging",
+        "--help              Show this help message",
+      ],
+      notes: [
+        "INBOX skills are automatically scanned for security issues",
+        "Local skills are identified by path separators (/ or \\)",
+        "Lock files are updated with skill metadata",
+        "INBOX skills are removed after successful installation",
+      ],
+      workflow: [
+        "Download skill: wopal skills download <source>",
+        "Scan for issues: wopal skills scan <skill-name>",
+        "Install skill: wopal skills install <skill-name>",
+        "Verify installation: wopal skills list",
+      ],
+    }),
+  );
 
   return command;
 }
@@ -121,7 +156,7 @@ async function installLocalSkill(
     updatedAt: new Date().toISOString(),
   };
 
-  const lockManager = new LockManager();
+  const lockManager = new LockManager(getConfig());
   await lockManager.addSkillToBothLocks(skillName, lockEntry);
   logger.info(`✓ Lock files updated`);
 
@@ -199,7 +234,7 @@ async function installInboxSkill(
     updatedAt: new Date().toISOString(),
   };
 
-  const lockManager = new LockManager();
+  const lockManager = new LockManager(getConfig());
   await lockManager.addSkillToBothLocks(skillName, lockEntry);
   logger.info(`✓ Lock files updated`);
 
@@ -213,7 +248,7 @@ function getTargetDir(skillName: string, scope: InstallScope): string {
   if (scope === "global") {
     return path.join(os.homedir(), ".agents", "skills", skillName);
   } else {
-    return path.join(process.cwd(), ".agents", "skills", skillName);
+    return path.join(getConfig().getSkillsInstallDir(), skillName);
   }
 }
 

@@ -5,6 +5,8 @@ import type { SkillLockEntry } from "../types/lock.js";
 import { fetchSkillFolderHash, getGitHubToken } from "../utils/skill-lock.js";
 import { computeSkillFolderHash } from "../utils/hash.js";
 import pLimit from "p-limit";
+import { buildHelpText } from "../utils/help-texts.js";
+import { getConfig } from "../utils/config.js";
 
 let logger: Logger;
 
@@ -21,14 +23,19 @@ export interface CheckCommandOptions {
 export interface CheckResult {
   skillName: string;
   sourceType: "github" | "local";
-  status: "up-to-date" | "update-available" | "source-changed" | "source-missing" | "error";
+  status:
+    | "up-to-date"
+    | "update-available"
+    | "source-changed"
+    | "source-missing"
+    | "error";
   installedHash: string;
   latestHash: string;
   error?: string;
 }
 
 export function registerCheckCommand(program: Command): void {
-  program
+  const command = program
     .command("check [skill-name]")
     .description("Check installed skills for updates")
     .option("--local", "Only check project-level skills")
@@ -39,6 +46,31 @@ export function registerCheckCommand(program: Command): void {
         await checkCommand(skillName, options);
       },
     );
+
+  command.addHelpText(
+    "after",
+    buildHelpText({
+      examples: [
+        "# Check all installed skills for updates\nwopal skills check",
+        "# Check a specific skill\nwopal skills check my-skill",
+        "# Check only project-level skills\nwopal skills check --local",
+        "# Check only global skills\nwopal skills check --global",
+        "# Output in JSON format\nwopal skills check --json",
+      ],
+      options: [
+        "--local             Only check project-level skills",
+        "--global            Only check global-level skills",
+        "--json              Output in JSON format",
+        "--help              Show this help message",
+      ],
+      notes: [
+        "Compares installed skill hash with source hash",
+        "GitHub skills: compares Tree SHA from API",
+        "Local skills: compares folder content hash",
+        "Requires GITHUB_TOKEN for higher API rate limits",
+      ],
+    }),
+  );
 }
 
 export async function checkCommand(
@@ -46,7 +78,7 @@ export async function checkCommand(
   options: CheckCommandOptions,
 ): Promise<void> {
   try {
-    const lockManager = new LockManager();
+    const lockManager = new LockManager(getConfig());
 
     let skills: Record<string, SkillLockEntry>;
 
@@ -119,12 +151,16 @@ async function checkSkills(
         const percentage = Math.round((current / total) * 100);
         const barLength = 20;
         const filled = Math.round((current / total) * barLength);
-        const bar = "=".repeat(filled) + ">".repeat(filled < barLength ? 1 : 0) + " ".repeat(barLength - filled - (filled < barLength ? 1 : 0));
+        const bar =
+          "=".repeat(filled) +
+          ">".repeat(filled < barLength ? 1 : 0) +
+          " ".repeat(barLength - filled - (filled < barLength ? 1 : 0));
 
-        const checkType = entry.sourceType === "github" 
-          ? "Fetching GitHub Tree SHA..." 
-          : "Computing local hash...";
-        
+        const checkType =
+          entry.sourceType === "github"
+            ? "Fetching GitHub Tree SHA..."
+            : "Computing local hash...";
+
         console.log(
           `[${bar}] ${percentage}% [${current}/${total}] Checking ${skillName}... (${checkType})`,
         );
@@ -216,7 +252,8 @@ async function checkSkill(
     if (latestHash === entry.skillFolderHash) {
       status = "up-to-date";
     } else {
-      status = entry.sourceType === "github" ? "update-available" : "source-changed";
+      status =
+        entry.sourceType === "github" ? "update-available" : "source-changed";
     }
 
     return {
@@ -323,9 +360,7 @@ function displayResults(
     const updateList = updateAvailable.map((r) => r.skillName);
     const changedList = sourceChanged.map((r) => r.skillName);
     const allUpdates = [...updateList, ...changedList];
-    
-    console.log(
-      "\nTo update: wopal skills update " + allUpdates.join(" "),
-    );
+
+    console.log("\nTo update: wopal skills update " + allUpdates.join(" "));
   }
 }

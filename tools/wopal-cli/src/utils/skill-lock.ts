@@ -84,9 +84,9 @@ export async function fetchSkillFolderHash(
       const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       try {
-        const response = await fetch(url, { 
-          headers, 
-          signal: controller.signal 
+        const response = await fetch(url, {
+          headers,
+          signal: controller.signal,
         });
 
         clearTimeout(timeoutId);
@@ -113,7 +113,7 @@ export async function fetchSkillFolderHash(
         }
       } catch (fetchError) {
         clearTimeout(timeoutId);
-        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        if (fetchError instanceof Error && fetchError.name === "AbortError") {
           continue;
         }
         throw fetchError;

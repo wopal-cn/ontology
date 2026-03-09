@@ -2,6 +2,7 @@ import { existsSync, readdirSync, statSync, readFileSync } from "fs";
 import { join } from "path";
 import matter from "gray-matter";
 import { homedir } from "os";
+import { getConfig } from "./config.js";
 
 export interface SkillInfo {
   name: string;
@@ -65,7 +66,7 @@ export function collectSkills(
 }
 
 export function getInstalledSkillsDir(): string {
-  return process.env.WOPAL_SKILLS_DIR || join(homedir(), ".wopal", "skills");
+  return getConfig().getSkillsInstallDir();
 }
 
 export function mergeSkills(

@@ -11,7 +11,10 @@ describe("LockManager", () => {
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "wopal-cli-test-"));
-    lockManager = new LockManager(tempDir);
+    const mockConfigService = {
+      getProjectLockPath: () => path.join(tempDir, ".wopal", ".skill-lock.json"),
+    };
+    lockManager = new LockManager(mockConfigService as any);
   });
 
   afterEach(async () => {
@@ -77,6 +80,7 @@ describe("LockManager", () => {
 
   it("should return empty lock for version < 3", async () => {
     const lockPath = lockManager.getProjectLockPath();
+    await fs.ensureDir(path.dirname(lockPath));
     await fs.writeJson(lockPath, { version: 1, skills: {} });
 
     const lock = await lockManager.readProjectLock();

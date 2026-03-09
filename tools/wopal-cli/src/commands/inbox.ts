@@ -9,6 +9,7 @@ import {
   buildDirectoryTree,
 } from "../utils/inbox-utils.js";
 import { Logger } from "../utils/logger.js";
+import { buildHelpText } from "../utils/help-texts.js";
 
 let logger: Logger;
 
@@ -21,14 +22,34 @@ export function registerInboxCommand(program: Command): void {
     .command("inbox")
     .description("Manage skills in INBOX (downloaded but not yet installed)");
 
-  inbox
+  const listCommand = inbox
     .command("list")
     .description("List all skills in INBOX")
-    .action(async () => {
-      await listInboxSkills();
+    .option("--json", "Output in JSON format")
+    .action(async (options: { json?: boolean }) => {
+      await listInboxSkills(options.json);
     });
 
-  inbox
+  listCommand.addHelpText(
+    "after",
+    buildHelpText({
+      examples: [
+        "# List all skills in INBOX\nwopal inbox list",
+        "# List in JSON format\nwopal inbox list --json",
+      ],
+      options: [
+        "--json    Output in JSON format",
+        "--help    Show this help message",
+      ],
+      notes: [
+        "Skills are stored in INBOX after download",
+        "Use 'wopal inbox show <skill>' to view skill details",
+        "Use 'wopal inbox remove <skill>' to delete a skill",
+      ],
+    }),
+  );
+
+  const showCommand = inbox
     .command("show <skill>")
     .description(
       "Show skill details (SKILL.md content and directory structure)",
@@ -37,20 +58,68 @@ export function registerInboxCommand(program: Command): void {
       await showInboxSkill(skillName);
     });
 
-  inbox
+  showCommand.addHelpText(
+    "after",
+    buildHelpText({
+      examples: [
+        "# Show skill details\nwopal inbox show my-skill",
+      ],
+      notes: [
+        "Displays SKILL.md content and directory structure",
+        "Useful for reviewing skills before installation",
+      ],
+    }),
+  );
+
+  const removeCommand = inbox
     .command("remove <skill>")
     .description("Remove a single skill from INBOX")
     .action(async (skillName: string) => {
       await removeInboxSkill(skillName);
     });
+
+  removeCommand.addHelpText(
+    "after",
+    buildHelpText({
+      examples: [
+        "# Remove a skill from INBOX\nwopal inbox remove my-skill",
+      ],
+      notes: [
+        "Permanently deletes the skill from INBOX",
+        "Use 'wopal inbox list' to see available skills",
+      ],
+    }),
+  );
+
+  inbox.addHelpText(
+    "after",
+    buildHelpText({
+      examples: [
+        "# List all skills in INBOX\nwopal inbox list",
+        "# Show skill details\nwopal inbox show my-skill",
+        "# Remove a skill\nwopal inbox remove my-skill",
+      ],
+      workflow: [
+        "Download skills: wopal skills download <source>",
+        "List INBOX: wopal inbox list",
+        "Review skills: wopal inbox show <skill-name>",
+        "Scan for security: wopal skills scan <skill-name>",
+        "Install: wopal skills install <skill-name>",
+      ],
+    }),
+  );
 }
 
-async function listInboxSkills(): Promise<void> {
+async function listInboxSkills(jsonOutput: boolean = false): Promise<void> {
   const inboxDir = getInboxDir();
   logger?.log(`Listing INBOX skills from: ${inboxDir}`);
 
   if (!existsSync(inboxDir)) {
-    console.log(pc.yellow("INBOX 为空"));
+    if (jsonOutput) {
+      console.log(JSON.stringify({ success: true, data: [] }, null, 2));
+    } else {
+      console.log(pc.yellow("INBOX is empty"));
+    }
     return;
   }
 
@@ -60,15 +129,31 @@ async function listInboxSkills(): Promise<void> {
   });
 
   if (skills.length === 0) {
-    console.log(pc.yellow("INBOX 为空"));
+    if (jsonOutput) {
+      console.log(JSON.stringify({ success: true, data: [] }, null, 2));
+    } else {
+      console.log(pc.yellow("INBOX is empty"));
+    }
     return;
   }
 
-  console.log(pc.bold("INBOX 技能列表：\n"));
-  for (const skill of skills) {
+  const skillList = skills.map((skill: string) => {
     const skillPath = join(inboxDir, skill);
     const size = getDirectorySize(skillPath);
-    console.log(`  ${pc.cyan(skill)} ${pc.dim(`(${formatSize(size)})`)}`);
+    return {
+      name: skill,
+      size: formatSize(size),
+      path: skillPath,
+    };
+  });
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ success: true, data: skillList }, null, 2));
+  } else {
+    console.log(pc.bold("Skills in INBOX:\n"));
+    for (const skill of skillList) {
+      console.log(`  ${pc.cyan(skill.name)} ${pc.dim(`(${skill.size})`)}`);
+    }
   }
 }
 
@@ -80,19 +165,19 @@ async function showInboxSkill(skillName: string): Promise<void> {
   logger?.log(`Showing skill: ${skillName} at ${skillDir}`);
 
   if (!existsSync(skillDir)) {
-    console.error(pc.red(`技能 ${skillName} 不存在`));
+    console.error(pc.red(`Skill '${skillName}' not found in INBOX`));
     process.exit(1);
   }
 
   if (!existsSync(skillMdPath)) {
-    console.warn(pc.yellow("无效的技能目录（缺少 SKILL.md）"));
+    console.warn(pc.yellow("Invalid skill directory (missing SKILL.md)"));
     return;
   }
 
   const content = readFileSync(skillMdPath, "utf-8");
   console.log(content);
 
-  console.log(pc.bold("\n目录结构："));
+  console.log(pc.bold("\nDirectory Structure:"));
   const tree = buildDirectoryTree(skillDir);
   console.log(tree);
 }
@@ -104,10 +189,10 @@ async function removeInboxSkill(skillName: string): Promise<void> {
   logger?.log(`Removing skill: ${skillName} from ${skillDir}`);
 
   if (!existsSync(skillDir)) {
-    console.error(pc.red(`技能 ${skillName} 不存在`));
+    console.error(pc.red(`Skill '${skillName}' not found in INBOX`));
     process.exit(1);
   }
 
   rmSync(skillDir, { recursive: true, force: true });
-  console.log(pc.green(`已删除技能：${skillName}`));
+  console.log(pc.green(`✓ Skill '${skillName}' removed from INBOX`));
 }

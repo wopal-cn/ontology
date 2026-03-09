@@ -11,6 +11,8 @@ import {
 import { Logger } from "../utils/logger.js";
 import { LockManager } from "../utils/lock-manager.js";
 import type { SkillLockEntry } from "../types/lock.js";
+import { buildHelpText } from "../utils/help-texts.js";
+import { getConfig } from "../utils/config.js";
 
 let logger: Logger;
 
@@ -22,10 +24,11 @@ interface ListOptions {
   info?: boolean;
   local?: boolean;
   global?: boolean;
+  json?: boolean;
 }
 
 export function registerListCommand(program: Command): void {
-  program
+  const command = program
     .command("list")
     .description(
       "List all skills (INBOX downloaded + installed from lock files)",
@@ -33,20 +36,50 @@ export function registerListCommand(program: Command): void {
     .option("-i, --info", "Show skill descriptions and details")
     .option("--local", "Show only project-level skills")
     .option("--global", "Show only global-level skills")
+    .option("--json", "Output in JSON format")
     .action(async (options: ListOptions) => {
       await listSkills(options);
     });
+
+  command.addHelpText(
+    "after",
+    buildHelpText({
+      examples: [
+        "# List all skills (INBOX + installed)\nwopal list",
+        "# List with details\nwopal list --info",
+        "# List in JSON format\nwopal list --json",
+        "# List only project-level skills\nwopal list --local",
+        "# List only global-level skills\nwopal list --global",
+      ],
+      options: [
+        "-i, --info    Show skill descriptions and details",
+        "--local       Show only project-level skills",
+        "--global      Show only global-level skills",
+        "--json        Output in JSON format",
+        "--help        Show this help message",
+      ],
+      notes: [
+        "By default shows both INBOX (downloaded) and installed skills",
+        "INBOX skills are marked with [Downloaded]",
+        "Installed skills are marked with [Installed]",
+        "Use --local or --global to filter by scope",
+      ],
+    }),
+  );
 }
 
 async function listSkills(options: ListOptions): Promise<void> {
   if (options.local || options.global) {
     await listInstalledSkills(options);
   } else {
-    await listAllSkills(options.info || false);
+    await listAllSkills(options.info || false, options.json || false);
   }
 }
 
-async function listAllSkills(showInfo: boolean): Promise<void> {
+async function listAllSkills(
+  showInfo: boolean,
+  jsonOutput: boolean,
+): Promise<void> {
   const inboxDir = getInboxDir();
   const installedDir = getInstalledSkillsDir();
 
@@ -57,31 +90,50 @@ async function listAllSkills(showInfo: boolean): Promise<void> {
   const installedSkills = collectSkills(installedDir, "installed");
   const allSkills = mergeSkills(inboxSkills, installedSkills);
 
-  if (allSkills.length === 0) {
-    console.log(pc.yellow("没有找到任何技能"));
+  if (jsonOutput) {
+    console.log(
+      JSON.stringify(
+        {
+          success: true,
+          data: allSkills.map((s) => ({
+            name: s.name,
+            status: s.status,
+            description: s.description,
+            path: s.path,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
 
-  console.log(pc.bold("技能列表：\n"));
+  if (allSkills.length === 0) {
+    console.log(pc.yellow("No skills found"));
+    return;
+  }
+
+  console.log(pc.bold("Skills:\n"));
 
   for (const skill of allSkills) {
     const statusIcon =
       skill.status === "downloaded"
-        ? pc.yellow("[已下载]")
-        : pc.green("[已安装]");
+        ? pc.yellow("[Downloaded]")
+        : pc.green("[Installed]");
     console.log(`  ${statusIcon} ${pc.cyan(skill.name)}`);
 
     if (showInfo) {
       if (skill.description) {
         console.log(`           ${pc.dim(skill.description)}`);
       }
-      console.log(`           ${pc.dim(`路径: ${skill.path}`)}`);
+      console.log(`           ${pc.dim(`Path: ${skill.path}`)}`);
     }
   }
 }
 
 async function listInstalledSkills(options: ListOptions): Promise<void> {
-  const lockManager = new LockManager();
+  const lockManager = new LockManager(getConfig());
 
   const projectLock = await lockManager.readProjectLock();
   const globalLock = await lockManager.readGlobalLock();
@@ -99,33 +151,61 @@ async function listInstalledSkills(options: ListOptions): Promise<void> {
     skillsToShow = globalSkills;
   }
 
-  if (skillsToShow.length === 0) {
-    console.log(pc.yellow("没有找到已安装的技能"));
+  if (options.json) {
+    console.log(
+      JSON.stringify(
+        {
+          success: true,
+          data: skillsToShow.map(([name, entry]) => ({
+            name,
+            source: entry.source,
+            sourceType: entry.sourceType,
+            scope: options.local && options.global
+              ? projectSkills.some(([n]) => n === name)
+                ? "project"
+                : "global"
+              : options.local
+                ? "project"
+                : "global",
+            installedAt: entry.installedAt,
+            updatedAt: entry.updatedAt,
+            skillFolderHash: entry.skillFolderHash,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
 
-  console.log(pc.bold("已安装技能列表：\n"));
+  if (skillsToShow.length === 0) {
+    console.log(pc.yellow("No installed skills found"));
+    return;
+  }
+
+  console.log(pc.bold("Installed Skills:\n"));
 
   for (const [skillName, entry] of skillsToShow) {
     const scope =
       options.local && options.global
         ? projectSkills.some(([name]) => name === skillName)
-          ? "[项目级]"
-          : "[全局级]"
+          ? "[Project]"
+          : "[Global]"
         : options.local
-          ? "[项目级]"
-          : "[全局级]";
+          ? "[Project]"
+          : "[Global]";
 
     console.log(`  ${pc.green(scope)} ${pc.cyan(skillName)}`);
 
     if (options.info) {
-      console.log(`           ${pc.dim(`源头: ${entry.source}`)}`);
-      console.log(`           ${pc.dim(`类型: ${entry.sourceType}`)}`);
-      console.log(`           ${pc.dim(`安装时间: ${entry.installedAt}`)}`);
-      console.log(`           ${pc.dim(`更新时间: ${entry.updatedAt}`)}`);
+      console.log(`           ${pc.dim(`Source: ${entry.source}`)}`);
+      console.log(`           ${pc.dim(`Type: ${entry.sourceType}`)}`);
+      console.log(`           ${pc.dim(`Installed: ${entry.installedAt}`)}`);
+      console.log(`           ${pc.dim(`Updated: ${entry.updatedAt}`)}`);
       if (entry.skillFolderHash) {
         console.log(
-          `           ${pc.dim(`版本指纹: ${entry.skillFolderHash.substring(0, 16)}...`)}`,
+          `           ${pc.dim(`Version: ${entry.skillFolderHash.substring(0, 16)}...`)}`,
         );
       }
     }

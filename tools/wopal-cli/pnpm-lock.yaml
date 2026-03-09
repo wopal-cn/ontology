@@ -29,6 +29,9 @@ importers:
       simple-git:
         specifier: ^3.32.3
         version: 3.32.3
+      strip-json-comments:
+        specifier: ^5.0.3
+        version: 5.0.3
     devDependencies:
       '@types/fs-extra':
         specifier: ^11.0.4
@@ -610,6 +613,10 @@ packages:
     resolution: {integrity: sha512-uCC2VHvQRYu+lMh4My/sFNmF2klFymLX1wHJeXnbEJERpV/ZsVuonzerjfrGpIGF7LBVa1O7i9kjiWvJiFck8g==}
     engines: {node: '>=0.10.0'}
 
+  strip-json-comments@5.0.3:
+    resolution: {integrity: sha512-1tB5mhVo7U+ETBKNf92xT4hrQa3pm0MZ0PQvuDnWgAAGHDsfp4lPSpiS6psrSiet87wyGPh9ft6wmhOMQ0hDiw==}
+    engines: {node: '>=14.16'}
+
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
 
@@ -1181,6 +1188,8 @@ snapshots:
   std-env@3.10.0: {}
 
   strip-bom-string@1.0.0: {}
+
+  strip-json-comments@5.0.3: {}
 
   tinybench@2.9.0: {}
 

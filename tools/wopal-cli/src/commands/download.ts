@@ -13,6 +13,8 @@ import {
 import { writeMetadata, type SkillMetadata } from "../utils/metadata.js";
 import { fetchSkillFolderHash, getGitHubToken } from "../utils/skill-lock.js";
 import { Logger } from "../utils/logger.js";
+import { getConfig } from "../utils/config.js";
+import { buildHelpText } from "../utils/help-texts.js";
 
 let logger: Logger;
 
@@ -260,9 +262,7 @@ export function registerDownloadCommand(program: Command) {
         options: { force?: boolean; branch?: string; tag?: string },
       ) => {
         try {
-          const inboxPath =
-            process.env.SKILL_INBOX_DIR ||
-            join(homedir(), ".wopal", "skills", "INBOX");
+          const inboxPath = getConfig().getSkillInboxDir();
           logger?.log(`INBOX directory: ${inboxPath}`);
           logger?.log(`Parsing sources: ${sources.join(", ")}`);
 

@@ -1,7 +1,7 @@
 /**
  * 锁文件类型定义（统一 v3 格式）
  *
- * 项目级锁文件（./skills-lock.json）和全局级锁文件（~/.agents/.skill-lock.json）
+ * 项目级锁文件（./agents/.skill-lock.json）和全局级锁文件（~/.agents/.skill-lock.json）
  * 都使用相同的 v3 格式，便于维护和迁移。
  */
 
@@ -50,7 +50,7 @@ export interface SkillLockFile {
 
 /**
  * 项目锁文件（v3 格式）
- * 存储在 ./skills-lock.json
+ * 存储在 ./agents/.skill-lock.json
  *
  * 注意：与全局锁格式完全一致，唯一差异是文件位置和 dismissed 字段（项目锁不需要）
  */

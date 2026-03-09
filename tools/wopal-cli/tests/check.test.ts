@@ -11,7 +11,10 @@ describe("Check Command - Unit Tests", () => {
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "wopal-cli-test-"));
-    lockManager = new LockManager(tempDir);
+    const mockConfigService = {
+      getProjectLockPath: () => path.join(tempDir, ".wopal", ".skill-lock.json"),
+    };
+    lockManager = new LockManager(mockConfigService as any);
   });
 
   afterEach(async () => {
@@ -150,19 +153,21 @@ describe("Check Command - Unit Tests", () => {
     it("should limit concurrent checks to 5", async () => {
       const pLimit = await import("p-limit");
       const limit = pLimit.default(5);
-      
+
       let concurrentCount = 0;
       let maxConcurrent = 0;
-      
-      const tasks = Array(10).fill(null).map(() => 
-        limit(async () => {
-          concurrentCount++;
-          maxConcurrent = Math.max(maxConcurrent, concurrentCount);
-          await new Promise(resolve => setTimeout(resolve, 50));
-          concurrentCount--;
-        })
-      );
-      
+
+      const tasks = Array(10)
+        .fill(null)
+        .map(() =>
+          limit(async () => {
+            concurrentCount++;
+            maxConcurrent = Math.max(maxConcurrent, concurrentCount);
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            concurrentCount--;
+          }),
+        );
+
       await Promise.all(tasks);
       expect(maxConcurrent).toBeLessThanOrEqual(5);
     });
@@ -170,19 +175,19 @@ describe("Check Command - Unit Tests", () => {
     it("should implement exponential backoff for retries", () => {
       const maxRetries = 3;
       const delays: number[] = [];
-      
+
       for (let attempt = 1; attempt < maxRetries; attempt++) {
         const delay = Math.pow(2, attempt - 1) * 1000;
         delays.push(delay);
       }
-      
+
       expect(delays).toEqual([1000, 2000]);
     });
 
     it("should have correct timeout values", () => {
       const singleRequestTimeout = 10000;
       const totalCheckTimeout = 5 * 60 * 1000;
-      
+
       expect(singleRequestTimeout).toBe(10000);
       expect(totalCheckTimeout).toBe(300000);
     });
@@ -190,18 +195,18 @@ describe("Check Command - Unit Tests", () => {
     it("should handle partial failures in concurrent checks", async () => {
       const pLimit = await import("p-limit");
       const limit = pLimit.default(5);
-      
+
       const tasks = [
         limit(() => Promise.resolve("success")),
         limit(() => Promise.reject(new Error("failed"))),
         limit(() => Promise.resolve("success")),
       ];
-      
+
       const results = await Promise.allSettled(tasks);
-      
-      const fulfilled = results.filter(r => r.status === "fulfilled");
-      const rejected = results.filter(r => r.status === "rejected");
-      
+
+      const fulfilled = results.filter((r) => r.status === "fulfilled");
+      const rejected = results.filter((r) => r.status === "rejected");
+
       expect(fulfilled).toHaveLength(2);
       expect(rejected).toHaveLength(1);
     });
@@ -221,6 +226,7 @@ describe("Check Command - Unit Tests", () => {
 
     it("should handle corrupted lock file gracefully", async () => {
       const lockPath = lockManager.getProjectLockPath();
+      await fs.ensureDir(path.dirname(lockPath));
       await fs.writeFile(lockPath, "invalid json", "utf-8");
 
       const lock = await lockManager.readProjectLock();

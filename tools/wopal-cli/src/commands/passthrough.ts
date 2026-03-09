@@ -29,13 +29,13 @@ async function passthroughFind(query: string): Promise<void> {
   });
 
   if (result.error) {
-    console.error(pc.red("Skills CLI 执行失败"));
+    console.error(pc.red("Skills CLI execution failed"));
     logger?.error(`Skills CLI error: ${result.error}`);
     process.exit(1);
   }
 
   if (result.status !== 0) {
-    console.error(pc.red("Skills CLI 执行失败"));
+    console.error(pc.red("Skills CLI command failed"));
     process.exit(result.status || 1);
   }
 }

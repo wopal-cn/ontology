@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
+import { resetConfigForTest } from "../src/utils/config.js";
 import { LockManager } from "../src/utils/lock-manager.js";
 import type { SkillLockEntry } from "../src/types/lock.js";
 
@@ -14,16 +15,33 @@ describe("Check Command Integration Tests", () => {
   let lockManager: LockManager;
 
   beforeEach(async () => {
+    resetConfigForTest();
     tempDir = await fs.mkdtemp(
       path.join(os.tmpdir(), "wopal-cli-integration-"),
     );
     projectDir = path.join(tempDir, "project");
     await fs.ensureDir(projectDir);
-    lockManager = new LockManager(projectDir);
+
+    const iocDir = path.join(tempDir, "ioc");
+    const inboxDir = path.join(tempDir, "inbox");
+    await fs.ensureDir(iocDir);
+    await fs.ensureDir(inboxDir);
+
+    process.env.WOPAL_SKILLS_IOCDB_DIR = iocDir;
+    process.env.WOPAL_SKILLS_INBOX_DIR = inboxDir;
+    process.env.WOPAL_SETTINGS_PATH = path.join(tempDir, "settings.jsonc");
+    const mockConfigService = {
+      getProjectLockPath: () => path.join(projectDir, ".wopal", ".skill-lock.json"),
+    };
+    lockManager = new LockManager(mockConfigService as any);
   });
 
   afterEach(async () => {
+    resetConfigForTest();
     await fs.remove(tempDir);
+    delete process.env.WOPAL_SKILLS_IOCDB_DIR;
+    delete process.env.WOPAL_SKILLS_INBOX_DIR;
+    delete process.env.WOPAL_SETTINGS_PATH;
   });
 
   it("should check remote GitHub skill", async () => {
