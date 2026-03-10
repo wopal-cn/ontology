@@ -106,10 +106,10 @@ validate_target_dir() {
 build_image() {
     if [ "$USE_CN_MIRROR" = true ]; then
         echo -e "${BLUE}Building ${IMAGE_NAME} with Dockerfile.cn (CN Mirror: true)...${NC}"
-        docker build -f "$SCRIPT_DIR/Dockerfile.cn" --build-arg OPENCODE_BUILD_TIME=$(date +%s) -t "$IMAGE_NAME" "$SCRIPT_DIR"
+        docker build -f "$SCRIPT_DIR/Dockerfile.cn" --build-arg OPENCODE_BUILD_TIME=$(date +%Y%m%d) -t "$IMAGE_NAME" "$SCRIPT_DIR"
     else
         echo -e "${BLUE}Building ${IMAGE_NAME} with Dockerfile (CN Mirror: false)...${NC}"
-        docker build -f "$SCRIPT_DIR/Dockerfile" --build-arg OPENCODE_BUILD_TIME=$(date +%s) -t "$IMAGE_NAME" "$SCRIPT_DIR"
+        docker build -f "$SCRIPT_DIR/Dockerfile" --build-arg OPENCODE_BUILD_TIME=$(date +%Y%m%d) -t "$IMAGE_NAME" "$SCRIPT_DIR"
     fi
 }
 
