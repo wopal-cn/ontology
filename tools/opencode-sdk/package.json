@@ -1,0 +1,27 @@
+{
+  "name": "opencode-sdk",
+  "version": "1.0.0",
+  "description": "OpenCode SDK and CLI",
+  "type": "module",
+  "main": "index.ts",
+  "types": "index.ts",
+  "bin": {
+    "oc-cli": "./bin.js"
+  },
+  "scripts": {
+    "cli": "npx tsx cli/index.ts"
+  },
+  "dependencies": {
+    "axios": "^1.13.6",
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.3",
+    "commander": "^12.0.0",
+    "eventsource": "^4.1.0",
+    "ora": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

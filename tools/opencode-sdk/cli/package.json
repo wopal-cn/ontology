@@ -1,0 +1,25 @@
+{
+  "name": "opencode-cli",
+  "version": "1.0.0",
+  "description": "CLI tool for OpenCode SDK",
+  "type": "module",
+  "bin": {
+    "opencode": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.3",
+    "ora": "^8.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "@types/node": "^20.10.0",
+    "@types/cli-table3": "^0.1.0",
+    "tsx": "^4.7.0"
+  }
+}
