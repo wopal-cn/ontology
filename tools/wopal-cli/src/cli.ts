@@ -6,6 +6,8 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { loadEnv } from "./utils/env-loader.js";
 import { Logger } from "./utils/logger.js";
+import { checkInitialization } from "./utils/init-check.js";
+import { handleCommandError } from "./utils/error-utils.js";
 import {
   registerInboxCommand,
   setLogger as setInboxLogger,
@@ -57,7 +59,7 @@ program
   .version(getVersion(), "-v, --version", "Show version number")
   .option("-d, --debug", "Enable debug mode")
   .addHelpCommand(false)
-  .hook("preAction", (thisCommand) => {
+  .hook("preAction", (thisCommand, actionCommand) => {
     const options = thisCommand.opts();
     const debug = options.debug || false;
 
@@ -77,6 +79,16 @@ program
     setInitLogger(logger);
 
     logger.log("Debug mode enabled");
+
+    // Unified initialization check (skip init command)
+    const commandName = actionCommand.name();
+    if (commandName !== "init") {
+      try {
+        checkInitialization();
+      } catch (error) {
+        handleCommandError(error);
+      }
+    }
   });
 
 const skillsCommand = program

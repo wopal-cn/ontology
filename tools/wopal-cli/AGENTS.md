@@ -1,5 +1,9 @@
 # wopal-cli - Agent 项目规范
 
+<CRITICAL_RULE>
+- 此文档规范为 ai agents 提供项目参考,当项目设计和代码发生变更后,agents 必须及时更新本文档并保持精简有效.
+<CRITICAL_RULE>
+
 ## 项目概览
 
 wopal-cli 是 Wopal 工作空间的技能管理命令行工具，实现 INBOX 隔离工作流（下载 → 扫描 → 评估 → 安装），为 AI Agent 技能管理提供安全保障。
@@ -57,8 +61,9 @@ wopal find [query]                            # 透传搜索
 1. **禁用 help 命令**：主命令和所有子命令必须添加 `.addHelpCommand(false)`，只保留 `--help` / `-h` 参数
 2. **命令注册**：函数命名 `register<Command>Command`，Logger 注入函数命名 `setLogger`
 3. **Logger 注入**：在 `cli.ts` 的 `preAction` hook 中统一注入到各模块
-4. **错误处理**：统一使用 `src/utils/error-utils.ts` 的 `handleError`
+4. **错误处理**：统一使用 `src/utils/error-utils.ts` 的 `handleCommandError`
 5. **环境变量加载**：`cli.ts` 在 `preAction` hook 中调用 `loadEnv(debug)`，优先级：`./.env` > `~/.wopal/.env`
+6. **初始化检查**：所有命令（除 `init`）在 `cli.ts` 的 `preAction` hook 中统一调用 `checkInitialization()`，验证 workspace 和 IOC 数据库
 
 ### 代码规范
 
@@ -81,7 +86,6 @@ wopal find [query]                            # 透传搜索
 | `WOPAL_SKILLS_IOCDB_DIR`    | `~/.wopal/skills/iocdb` |
 | `WOPAL_SKILLS_DIR`          | `.wopal/skills`         |
 | `GITHUB_TOKEN` / `GH_TOKEN` | -（可选）               |
-
 
 ## 关键模块
 

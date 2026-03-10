@@ -30,8 +30,15 @@ describe("Check Command Integration Tests", () => {
     process.env.WOPAL_SKILLS_IOCDB_DIR = iocDir;
     process.env.WOPAL_SKILLS_INBOX_DIR = inboxDir;
     process.env.WOPAL_SETTINGS_PATH = path.join(tempDir, "settings.jsonc");
+
+    // Initialize workspace for tests
+    execSync(`node ${CLI_PATH} init test-workspace ${projectDir}`, {
+      encoding: "utf-8",
+    });
+
     const mockConfigService = {
-      getProjectLockPath: () => path.join(projectDir, ".wopal", ".skill-lock.json"),
+      getProjectLockPath: () =>
+        path.join(projectDir, ".wopal", ".skill-lock.json"),
     };
     lockManager = new LockManager(mockConfigService as any);
   });

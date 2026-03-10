@@ -20,18 +20,28 @@ describe("Install Command Integration Tests", () => {
     );
     inboxDir = path.join(tempDir, "INBOX");
     projectDir = path.join(tempDir, "project");
+    const iocDir = path.join(tempDir, "ioc");
 
     await fs.ensureDir(inboxDir);
     await fs.ensureDir(projectDir);
+    await fs.ensureDir(iocDir);
 
     process.env.WOPAL_SKILLS_INBOX_DIR = inboxDir;
+    process.env.WOPAL_SKILLS_IOCDB_DIR = iocDir;
     process.env.WOPAL_SETTINGS_PATH = path.join(tempDir, "settings.jsonc");
+
+    // Initialize workspace for tests
+    execSync(`node ${CLI_PATH} init test-workspace ${projectDir}`, {
+      encoding: "utf-8",
+      env: { ...process.env },
+    });
   });
 
   afterEach(async () => {
     resetConfigForTest();
     await fs.remove(tempDir);
     delete process.env.WOPAL_SKILLS_INBOX_DIR;
+    delete process.env.WOPAL_SKILLS_IOCDB_DIR;
     delete process.env.WOPAL_SETTINGS_PATH;
   });
 

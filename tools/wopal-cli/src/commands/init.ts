@@ -68,11 +68,16 @@ export function registerInitCommand(program: Command): void {
           writeFileSync(spaceEnv, "", "utf-8");
         }
 
-        console.log(
-          pc.green(
-            `✓ Successfully initialized workspace [${finalName}] in ${expandedDir}`,
-          ),
-        );
+        console.log(pc.green(`✓ Initialized workspace [${finalName}]`));
+        console.log();
+        console.log(pc.cyan("Configuration:"));
+        console.log(pc.gray(`  Space: ${expandedDir}`));
+        console.log(pc.gray(`  Config: ~/.wopal/config/settings.jsonc`));
+        console.log(pc.gray(`  IOC DB: ~/.wopal/skills/iocdb (default)`));
+        console.log();
+        console.log(pc.cyan("Next steps:"));
+        console.log(pc.gray("  Initialize IOC database (required):"));
+        console.log(pc.gray("    git submodule update --init"));
       } catch (error) {
         let errMessage = error instanceof Error ? error.message : String(error);
         console.error(pc.red(`Error: ${errMessage}`));

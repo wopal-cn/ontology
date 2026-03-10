@@ -46,25 +46,14 @@ export function loadIOCFile(filePath: string): string[] {
 
 export function loadIOCData(): IOCData {
   if (cachedIOCData) {
-    logger.debug("使用缓存的 IOC 数据");
+    logger.debug("Using cached IOC data");
     return cachedIOCData;
   }
 
   const iocPath = getIOCPath();
 
-  if (!fs.existsSync(iocPath)) {
-    logger.error("IOC 数据库未初始化");
-    logger.error("建议运行: git submodule update --init");
-    return {
-      c2IPs: [],
-      maliciousDomains: [],
-      maliciousPublishers: [],
-      maliciousSkillPatterns: [],
-      fileHashes: [],
-    };
-  }
-
-  logger.info("加载 IOC 数据库...", { path: iocPath });
+  // Path already validated by init-check
+  logger.info("Loading IOC database...", { path: iocPath });
 
   const iocData: IOCData = {
     c2IPs: loadIOCFile(path.join(iocPath, IOC_FILES.c2IPs)),
@@ -84,7 +73,7 @@ export function loadIOCData(): IOCData {
     (sum, arr) => sum + arr.length,
     0,
   );
-  logger.info(`IOC 数据库加载完成: ${totalRecords} 条记录`);
+  logger.info(`IOC database loaded: ${totalRecords} records`);
 
   cachedIOCData = iocData;
   return iocData;

@@ -26,7 +26,9 @@ export class ConfigService {
 
   constructor(debug: boolean = false) {
     this.logger = new Logger(debug);
-    this.settingsPath = process.env.WOPAL_SETTINGS_PATH || join(homedir(), ".wopal", "config", "settings.jsonc");
+    this.settingsPath =
+      process.env.WOPAL_SETTINGS_PATH ||
+      join(homedir(), ".wopal", "config", "settings.jsonc");
     this.config = this.loadConfig();
 
     // Check for deprecated configuration items and environment variables
@@ -72,29 +74,33 @@ export class ConfigService {
 
   private checkDeprecatedConfig(): void {
     const deprecatedEnvVars = [
-      { old: 'WOPAL_SKILL_INBOX_DIR', new: 'WOPAL_SKILLS_INBOX_DIR' },
-      { old: 'WOPAL_SKILL_IOCDB_DIR', new: 'WOPAL_SKILLS_IOCDB_DIR' },
+      { old: "WOPAL_SKILL_INBOX_DIR", new: "WOPAL_SKILLS_INBOX_DIR" },
+      { old: "WOPAL_SKILL_IOCDB_DIR", new: "WOPAL_SKILLS_IOCDB_DIR" },
     ];
 
     for (const { old, new: newVar } of deprecatedEnvVars) {
       if (process.env[old]) {
         console.warn(
-          pc.yellow(`Warning: Environment variable ${old} is deprecated. Please use ${newVar} instead.`)
+          pc.yellow(
+            `Warning: Environment variable ${old} is deprecated. Please use ${newVar} instead.`,
+          ),
         );
       }
     }
 
     const deprecatedConfigKeys = [
-      { old: 'skillInboxDir', new: 'skillsInboxDir' },
-      { old: 'skillIocdbDir', new: 'skillsIocdbDir' },
-      { old: 'skillsInstallDir', new: 'skillsDir' },
+      { old: "skillInboxDir", new: "skillsInboxDir" },
+      { old: "skillIocdbDir", new: "skillsIocdbDir" },
+      { old: "skillsInstallDir", new: "skillsDir" },
     ];
 
     for (const space of Object.values(this.config.spaces)) {
       for (const { old, new: newKey } of deprecatedConfigKeys) {
         if (space[old] !== undefined) {
           console.warn(
-            pc.yellow(`Warning: Configuration key "${old}" is deprecated. Please use "${newKey}" instead in your settings.jsonc.`)
+            pc.yellow(
+              `Warning: Configuration key "${old}" is deprecated. Please use "${newKey}" instead in your settings.jsonc.`,
+            ),
           );
         }
       }
@@ -171,9 +177,6 @@ export class ConfigService {
 
     this.config.spaces[name] = {
       path: expandedPath,
-      skillsInboxDir: process.env.WOPAL_SKILLS_INBOX_DIR || ".wopal/skills/INBOX",
-      skillsIocdbDir: process.env.WOPAL_SKILLS_IOCDB_DIR || ".wopal/skills/iocdb",
-      skillsDir: process.env.WOPAL_SKILLS_DIR || ".wopal/skills",
     };
 
     this.config.activeSpace = name;
@@ -266,7 +269,7 @@ export class ConfigService {
   }
 
   public getProjectLockPath(): string {
-    return join(this.getSkillsInstallDir(), '.skill-lock.json');
+    return join(this.getSkillsInstallDir(), ".skill-lock.json");
   }
 }
 
