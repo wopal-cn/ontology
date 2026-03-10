@@ -5,14 +5,14 @@ set -e
 # 核心作用: 将宿主体内指定的一个子项目绝对隔离地挂载进安全容器，阻止 Agent 访问全局空间。
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-IMAGE_NAME="wopal-agent-sandbox:latest"
-USE_CN_MIRROR=false
+IMAGE_NAME="wopal-agent-sandbox-cn:latest"
+USE_CN_MIRROR=true
 
-# 检查是否传入了 --cn 标志
+# 检查是否传入了 --no-cn 标志来显式停用加速
 for arg in "$@"; do
-    if [ "$arg" == "--cn" ]; then
-        IMAGE_NAME="wopal-agent-sandbox-cn:latest"
-        USE_CN_MIRROR=true
+    if [ "$arg" == "--no-cn" ]; then
+        IMAGE_NAME="wopal-agent-sandbox:latest"
+        USE_CN_MIRROR=false
         break
     fi
 done
@@ -26,8 +26,8 @@ Wopal Agent Sandbox CLI
 
 命令选项:
     run <子项目路径> [被执行指令]  将指定的项目挂载至安全沙箱中执行 OpenCode 或其余指定命令
-    build [--cn]      构建 Wopal Agent 沙箱专用的 Docker 运行镜像，--cn 参数开启国内镜像加速源
-    auth [--cn]       快速进入沙箱进行 OpenCode 登录验证并保存授权
+    build [--no-cn]   构建 Wopal Agent 沙箱专用的 Docker 运行镜像，当前默认开启国内加速源，使用 --no-cn 停用
+    auth [--no-cn]    快速进入沙箱进行 OpenCode 登录验证并保存授权
     clean             删除机器上现有的沙箱 Docker 镜像
     help              显示这条帮助信息
 
@@ -156,9 +156,9 @@ run_sandbox() {
     local abs_target
     local args=()
     
-    # 过滤掉 --cn 参数，不传递给容器内执行命令
+    # 过滤掉 --cn 参数与新的 --no-cn 参数，不传递给容器内执行命令
     for arg in "$@"; do
-        if [ "$arg" != "--cn" ]; then
+        if [ "$arg" != "--cn" ] && [ "$arg" != "--no-cn" ]; then
             args+=("$arg")
         fi
     done
