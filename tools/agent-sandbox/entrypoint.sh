@@ -37,15 +37,13 @@ if [ "$TARGET_UID" != "$CURRENT_UID" ] || [ "$TARGET_GID" != "$CURRENT_GID" ]; t
         usermod -u "$TARGET_UID" coder 2>/dev/null || true
     fi
 
-    # 递归修正家目录下各种核心缓存文件夹的作用权，让已经换脸的 coder 重掌这些文件的权力
+    # 递归修正家目录下高频覆写的核心缓存文件夹的作用权，让已经换脸的 coder 重掌这些文件的权力
     chown "$TARGET_UID:$TARGET_GID" /home/coder 2>/dev/null || true
     chown -R "$TARGET_UID:$TARGET_GID" /home/coder/.config 2>/dev/null || true
     chown -R "$TARGET_UID:$TARGET_GID" /home/coder/.local 2>/dev/null || true
     chown -R "$TARGET_UID:$TARGET_GID" /home/coder/.cache 2>/dev/null || true
-    chown -R "$TARGET_UID:$TARGET_GID" /home/coder/.npm 2>/dev/null || true
-    chown -R "$TARGET_UID:$TARGET_GID" /home/coder/go 2>/dev/null || true
-    chown -R "$TARGET_UID:$TARGET_GID" /home/coder/.bun 2>/dev/null || true
-    chown "$TARGET_UID:$TARGET_GID" /home/coder/.nvm 2>/dev/null || true
+    # 彻底移除对 .nvm, go, .bun, .cargo, .rustup, .flutter-sdk 等巨大 SDK 与静态文件包的无脑 chown -R。
+    # 因为这些文件哪怕属于 1000:1000 （即使未对准），由于其带有 +r 权限，也能在沙箱内被正常读取运行，并极大减缓存写复制风暴。
 fi
 
 # 特别注意: 绝对不接触和修改 /workspace 挂载点下的权限。

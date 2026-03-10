@@ -1,9 +1,15 @@
-# 使用 Debian slim 作为轻量级的 Linux 基础镜像
+# 使用 Debian slim 作为轻量级的 Linux 国内加速基础镜像
 FROM debian:bookworm-slim
 
 # 定义可配置的工具版本参数
 ARG NVM_VERSION=v0.40.1
 ARG GO_VERSION=1.23.4
+
+# 配置 APT 镜像 (Aliyun)
+RUN echo "deb http://mirrors.aliyun.com/debian bookworm main contrib non-free" > /etc/apt/sources.list && \
+    echo "deb http://mirrors.aliyun.com/debian bookworm-updates main contrib non-free" >> /etc/apt/sources.list && \
+    echo "deb http://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free" >> /etc/apt/sources.list && \
+    rm -rf /etc/apt/sources.list.d/*
 
 # 安装基础依赖包和 AI 智能体编码时常用的系统工具
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -21,39 +27,49 @@ RUN useradd -m -s /bin/bash -u 1000 coder && \
 USER coder
 WORKDIR /home/coder
 
-# 集中声明所有的环境变量，减少层次数和提高复用
+# 注入全部国内全链路镜像加速变量
 ENV NVM_DIR="/home/coder/.nvm" \
     BUN_INSTALL="/home/coder/.bun" \
     RUSTUP_HOME="/home/coder/.rustup" \
     CARGO_HOME="/home/coder/.cargo" \
-    GOPATH="/home/coder/go"
+    GOPATH="/home/coder/go" \
+    NVM_NODEJS_ORG_MIRROR="https://npmmirror.com/mirrors/node/" \
+    UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple" \
+    GOPROXY="https://goproxy.cn,direct" \
+    RUSTUP_DIST_SERVER="https://rsproxy.cn" \
+    RUSTUP_UPDATE_ROOT="https://rsproxy.cn/rustup" \
+    PUB_HOSTED_URL="https://pub.flutter-io.cn" \
+    FLUTTER_STORAGE_BASE_URL="https://storage.flutter-io.cn"
 ENV PATH="/home/coder/.flutter-sdk/bin:$CARGO_HOME/bin:/usr/local/go/bin:$GOPATH/bin:$BUN_INSTALL/bin:$NVM_DIR/default:/home/coder/.local/bin:$PATH"
 
-# 安装 Node.js (NVM), 原生 NPM 全局包
+# 安装 Node.js (NVM) 和 ast-grep (底层 npm 修改为国内仓库指向)
 RUN curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" | bash && \
     bash -c "source $NVM_DIR/nvm.sh && \
     nvm install --lts && \
     nvm alias default node && \
     nvm use default && \
     ln -sf \$(dirname \$(which node)) $NVM_DIR/default && \
+    npm config set registry https://registry.npmmirror.com/ && \
     npm install -g @ast-grep/cli opencode-ai@latest"
 
 # 安装 uv 和 Bun
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     curl -fsSL https://bun.sh/install | bash
 
-# 安装 Go 语言
+# 安装 Go 语言（使用阿里云极速节点）
 USER root
-RUN curl -OL https://go.dev/dl/go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz && \
+RUN curl -OL https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz && \
     tar -C /usr/local -xzf go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz && \
     rm go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz
 USER coder
 
-# 安装 Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
+# 安装 Rust 与全局 Cargo 替换源 (rsproxy.cn)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://rsproxy.cn/rustup-init.sh | sh -s -- -y --no-modify-path && \
+    mkdir -p $CARGO_HOME && \
+    echo '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n[source.rsproxy-sparse]\nregistry = "sparse+https://rsproxy.cn/index/"\n[net]\ngit-fetch-with-cli = true' > $CARGO_HOME/config.toml
 
-# 安装 Flutter
-RUN git clone https://github.com/flutter/flutter.git -b stable /home/coder/.flutter-sdk
+# 安装 Flutter (替换为极速的 Gitee Mirror 克隆)
+RUN git clone https://gitee.com/mirrors/Flutter.git -b stable /home/coder/.flutter-sdk
 
 # 针对基础环境目录进行权限平权
 USER root

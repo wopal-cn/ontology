@@ -6,6 +6,16 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 IMAGE_NAME="wopal-agent-sandbox:latest"
+USE_CN_MIRROR=false
+
+# 检查是否传入了 --cn 标志
+for arg in "$@"; do
+    if [ "$arg" == "--cn" ]; then
+        IMAGE_NAME="wopal-agent-sandbox-cn:latest"
+        USE_CN_MIRROR=true
+        break
+    fi
+done
 
 # 打印帮助信息函数
 show_help() {
@@ -16,8 +26,8 @@ Wopal Agent Sandbox CLI
 
 命令选项:
     run <子项目路径> [被执行指令]  将指定的项目挂载至安全沙箱中执行 OpenCode 或其余指定命令
-    build             构建 Wopal Agent 沙箱专用的 Docker 运行镜像
-    auth              快速进入沙箱进行 OpenCode 登录验证并保存授权
+    build [--cn]      构建 Wopal Agent 沙箱专用的 Docker 运行镜像，--cn 参数开启国内镜像加速源
+    auth [--cn]       快速进入沙箱进行 OpenCode 登录验证并保存授权
     clean             删除机器上现有的沙箱 Docker 镜像
     help              显示这条帮助信息
 
@@ -29,7 +39,7 @@ Wopal Agent Sandbox CLI
 
 调用示例:
     $0 run projects/python/flex-scheduler
-    $0 run .worktrees/cli-feature-sandbox
+    $0 run --cn .worktrees/cli-feature-sandbox
 EOF
 }
 
@@ -94,8 +104,13 @@ validate_target_dir() {
 
 # 执行镜像构建指令
 build_image() {
-    echo "Building $IMAGE_NAME..."
-    docker build -t "$IMAGE_NAME" "$SCRIPT_DIR"
+    if [ "$USE_CN_MIRROR" = true ]; then
+        echo -e "${BLUE}Building ${IMAGE_NAME} with Dockerfile.cn (CN Mirror: true)...${NC}"
+        docker build -f Dockerfile.cn -t "$IMAGE_NAME" "$SCRIPT_DIR"
+    else
+        echo -e "${BLUE}Building ${IMAGE_NAME} with Dockerfile (CN Mirror: false)...${NC}"
+        docker build -f Dockerfile -t "$IMAGE_NAME" "$SCRIPT_DIR"
+    fi
 }
 
 # 摘除删除镜像指令
@@ -139,6 +154,15 @@ run_sandbox() {
     shift  # 移出第一项，留下的参数全是被注入的后缀执行令
     
     local abs_target
+    local args=()
+    
+    # 过滤掉 --cn 参数，不传递给容器内执行命令
+    for arg in "$@"; do
+        if [ "$arg" != "--cn" ]; then
+            args+=("$arg")
+        fi
+    done
+    
     # 如果路径检查失败（返回非 0 报错），则停止执行直接抛错并退出栈
     if ! abs_target="$(validate_target_dir "$target_dir")"; then
         echo "$abs_target" >&2
@@ -161,12 +185,12 @@ run_sandbox() {
     
     # 动态指令拦截挂载：使得既可以执行命令式调用，也可以直接指定调用特定入口，还可以带走其余传参。
     local -a container_cmd=()
-    if [ $# -eq 0 ]; then
+    if [ ${#args[@]} -eq 0 ]; then
         container_cmd=(opencode)
-    elif [[ "$1" == -* ]]; then
-        container_cmd=(opencode "$@")
+    elif [[ "${args[0]}" == -* ]]; then
+        container_cmd=(opencode "${args[@]}")
     else
-        container_cmd=("$@")
+        container_cmd=("${args[@]}")
     fi
 
     # 结界成型
@@ -184,6 +208,7 @@ run_sandbox() {
         -v "$abs_target:/workspace:rw" \
         -v "$HOME/.local/share/opencode:/home/coder/.local/share/opencode:rw" \
         -v "$HOME/.config/opencode:/home/coder/.config/opencode:ro" \
+        -v "$HOME/.gitconfig:/home/coder/.gitconfig:ro" \
         -v "/var/run/docker.sock:/var/run/docker.sock:rw" \
         "$IMAGE_NAME" "${container_cmd[@]}"
 }
@@ -194,7 +219,15 @@ main() {
     case "$cmd" in
         run)
             shift
-            run_sandbox "$@"
+            # 先执行一次过滤 --cn
+            local run_args=()
+            for arg in "$@"; do
+                if [ "$arg" == "--cn" ]; then
+                    continue
+                fi
+                run_args+=("$arg")
+            done
+            run_sandbox "${run_args[@]}"
             ;;
         build)
             build_image
@@ -204,6 +237,11 @@ main() {
             ;;
         clean)
             clean_image
+            # 如果清理基础镜像也顺带清一清国内加速镜像
+            if docker image inspect "wopal-agent-sandbox-cn:latest" >/dev/null 2>&1; then
+                echo "Removing Docker image 'wopal-agent-sandbox-cn:latest'..."
+                docker rmi "wopal-agent-sandbox-cn:latest"
+            fi
             ;;
         help|--help|-h|"")
             show_help
