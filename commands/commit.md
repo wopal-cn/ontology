@@ -43,9 +43,10 @@ git diff
 
 **全面分析**：
 1. 查看所有变更文件列表
-2. 读取变更内容，理解变更意图
-3. 按类型分组（docs/feat/fix/refactor/test/chore）
-4. 为每组生成 commit message
+2. 务必保证所有变更都已纳入
+3. 读取变更内容，理解变更意图
+4. 按类型分组（docs/feat/fix/refactor/test/chore）
+5. 为每组生成 commit message
 
 ### 步骤3：生成提交计划
 
