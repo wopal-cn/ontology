@@ -88,49 +88,80 @@ git commit -m "type2: description2"
 
 ## 场景B：无参数（自动扫描）
 
-### 步骤1：扫描变更
+### 步骤1：获取所有仓库列表
 
 ```bash
 git rev-parse --show-superproject-working-tree 2>/dev/null
-git status --short
 ```
 
 **判断逻辑**：
-- 在子项目中 → 仅处理子项目提交
-- 在主仓库 → 检查 dirty 子项目并优先处理
+- 在子项目中 → 仅处理当前子项目
+- 在工作空间根目录 → 扫描所有子项目和工作空间
 
-### 步骤2：子项目提交（如果有变更）
+**获取子项目列表**：
+1. 读取 `.workspace.md` 获取所有子项目路径（`projects/` 下的项目）
+2. 或使用 `git submodule status` 获取子模块列表
 
-如果 `git status` 显示子项目有 `modified content`，进入子项目：
+### 步骤2：扫描所有子项目变更
+
+**主动遍历每个子项目**，不要依赖主仓库的 `modified content` 提示：
 
 ```bash
-cd <submodule-path>
+for project in projects/*/; do
+  cd "$project"
+  git status --short
+  git diff
+  cd - > /dev/null
+done
+```
+
+**收集变更信息**：
+1. 对每个子项目执行 `git status --short`
+2. 如有变更，执行 `git diff` 获取详细内容
+3. 记录子项目名称和变更文件列表
+
+### 步骤3：扫描工作空间变更
+
+```bash
 git status --short
 git diff
 ```
 
-**全面分析并生成提交计划**：
-1. 按类型分组所有变更
-2. 生成完整提交计划
-3. 展示给用户一次性确认
-4. 确认后依次执行所有提交
+### 步骤4：生成统一提交计划
 
-对每个有变更的子项目重复此流程。
+**将所有变更汇总为一个计划**：
 
-### 步骤3：工作空间提交（如果有变更）
+```
+📋 提交计划（共 N 个仓库，M 个提交）
 
-```bash
-git status --short
-git diff
+### 子项目 1: <project-name>
+
+1. [type]: description
+   - file1.md
+
+### 子项目 2: <project-name>
+
+1. [type]: description
+   - file2.ts
+
+### 工作空间
+
+1. [type]: description
+   - file3.md
+
+...
 ```
 
-**全面分析并生成提交计划**：
-1. 按类型分组所有变更
-2. 生成完整提交计划
-3. 展示给用户一次性确认
-4. 确认后依次执行所有提交
+⚠️ **一次性确认**：展示所有仓库的完整提交计划，等待用户确认（yes/no）
 
-**提交完成后**：提醒用户使用 `/pin-submodule` 更新主仓库指针
+### 步骤5：批量执行提交
+
+用户确认后，**按顺序执行**：
+
+1. **先提交所有子项目**（按子项目顺序）
+2. **再提交工作空间**（如有变更）
+
+**完成后**：提醒用户使用 `/pin-submodule` 更新主仓库指针
 
 ---
 
