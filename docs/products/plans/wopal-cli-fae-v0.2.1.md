@@ -1,10 +1,12 @@
-# Plan: wopal fae CLI v0.1 Implementation
+# Plan: wopal fae CLI v0.2.1 Implementation
 
 > **Feature Type**: 新功能
 > **Complexity**: 高
 > **Affected Systems**: wopal-cli, agent-orchestration skill
-> **Core Dependencies**: dockerode, eventsource
+> **Core Dependencies**: eventsource
 > **Created**: 2026-03-11
+> **Updated**: 2026-03-12
+> **Prerequisite**: wopal-cli v0.2.0 架构升级完成
 
 ---
 
@@ -16,7 +18,7 @@ Wopal（运行在 OpenCode TUI 中的 AI Agent）无法直接调用 HTTP API 或
 
 ### 解决方案
 
-构建 `wopal fae` CLI 子命令，封装 OpenCode HTTP API，提供：
+基于 v0.2.0 延迟加载架构，构建 `wopal fae` CLI 子命令，封装 OpenCode HTTP API，提供：
 - 沙箱管理（启动/停止/列表/日志）
 - 会话管理（创建/列表/删除/状态/todo/diff）
 - 消息交互（同步发送/流式输出）
@@ -35,17 +37,24 @@ So that 我可以委派任务给 Fae 并获取执行结果
 
 ## 2. 上下文参考
 
+### 项目位置
+
+| 版本 | 目录 | 说明 |
+|------|------|------|
+| v0.1.0 | `tools/wopal-cli/` | 旧版本，保留备份 |
+| **v0.2.0+** | `wopal-cli/` | 新架构（延迟加载） |
+
 ### 现有代码参考
 
-#### tools/wopal-cli
+#### wopal-cli（新架构）
 
 | 文件 | 原因 |
 |------|------|
-| `src/commands/list.ts:30-68` | 命令注册模式、Logger 注入、JSON 输出模式 |
-| `src/commands/download.ts:250-384` | 复杂命令结构、Help Text 格式、错误处理 |
-| `src/cli.ts:62-92` | preAction hook、Logger 注入模式、初始化检查 |
-| `src/utils/error-utils.ts` | 统一错误处理 |
-| `src/utils/help-texts.ts` | Help Text 构建工具 |
+| `src/commands/skills/index.ts` | 子命令注册模式、延迟加载集成 |
+| `src/lib/logger.ts` | Logger 注入模式 |
+| `src/lib/error-utils.ts` | 统一错误处理 |
+| `src/lib/help-texts.ts` | Help Text 构建工具 |
+| `src/program/register-subclis.ts` | 子命令延迟加载注册 |
 
 ### 需要创建的新文件
 
@@ -69,8 +78,8 @@ So that 我可以委派任务给 Fae 并获取执行结果
 
 ### 参考文档
 
-| 文档 | 原因 |
-|------|------|
+| 文档 | 位置 | 说明 |
+|------|------|------|
 | [PRD-wopal-cli.md](../PRD-wopal-cli.md) | 产品需求和验收标准 |
 | [DESIGN-wopal-cli.md](../DESIGN-wopal-cli.md) | 命令设计和架构 |
 | [opencode-session-agent-messaging.md](../../research/opencode-session-agent-messaging.md) | Session/Message API 详解 |
@@ -87,6 +96,25 @@ So that 我可以委派任务给 Fae 并获取执行结果
 - Logger 注入函数：`setLogger`
 - 类型定义：PascalCase，在 `src/lib/fae/types.ts` 集中定义
 - 常量：UPPER_SNAKE_CASE
+
+### 延迟加载集成
+
+fae 子命令通过 `register-subclis.ts` 注册为延迟加载：
+
+```typescript
+// src/program/register-subclis.ts
+const entries: SubCliEntry[] = [
+  // ... existing entries
+  {
+    name: "fae",
+    description: "Sandbox agent management",
+    register: async (program) => {
+      const mod = await import("../commands/fae/index.js");
+      mod.registerFaeCli(program);
+    },
+  },
+];
+```
 
 ### 错误处理
 
@@ -146,8 +174,9 @@ So that 我可以委派任务给 Fae 并获取执行结果
 - 实现 progress.ts 进度计算
 - 实现 task.ts 命令
 
-### Phase 6: 集成测试
+### Phase 6: 集成
 
+- 更新 register-subclis.ts 添加 fae entry
 - 编写单元测试
 - 端到端工作流验证
 - 更新 AGENTS.md
@@ -245,7 +274,7 @@ export interface ApiResponse<T> {
 
 - [ ] **状态**: 待处理
 - **IMPLEMENT**: 本地 JSON 文件存储，管理 sandbox 和 task 元数据
-- **PATTERN**: 参考 `src/utils/lock-manager.ts` 的文件读写模式
+- **PATTERN**: 参考 `src/lib/lock-manager.ts` 的文件读写模式
 - **IMPORTS**: `fs-extra`, `path`, `os`
 - **GOTCHA**: 使用 `~/.wopal/fae/` 作为存储目录，确保目录存在
 - **VALIDATE**: `pnpm build`
@@ -315,7 +344,7 @@ export class FaeClientError extends Error {
 
 - [ ] **状态**: 待处理
 - **IMPLEMENT**: Docker 容器管理，使用 child_process 调用 docker CLI
-- **PATTERN**: 参考 `src/utils/git.ts` 的子进程调用模式
+- **PATTERN**: 参考 `src/lib/git.ts` 的子进程调用模式
 - **IMPORTS**: `child_process.spawn`, `Logger`, `types.ts`, `storage.ts`
 - **GOTCHA**:
   - 容器命名：`wopal-fae-{project-hash}`
@@ -340,7 +369,7 @@ export class FaeClientError extends Error {
 
 - [ ] **状态**: 待处理
 - **IMPLEMENT**: sandbox 子命令实现
-- **PATTERN**: 参考 `src/commands/list.ts:30-68` 的命令注册模式
+- **PATTERN**: 参考 `src/commands/skills/list.ts` 的命令注册模式
 - **IMPORTS**: `commander`, `picocolors`, `docker.ts`, `storage.ts`, `help-texts.ts`
 - **GOTCHA**: 所有输出支持 `--json` 选项
 - **VALIDATE**: `pnpm build && wopal fae sandbox --help`
@@ -363,7 +392,7 @@ wopal fae sandbox logs <sandbox-id> [--tail <n>]
 
 - [ ] **状态**: 待处理
 - **IMPLEMENT**: session 子命令实现
-- **PATTERN**: 参考 `src/commands/download.ts` 的复杂命令模式
+- **PATTERN**: 参考 `src/commands/skills/download.ts` 的复杂命令模式
 - **IMPORTS**: `commander`, `picocolors`, `client.ts`, `storage.ts`, `types.ts`
 - **GOTCHA**: `--sandbox` 选项用于多沙箱场景
 - **VALIDATE**: `pnpm build && wopal fae session --help`
@@ -411,7 +440,7 @@ wopal fae session diff <session-id> [--sandbox <id>] [--json]
 
 - [ ] **状态**: 待处理
 - **IMPLEMENT**: 同步发送消息命令
-- **PATTERN**: 参考 `src/commands/passthrough.ts` 的简单命令模式
+- **PATTERN**: 参考 `src/commands/skills/passthrough.ts` 的简单命令模式
 - **IMPORTS**: `commander`, `client.ts`, `storage.ts`
 - **GOTCHA**: 阻塞直到 Fae 完成响应
 - **VALIDATE**: `pnpm build && wopal fae send --help`
@@ -494,7 +523,7 @@ wopal fae stream <session-id> [--sandbox <id>]
 
 - [ ] **状态**: 待处理
 - **IMPLEMENT**: task 子命令实现
-- **PATTERN**: 参考 `src/commands/list.ts` 的命令注册模式
+- **PATTERN**: 参考 `src/commands/skills/list.ts` 的命令注册模式
 - **IMPORTS**: `commander`, `picocolors`, `task-manager.ts`, `types.ts`
 - **GOTCHA**: 所有命令支持 `--json`
 - **VALIDATE**: `pnpm build && wopal fae task --help`
@@ -537,27 +566,32 @@ wopal fae event subscribe [--sandbox <id>] [--filter <pattern>]
 
 - [ ] **状态**: 待处理
 - **IMPLEMENT**: fae 主命令注册，整合所有子命令
-- **PATTERN**: 参考 `src/cli.ts:94-107` 的 skills 命令注册
+- **PATTERN**: 参考 `src/commands/skills/index.ts` 的子命令注册模式
 - **IMPORTS**: `commander`, 所有子命令模块
 - **GOTCHA**: 添加 `.addHelpCommand(false)`
 - **VALIDATE**: `pnpm build && wopal fae --help`
 
 ---
 
-### T15: UPDATE src/cli.ts
+### T15: UPDATE src/program/register-subclis.ts
 
 - [ ] **状态**: 待处理
-- **IMPLEMENT**: 注册 fae 命令，添加 Logger 注入
-- **PATTERN**: 参考 `src/cli.ts:62-92` 的 preAction hook 模式
-- **IMPORTS**: `./commands/fae/index.js`
-- **GOTCHA**: 在 preAction hook 中注入 Logger 到所有 fae 模块
+- **IMPLEMENT**: 在 entries 数组中添加 fae 子命令
+- **PATTERN**: 参考 skills entry 的注册模式
+- **IMPORTS**: 无（使用动态 import）
+- **GOTCHA**: fae 子命令自动享受延迟加载
 - **VALIDATE**: `pnpm build && wopal fae --help`
 
 ```typescript
-// 添加内容：
-// 1. import { registerFaeCommand, setLogger as setFaeLogger } from './commands/fae/index.js'
-// 2. 在 preAction hook 中：setFaeLogger(logger)
-// 3. 在 skillsCommand 后添加：registerFaeCommand(program)
+// 添加内容到 entries 数组：
+{
+  name: "fae",
+  description: "Sandbox agent management",
+  register: async (program) => {
+    const mod = await import("../commands/fae/index.js");
+    mod.registerFaeCli(program);
+  },
+},
 ```
 
 ---
@@ -584,7 +618,7 @@ wopal fae event subscribe [--sandbox <id>] [--filter <pattern>]
 
 ---
 
-### T17: UPDATE projects/agent-tools/tools/wopal-cli/AGENTS.md
+### T17: UPDATE wopal-cli/AGENTS.md
 
 - [ ] **状态**: 待处理
 - **IMPLEMENT**: 更新项目规范，添加 fae 命令文档
@@ -670,17 +704,30 @@ wopal fae event subscribe [--sandbox <id>] [--filter <pattern>]
 
 ## 10. 后续步骤
 
-1. 用户审阅本计划
-2. 确认后进入执行阶段（`/execute`）
-3. 按 Phase 顺序逐步实现
-4. 每完成一个 Phase 进行验证
-5. 全部完成后进行集成测试
+1. 确保 v0.2.0 架构升级完成
+2. 用户审阅本计划
+3. 确认后进入执行阶段（`/execute`）
+4. 按 Phase 顺序逐步实现
+5. 每完成一个 Phase 进行验证
+6. 全部完成后进行集成测试
+
+---
+
+## 11. 相关文档
+
+| 文档 | 位置 | 说明 |
+|------|------|------|
+| 架构升级计划 | `plans/wopal-cli-architecture-v0.2.0.md` | v0.2.0 延迟加载架构 |
+| PRD | `docs/products/PRD-wopal-cli.md` | 产品需求 |
+| DESIGN | `docs/products/DESIGN-wopal-cli.md` | 详细设计 |
+| OpenCode 架构研究 | `docs/research/opencode-*.md` | API 研究文档 |
 
 ---
 
 > **信心指数**: 8/10
 > 
 > **理由**: 
+> - v0.2.0 架构已建立延迟加载机制，fae 集成简单
 > - 现有代码库有成熟的命令模式可参考
 > - 研究文档详尽，API 结构清晰
 > - 主要风险在 Docker 管理和 SSE 稳定性，已有缓解措施

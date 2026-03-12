@@ -1,11 +1,12 @@
 # Wopal CLI - 设计文档
 
-> **版本**: v1.1  
-> **状态**: 初步设计  
-> **创建时间**: 2026-03-11  
-> **更新时间**: 2026-03-11  
+> **版本**: v0.2.1
+> **状态**: 初步设计
+> **创建时间**: 2026-03-11
+> **更新时间**: 2026-03-12
 > **配套文档**: `docs/products/PRD-wopal-cli.md`
-> **基于**: OpenCode 架构研究成果 + SDK 差距分析
+> **项目位置**: `projects/agent-tools/wopal-cli/`
+> **基于**: OpenCode 架构研究成果 + SDK 差距分析 + OpenClaw CLI 延迟加载架构
 
 ---
 
@@ -380,29 +381,65 @@ kill $EVENT_PID
 
 ### 7.1 整合到 wopal-cli
 
-在现有 `tools/wopal-cli/` 添加 `fae` 子命令：
+在 `projects/agent-tools/wopal-cli/` 添加 `fae` 子命令：
 
 ```
-tools/wopal-cli/src/
+wopal-cli/src/
+├── cli.ts                       # 入口（快速路由 + 延迟加载）
+├── argv.ts                      # 轻量 argv 解析
+├── route.ts                     # 快速路由
+├── program/
+│   ├── index.ts                 # buildProgram
+│   ├── context.ts               # 程序上下文
+│   ├── command-registry.ts      # 命令注册表
+│   ├── register-subclis.ts      # 子命令延迟加载
+│   └── helpers.ts               # 辅助函数
 ├── commands/
-│   ├── fae/
-│   │   ├── index.ts           # fae 主命令
-│   │   ├── sandbox.ts         # 沙箱管理
-│   │   ├── session.ts         # 会话管理（含 status/todo/diff/command）
-│   │   ├── send.ts            # 同步发送
-│   │   ├── stream.ts          # 流式输出
-│   │   ├── task.ts            # 后台任务
-│   │   ├── event.ts           # SSE 事件订阅
-│   │   └── question.ts        # 问题回复
-│   └── skills/                # 现有技能命令
+│   ├── index.ts
+│   ├── init.ts
+│   ├── skills/                  # 现有技能命令
+│   │   ├── index.ts
+│   │   ├── inbox.ts
+│   │   ├── list.ts
+│   │   ├── download.ts
+│   │   ├── scan.ts
+│   │   ├── check.ts
+│   │   ├── install.ts
+│   │   └── passthrough.ts
+│   └── fae/                     # v0.2.1 新增
+│       ├── index.ts             # fae 主命令
+│       ├── sandbox.ts           # 沙箱管理
+│       ├── session.ts           # 会话管理（含 status/todo/diff/command）
+│       ├── send.ts              # 同步发送
+│       ├── stream.ts            # 流式输出
+│       ├── task.ts              # 后台任务
+│       └── event.ts             # SSE 事件订阅
 ├── lib/
-│   ├── fae-client.ts          # OpenCode HTTP API 客户端（参考 opencode-sdk 实现）
-│   ├── fae-docker.ts          # Docker 容器管理（dockerode 或 docker CLI）
-│   ├── fae-event-monitor.ts   # SSE 事件监控
-│   ├── fae-task-manager.ts    # 任务管理器
-│   ├── fae-progress.ts        # 进度计算
-│   └── fae-storage.ts         # 本地存储
-└── ...
+│   ├── logger.ts
+│   ├── env-loader.ts
+│   ├── error-utils.ts
+│   ├── help-texts.ts
+│   ├── init-check.ts
+│   ├── config.ts
+│   ├── lock-manager.ts
+│   ├── skill-lock.ts
+│   ├── skill-utils.ts
+│   ├── inbox-utils.ts
+│   ├── source-parser.ts
+│   ├── metadata.ts
+│   ├── hash.ts
+│   ├── git.ts
+│   ├── types.ts
+│   └── fae/                     # v0.2.1 新增
+│       ├── client.ts            # OpenCode HTTP API 客户端
+│       ├── docker.ts            # Docker 容器管理
+│       ├── event-monitor.ts     # SSE 事件监控
+│       ├── task-manager.ts      # 任务管理器
+│       ├── progress.ts          # 进度计算
+│       ├── storage.ts           # 本地存储
+│       └── types.ts             # 类型定义
+├── scanner/                     # 安全扫描器
+└── types/
 ```
 
 ### 7.2 参考现有代码
@@ -521,8 +558,12 @@ const proc = spawn('docker', ['run', '-p', '20001:3000', 'opencode-sandbox']);
 | OpenCode 架构研究 | `docs/research/opencode-project-worktree-workspace-architecture.md` | Project/Worktree/Workspace |
 | Session/Messaging 研究 | `docs/research/opencode-session-agent-messaging.md` | Session/Agent/Messaging/SSE |
 | SDK 差距分析 | `docs/analysis/opencode-sdk-gap-analysis.md` | API 覆盖率分析 |
-| wopal-cli 项目规范 | `tools/wopal-cli/AGENTS.md` | 现有 CLI 结构 |
+| wopal-cli 项目规范 | `wopal-cli/AGENTS.md` | 现有 CLI 结构 |
+| 架构升级计划 | `plans/wopal-cli-architecture-v0.2.0.md` | v0.2.0 延迟加载架构 |
+| Fae 实现计划 | `plans/wopal-cli-fae-v0.2.1.md` | v0.2.1 fae 子命令实现 |
 
 ---
 
-> **下一步**: 开始实施 Phase 1 - 基础命令
+> **下一步**: 
+> 1. 完成 v0.2.0 架构升级（延迟加载）
+> 2. 开始 v0.2.1 fae 实现

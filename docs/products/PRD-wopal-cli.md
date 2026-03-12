@@ -1,10 +1,12 @@
 # PRD: Wopal CLI
 
-> **产品名称**: Wopal CLI  
-> **版本**: v1.0  
-> **状态**: Draft  
-> **创建日期**: 2026-03-11  
+> **产品名称**: Wopal CLI
+> **版本**: v0.2.1
+> **状态**: Draft
+> **创建日期**: 2026-03-11
+> **更新日期**: 2026-03-12
 > **负责人**: Wopal (AI Agent)
+> **项目位置**: `projects/agent-tools/wopal-cli/`
 
 ---
 
@@ -511,7 +513,19 @@ kill $EVENT_PID
 
 ## 12. 里程碑与发布计划 (Milestones & Release Plan)
 
-### v0.1 - 基础能力 (MVP)
+### v0.2.0 - 架构升级
+
+**目标**：延迟加载架构，参考 OpenClaw CLI
+
+| 功能 | 优先级 | 状态 |
+|------|--------|------|
+| 快速路由（--help/--version） | P0 | 待开发 |
+| 子命令延迟加载 | P0 | 待开发 |
+| 目录迁移（tools/wopal-cli → wopal-cli） | P0 | 待开发 |
+
+详细计划：`docs/products/plans/wopal-cli-architecture-v0.2.0.md`
+
+### v0.2.1 - Fae 基础能力 (MVP)
 
 **目标**：实现 `wopal fae` 核心命令
 
@@ -524,7 +538,9 @@ kill $EVENT_PID
 | task start/status/wait | P0 | 待开发 |
 | event subscribe | P0 | 待开发 |
 
-### v0.2 - 增强能力
+详细计划：`docs/products/plans/wopal-cli-fae-v0.2.1.md`
+
+### v0.2.2 - 增强能力
 
 | 功能 | 优先级 | 状态 |
 |------|--------|------|
@@ -548,6 +564,8 @@ kill $EVENT_PID
 | 文档 | 位置 | 说明 |
 |------|------|------|
 | 整合设计文档 | `docs/products/DESIGN-wopal-cli.md` | **主设计文档**（架构、实施、命令设计） |
+| 架构升级计划 | `docs/products/plans/wopal-cli-architecture-v0.2.0.md` | v0.2.0 延迟加载架构 |
+| Fae 实现计划 | `docs/products/plans/wopal-cli-fae-v0.2.1.md` | v0.2.1 fae 子命令实现 |
 | OpenCode 架构研究 | `docs/research/opencode-project-worktree-workspace-architecture.md` | Project/Worktree/Workspace 架构 |
 | Session/消息研究 | `docs/research/opencode-session-agent-messaging.md` | Session 生命周期和消息机制 |
 | SDK 差距分析 | `docs/analysis/opencode-sdk-gap-analysis.md` | API 覆盖率分析（参考用，不依赖） |
