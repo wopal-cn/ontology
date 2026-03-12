@@ -1,6 +1,7 @@
 ---
 name: ai-ref-creator
-description: Converts lengthy official product documentation into concise, high-density AI references. Use when users request: (1) Documentation compression or condensing, (2) Creating AI-friendly reference materials, (3) Reducing token usage for large documentation, (4) Extracting technical specifications from official docs
+description: > 
+  Converts lengthy official product documentation into concise, high-density AI references. Use when users request: (1) Documentation compression or condensing, (2) Creating AI-friendly reference materials, (3) Reducing token usage for large documentation, (4) Extracting technical specifications from official docs
 ---
 
 # AI 参考文档创建器
