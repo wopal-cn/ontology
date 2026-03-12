@@ -1,9 +1,0 @@
-{
-  "name": "opencode-cli",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "npx tsx index.ts",
-    "build": "tsc -p ../tsconfig.cli.json"
-  }
-}
