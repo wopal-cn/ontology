@@ -239,10 +239,10 @@ export class ConfigService {
       return this.resolveValue(targetVal, spaceDir)!;
     }
 
-    const fallbackVal = ".wopal/skills/iocdb";
+    const fallbackVal = join(homedir(), ".wopal", "storage", "ioc-db");
     this.warnFallbackOnce("WOPAL_SKILLS_IOCDB_DIR", fallbackVal);
 
-    return this.resolveValue(fallbackVal, spaceDir)!;
+    return fallbackVal;
   }
 
   public getSkillsInstallDir(): string {

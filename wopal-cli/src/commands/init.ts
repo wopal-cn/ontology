@@ -71,7 +71,7 @@ export function registerInitCommand(program: Command): void {
         console.log(pc.cyan("Configuration:"));
         console.log(pc.gray(`  Space: ${expandedDir}`));
         console.log(pc.gray(`  Config: ~/.wopal/config/settings.jsonc`));
-        console.log(pc.gray(`  IOC DB: ~/.wopal/skills/iocdb (default)`));
+        console.log(pc.gray(`  IOC DB: ~/.wopal/storage/ioc-db (default)`));
         console.log();
         console.log(pc.cyan("Next steps:"));
         console.log(pc.gray("  Initialize IOC database (required):"));

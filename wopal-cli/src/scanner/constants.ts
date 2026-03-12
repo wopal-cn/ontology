@@ -20,6 +20,14 @@ export const SKIP_DIRECTORIES = [
   "build",
 ];
 
+export const SKIP_FILES = [
+  ".source.json",
+  "metadata.json",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+];
+
 export const SCANABLE_EXTENSIONS = [
   ".ts",
   ".js",
@@ -44,6 +52,27 @@ export const IOC_FILES = {
   fileHashes: "file-hashes.txt",
   whitelistPatterns: "whitelist-patterns.txt",
 } as const;
+
+export const IOC_EXPECTED_FIELDS: Record<string, number> = {
+  "c2-ips.txt": 4,
+  "malicious-domains.txt": 4,
+  "file-hashes.txt": 5,
+  "malicious-publishers.txt": 4,
+  "malicious-skill-patterns.txt": 3,
+};
+
+export const IOC_DEFAULT_UPSTREAM =
+  "https://raw.githubusercontent.com/adibirzu/openclaw-security-monitor/main/ioc";
+
+export const IOC_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+export const IOC_FILES_LIST = [
+  "c2-ips.txt",
+  "malicious-domains.txt",
+  "file-hashes.txt",
+  "malicious-publishers.txt",
+  "malicious-skill-patterns.txt",
+] as const;
 
 export const CHECK_METADATA = [
   {

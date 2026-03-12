@@ -8,7 +8,10 @@ import { getInboxDir } from "../../lib/inbox-utils.js";
 import { readMetadata } from "../../lib/metadata.js";
 import { fetchSkillFolderHash, getGitHubToken } from "../../lib/skill-lock.js";
 import { computeSkillFolderHash } from "../../lib/hash.js";
-import { scanSkill } from "../../scanner/scanner.js";
+import {
+  runOpenclawScan,
+  convertToScanResult,
+} from "../../scanner/openclaw-wrapper.js";
 import type {
   SkillLockEntry,
   InstallMode,
@@ -291,7 +294,8 @@ async function runSecurityScan(
   skillDir: string,
   logger: Logger,
 ): Promise<void> {
-  const result = await scanSkill(skillDir, skillName);
+  const output = await runOpenclawScan(skillDir);
+  const result = convertToScanResult(skillName, output);
 
   if (result.status === "fail") {
     throw new Error(

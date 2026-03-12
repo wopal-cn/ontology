@@ -6,7 +6,7 @@
     "wopal": "./bin/wopal"
   },
   "scripts": {
-    "build": "tsc && chmod +x bin/wopal",
+    "build": "tsc && chmod +x bin/wopal && cp src/scanner/*.sh bin/scanner/",
     "dev": "node --loader ts-node/esm src/cli.ts",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",

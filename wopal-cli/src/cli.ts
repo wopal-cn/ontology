@@ -15,10 +15,8 @@ import {
   registerSkillsCli,
   setLogger as setSkillsLogger,
 } from "./commands/skills/index.js";
-import { setLogger as setScannerLogger } from "./scanner/scanner.js";
-import { setLogger as setIOCLogger } from "./scanner/ioc-loader.js";
-import { setLogger as setWhitelistLogger } from "./scanner/whitelist.js";
-import { setLogger as setScannerUtilsLogger } from "./scanner/scanner-utils.js";
+import { setLogger as setOpenclawUpdaterLogger } from "./scanner/openclaw-updater.js";
+import { setLogger as setOpenclawWrapperLogger } from "./scanner/openclaw-wrapper.js";
 
 async function runCli(argv: string[] = process.argv): Promise<void> {
   if (await tryRouteCli(argv)) {
@@ -43,10 +41,8 @@ async function runCli(argv: string[] = process.argv): Promise<void> {
       const logger = new Logger(debug);
       setInitLogger(logger);
       setSkillsLogger(logger);
-      setScannerLogger(logger);
-      setIOCLogger(logger);
-      setWhitelistLogger(logger);
-      setScannerUtilsLogger(logger);
+      setOpenclawUpdaterLogger(logger);
+      setOpenclawWrapperLogger(logger);
 
       logger.log("Debug mode enabled");
 

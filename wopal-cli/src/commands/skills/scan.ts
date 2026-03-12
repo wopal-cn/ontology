@@ -2,30 +2,43 @@ import * as path from "path";
 import * as fs from "fs";
 import { Command } from "commander";
 import { Logger } from "../../lib/logger.js";
-import { scanSkill } from "../../scanner/scanner.js";
 import { ScanResult } from "../../scanner/types.js";
 import { getInboxDir } from "../../lib/inbox-utils.js";
 import { buildHelpText } from "../../lib/help-texts.js";
+import {
+  ensureOpenclawRepo,
+  validateOpenclawRepo,
+  setLogger as setOpenclawUpdaterLogger,
+} from "../../scanner/openclaw-updater.js";
+import {
+  runOpenclawScan,
+  convertToScanResult,
+  setLogger as setOpenclawWrapperLogger,
+} from "../../scanner/openclaw-wrapper.js";
 
 let logger: Logger;
 
 export function setLogger(l: Logger): void {
   logger = l;
+  setOpenclawUpdaterLogger(l);
+  setOpenclawWrapperLogger(l);
 }
 
 export interface ScanCommandOptions {
   json?: boolean;
   all?: boolean;
   output?: string;
+  "no-update"?: boolean;
 }
 
 export function registerScanCommand(program: Command): void {
   const command = program
     .command("scan [skill-name]")
-    .description("Scan INBOX skill for security issues")
+    .description("Scan INBOX skill for security issues using OpenClaw scanner")
     .option("--json", "Output JSON format")
     .option("--all", "Scan all INBOX skills")
     .option("--output <file>", "Save JSON report to file")
+    .option("--no-update", "Skip automatic scanner update")
     .action(
       async (skillName: string | undefined, options: ScanCommandOptions) => {
         const exitCode = await scanCommand(skillName, options);
@@ -41,18 +54,21 @@ export function registerScanCommand(program: Command): void {
         "# Scan all skills in INBOX\nwopal skills scan --all",
         "# Output in JSON format\nwopal skills scan my-skill --json",
         "# Save report to file\nwopal skills scan my-skill --json --output report.json",
+        "# Scan without updating scanner\nwopal skills scan my-skill --no-update",
       ],
       options: [
         "--json              Output in JSON format",
         "--all               Scan all INBOX skills",
         "--output <file>     Save JSON report to file",
+        "--no-update         Skip automatic scanner update",
         "--help              Show this help message",
       ],
       notes: [
-        "Scans skills in INBOX for security issues",
-        "Checks for 20 security patterns (9 critical + 11 warning)",
+        "Scans skills in INBOX for security issues using OpenClaw",
+        "51 security checks (C2, malware, reverse shells, CVEs, etc.)",
         "Exit codes: 0=pass, 1=issues found, 2=error",
-        "Use before installing skills from external sources",
+        "Scanner auto-updates every 24 hours",
+        "Use 'wopal skills update-scanner' to manually update",
       ],
       workflow: [
         "Download skills: wopal skills download <source>",
@@ -69,6 +85,20 @@ export async function scanCommand(
   options: ScanCommandOptions,
 ): Promise<number> {
   try {
+    if (!options["no-update"]) {
+      logger.info("Ensuring OpenClaw scanner is up to date...");
+      await ensureOpenclawRepo(false);
+    }
+
+    const validation = validateOpenclawRepo();
+    if (!validation.valid) {
+      logger.error(`Scanner validation failed: ${validation.error}`);
+      logger.error(
+        "Please run 'wopal skills update-scanner' to download the scanner",
+      );
+      return 2;
+    }
+
     if (options.all) {
       return await scanAllSkills(options);
     } else if (skillName) {
@@ -193,6 +223,36 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
   }
 
   return failCount > 0 ? 1 : 0;
+}
+
+async function scanSkill(
+  skillPath: string,
+  skillName: string,
+): Promise<ScanResult> {
+  logger.info(`Scanning skill: ${skillName}`, { path: skillPath });
+
+  const startTime = Date.now();
+
+  try {
+    const output = await runOpenclawScan(skillPath);
+    const result = convertToScanResult(skillName, output);
+
+    const duration = Date.now() - startTime;
+    logger.info(`Scan completed: ${skillName}`, {
+      status: result.status,
+      riskScore: result.riskScore,
+      duration: `${duration}ms`,
+      critical: result.summary.critical,
+      warning: result.summary.warning,
+    });
+
+    return result;
+  } catch (error) {
+    logger.error(`Scan failed for ${skillName}`, {
+      error: (error as Error).message,
+    });
+    throw error;
+  }
 }
 
 function displayScanResult(result: ScanResult): void {

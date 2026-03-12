@@ -1,17 +1,34 @@
 import type { Command } from "commander";
 import { Logger } from "../../lib/logger.js";
-import { registerInboxCommand } from "./inbox.js";
-import { registerListCommand } from "./list.js";
-import { registerPassthroughCommand } from "./passthrough.js";
-import { registerDownloadCommand } from "./download.js";
-import { registerScanCommand } from "./scan.js";
-import { registerCheckCommand } from "./check.js";
+import { registerInboxCommand, setLogger as setInboxLogger } from "./inbox.js";
+import { registerListCommand, setLogger as setListLogger } from "./list.js";
+import {
+  registerPassthroughCommand,
+  setLogger as setPassthroughLogger,
+} from "./passthrough.js";
+import {
+  registerDownloadCommand,
+  setLogger as setDownloadLogger,
+} from "./download.js";
+import { registerScanCommand, setLogger as setScanLogger } from "./scan.js";
+import { registerCheckCommand, setLogger as setCheckLogger } from "./check.js";
+import {
+  registerUpdateScannerCommand,
+  setLogger as setUpdateScannerLogger,
+} from "./update-scanner.js";
 import { createInstallCommand } from "./install.js";
 
 let logger: Logger;
 
 export function setLogger(l: Logger): void {
   logger = l;
+  setInboxLogger(l);
+  setListLogger(l);
+  setPassthroughLogger(l);
+  setDownloadLogger(l);
+  setScanLogger(l);
+  setCheckLogger(l);
+  setUpdateScannerLogger(l);
 }
 
 export function registerSkillsCli(program: Command): void {
@@ -26,5 +43,6 @@ export function registerSkillsCli(program: Command): void {
   registerDownloadCommand(skillsCommand);
   registerScanCommand(skillsCommand);
   registerCheckCommand(skillsCommand);
+  registerUpdateScannerCommand(skillsCommand);
   skillsCommand.addCommand(createInstallCommand());
 }

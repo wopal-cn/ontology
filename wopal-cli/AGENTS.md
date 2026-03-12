@@ -8,7 +8,7 @@
 
 wopal-cli 是 Wopal 工作空间的技能管理命令行工具，实现 INBOX 隔离工作流（下载 → 扫描 → 评估 → 安装），为 AI Agent 技能管理提供安全保障。
 
-**核心价值**：INBOX 隔离机制、20 项静态安全检查、版本指纹追踪、白名单过滤、延迟加载架构
+**核心价值**：INBOX 隔离机制、51 项安全检查（集成 OpenClaw）、版本指纹追踪、延迟加载架构
 
 ## 架构特性 (v0.2.0)
 
@@ -67,14 +67,12 @@ wopal-cli/
 │   │   ├── hash.ts
 │   │   ├── git.ts
 │   │   └── types.ts
-│   ├── scanner/           # 安全扫描器
+│   ├── scanner/           # 安全扫描器（集成 OpenClaw）
 │   │   ├── scanner.ts
-│   │   ├── ioc-loader.ts
-│   │   ├── whitelist.ts
 │   │   ├── types.ts
-│   │   ├── constants.ts
-│   │   ├── scanner-utils.ts
-│   │   └── checks/    # 20 项检查
+│   │   ├── openclaw-updater.ts   # OpenClaw 仓库更新
+│   │   ├── openclaw-wrapper.ts   # OpenClaw 扫描调用
+│   │   └── wopal-scan-wrapper.sh # Shell wrapper 脚本
 │   └── types/
 │       ├── cli.ts
 │       └── lock.ts
@@ -105,7 +103,8 @@ pnpm format       # 代码格式化
 ```bash
 wopal init                                    # 初始化配置
 wopal skills download <sources...>            # 下载技能到 INBOX
-wopal skills scan [skill-name]                # 安全扫描
+wopal skills scan [skill-name]                # 安全扫描（51 项检查）
+wopal skills update-scanner                   # 更新 OpenClaw 扫描器
 wopal skills check [skill-name]               # 版本检查
 wopal skills install <skill-name>             # 安装技能
 wopal skills list                             # 列出技能
@@ -135,21 +134,24 @@ wopal find [query]                            # 透传搜索
 ### CLI UX 规范
 
 - 所有用户界面包括 help 报错信息等统一使用英文
-- 支持 `--json` 的命令：`list`、`inbox list`、`download`、`scan`、`check`
-- 错误格式统一使用 `src/lib/error-utils.ts` 和 `src/lib/help-texts.ts`
+- 每个命令的 -h --help 输出要完善, 便于 ai agent 了解命令完整使用方法
+- 所有命令必须支持 `--json` 的命令
+- 所有命令在出错后,清晰明了显示错误信息,如果是参数和指令错误,要打印命令帮助信息或指导性说明
 
 ## 环境变量
 
 | 变量名                      | 默认值                  |
 | --------------------------- | ----------------------- |
 | `WOPAL_SKILLS_INBOX_DIR`    | `~/.wopal/skills/INBOX` |
-| `WOPAL_SKILLS_IOCDB_DIR`    | `~/.wopal/skills/iocdb` |
 | `WOPAL_SKILLS_DIR`          | `.wopal/skills`         |
+| `WOPAL_OPENCLAW_DIR`        | `~/.wopal/storage/openclaw-security-monitor` |
 | `GITHUB_TOKEN` / `GH_TOKEN` | -（可选）               |
 
 ## 关键模块
 
-- **scanner/**：20 项静态安全检查（9 项严重 + 11 项警告）
+- **scanner/**：集成 OpenClaw 安全扫描器，51 项检查（C2、恶意软件、反向 shell、CVE 等）
+- **scanner/openclaw-updater.ts**：管理 OpenClaw 仓库的自动更新（每 24 小时）
+- **scanner/openclaw-wrapper.ts**：调用 OpenClaw 扫描并解析结果
 - **lib/lock-manager.ts**：管理 `wopal-skills.lock` 文件
 - **lib/skill-lock.ts**：技能元数据管理（版本、来源、哈希）
 - **program/register-subclis.ts**：延迟加载核心逻辑

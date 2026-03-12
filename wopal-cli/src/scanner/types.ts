@@ -46,3 +46,11 @@ export interface IOCData {
   maliciousSkillPatterns: string[];
   fileHashes: string[];
 }
+
+export interface IOCFileStatus {
+  file: string;
+  status: "up-to-date" | "updated" | "new" | "skipped" | "error";
+  localRecords: number;
+  remoteRecords: number;
+  delta: number;
+}
