@@ -1,11 +1,11 @@
-import * as path from 'path';
-import * as fs from 'fs';
-import { Command } from 'commander';
-import { Logger } from '../../lib/logger.js';
-import { scanSkill } from '../../scanner/scanner.js';
-import { ScanResult } from '../../scanner/types.js';
-import { getInboxDir } from '../../lib/inbox-utils.js';
-import { buildHelpText } from '../../lib/help-texts.js';
+import * as path from "path";
+import * as fs from "fs";
+import { Command } from "commander";
+import { Logger } from "../../lib/logger.js";
+import { scanSkill } from "../../scanner/scanner.js";
+import { ScanResult } from "../../scanner/types.js";
+import { getInboxDir } from "../../lib/inbox-utils.js";
+import { buildHelpText } from "../../lib/help-texts.js";
 
 let logger: Logger;
 
@@ -21,11 +21,11 @@ export interface ScanCommandOptions {
 
 export function registerScanCommand(program: Command): void {
   const command = program
-    .command('scan [skill-name]')
-    .description('Scan INBOX skill for security issues')
-    .option('--json', 'Output JSON format')
-    .option('--all', 'Scan all INBOX skills')
-    .option('--output <file>', 'Save JSON report to file')
+    .command("scan [skill-name]")
+    .description("Scan INBOX skill for security issues")
+    .option("--json", "Output JSON format")
+    .option("--all", "Scan all INBOX skills")
+    .option("--output <file>", "Save JSON report to file")
     .action(
       async (skillName: string | undefined, options: ScanCommandOptions) => {
         const exitCode = await scanCommand(skillName, options);
@@ -34,31 +34,31 @@ export function registerScanCommand(program: Command): void {
     );
 
   command.addHelpText(
-    'after',
+    "after",
     buildHelpText({
       examples: [
-        '# Scan a single skill\nwopal skills scan my-skill',
-        '# Scan all skills in INBOX\nwopal skills scan --all',
-        '# Output in JSON format\nwopal skills scan my-skill --json',
-        '# Save report to file\nwopal skills scan my-skill --json --output report.json',
+        "# Scan a single skill\nwopal skills scan my-skill",
+        "# Scan all skills in INBOX\nwopal skills scan --all",
+        "# Output in JSON format\nwopal skills scan my-skill --json",
+        "# Save report to file\nwopal skills scan my-skill --json --output report.json",
       ],
       options: [
-        '--json              Output in JSON format',
-        '--all               Scan all INBOX skills',
-        '--output <file>     Save JSON report to file',
-        '--help              Show this help message',
+        "--json              Output in JSON format",
+        "--all               Scan all INBOX skills",
+        "--output <file>     Save JSON report to file",
+        "--help              Show this help message",
       ],
       notes: [
-        'Scans skills in INBOX for security issues',
-        'Checks for 20 security patterns (9 critical + 11 warning)',
-        'Exit codes: 0=pass, 1=issues found, 2=error',
-        'Use before installing skills from external sources',
+        "Scans skills in INBOX for security issues",
+        "Checks for 20 security patterns (9 critical + 11 warning)",
+        "Exit codes: 0=pass, 1=issues found, 2=error",
+        "Use before installing skills from external sources",
       ],
       workflow: [
-        'Download skills: wopal skills download <source>',
-        'List INBOX: wopal inbox list',
-        'Scan skills: wopal skills scan <skill-name>',
-        'Review results and install if safe: wopal skills install <skill-name>',
+        "Download skills: wopal skills download <source>",
+        "List INBOX: wopal inbox list",
+        "Scan skills: wopal skills scan <skill-name>",
+        "Review results and install if safe: wopal skills install <skill-name>",
       ],
     }),
   );
@@ -80,7 +80,7 @@ export async function scanCommand(
       return 2;
     }
   } catch (error) {
-    logger.error('Scan failed', { error: (error as Error).message });
+    logger.error("Scan failed", { error: (error as Error).message });
     return 2;
   }
 }
@@ -105,7 +105,7 @@ async function scanSingleSkill(
       : JSON.stringify(formatCompactResult(result), null, 2);
 
     if (options.output) {
-      fs.writeFileSync(options.output, jsonOutput, 'utf-8');
+      fs.writeFileSync(options.output, jsonOutput, "utf-8");
       console.log(`Report saved to ${options.output}`);
     } else {
       console.log(jsonOutput);
@@ -114,14 +114,14 @@ async function scanSingleSkill(
     displayScanResult(result);
   }
 
-  return result.status === 'pass' ? 0 : 1;
+  return result.status === "pass" ? 0 : 1;
 }
 
 async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
   const inboxPath = getInboxDir();
 
   if (!fs.existsSync(inboxPath)) {
-    logger.error('INBOX directory not found');
+    logger.error("INBOX directory not found");
     return 2;
   }
 
@@ -131,7 +131,7 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
     .map((entry) => entry.name);
 
   if (skillDirs.length === 0) {
-    logger.info('No skills found in INBOX');
+    logger.info("No skills found in INBOX");
     return 0;
   }
 
@@ -144,14 +144,14 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
     const result = await scanSkill(skillPath, skillName);
     results.push(result);
 
-    if (result.status === 'pass') {
+    if (result.status === "pass") {
       passCount++;
     } else {
       failCount++;
     }
 
     if (!options.json) {
-      const statusIcon = result.status === 'pass' ? '✓' : '✗';
+      const statusIcon = result.status === "pass" ? "✓" : "✗";
       console.log(
         `${statusIcon} ${skillName}: ${result.status.toUpperCase()} (risk: ${result.riskScore})`,
       );
@@ -159,7 +159,7 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
   }
 
   if (options.json) {
-    const failedResults = results.filter((r) => r.status === 'fail');
+    const failedResults = results.filter((r) => r.status === "fail");
     const compactOutput = {
       summary: {
         total: skillDirs.length,
@@ -173,7 +173,7 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
     const jsonOutput = JSON.stringify(compactOutput, null, 2);
 
     if (options.output) {
-      fs.writeFileSync(options.output, jsonOutput, 'utf-8');
+      fs.writeFileSync(options.output, jsonOutput, "utf-8");
       console.log(`Report saved to ${options.output}`);
     } else {
       console.log(jsonOutput);
@@ -183,9 +183,9 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
       `\nSummary: ${skillDirs.length} scanned, ${passCount} passed, ${failCount} failed`,
     );
 
-    const failedResults = results.filter((r) => r.status === 'fail');
+    const failedResults = results.filter((r) => r.status === "fail");
     if (failedResults.length > 0) {
-      console.log('\n--- Failed Skills Details ---');
+      console.log("\n--- Failed Skills Details ---");
       for (const result of failedResults) {
         displayScanResult(result);
       }
@@ -196,7 +196,7 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
 }
 
 function displayScanResult(result: ScanResult): void {
-  if (result.status === 'pass') {
+  if (result.status === "pass") {
     console.log(`✓ ${result.skillName}: PASS (risk: ${result.riskScore})`);
     return;
   }
@@ -204,7 +204,7 @@ function displayScanResult(result: ScanResult): void {
   console.log(`\n✗ ${result.skillName}: FAIL (risk: ${result.riskScore})`);
 
   const failedChecks = Object.values(result.checks).filter(
-    (check) => check.status === 'fail',
+    (check) => check.status === "fail",
   );
 
   if (failedChecks.length > 0) {
@@ -224,10 +224,13 @@ function formatCompactResult(result: ScanResult) {
   const inboxPath = getInboxDir();
   const skillPath = path.join(inboxPath, result.skillName);
 
-  const fileMap = new Map<string, { lines: Set<number>; checks: Set<string> }>();
+  const fileMap = new Map<
+    string,
+    { lines: Set<number>; checks: Set<string> }
+  >();
 
   for (const check of Object.values(result.checks)) {
-    if (check.status !== 'fail') continue;
+    if (check.status !== "fail") continue;
 
     for (const finding of check.findings) {
       const relativePath = path.relative(skillPath, finding.file);

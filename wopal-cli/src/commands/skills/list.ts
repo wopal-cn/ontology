@@ -1,18 +1,18 @@
-import { existsSync } from 'fs';
-import { Command } from 'commander';
-import pc from 'picocolors';
-import { getInboxDir } from '../../lib/inbox-utils.js';
+import { existsSync } from "fs";
+import { Command } from "commander";
+import pc from "picocolors";
+import { getInboxDir } from "../../lib/inbox-utils.js";
 import {
   collectSkills,
   getInstalledSkillsDir,
   mergeSkills,
   SkillInfo,
-} from '../../lib/skill-utils.js';
-import { Logger } from '../../lib/logger.js';
-import { LockManager } from '../../lib/lock-manager.js';
-import type { SkillLockEntry } from '../../types/lock.js';
-import { buildHelpText } from '../../lib/help-texts.js';
-import { getConfig } from '../../lib/config.js';
+} from "../../lib/skill-utils.js";
+import { Logger } from "../../lib/logger.js";
+import { LockManager } from "../../lib/lock-manager.js";
+import type { SkillLockEntry } from "../../types/lock.js";
+import { buildHelpText } from "../../lib/help-texts.js";
+import { getConfig } from "../../lib/config.js";
 
 let logger: Logger;
 
@@ -29,38 +29,40 @@ interface ListOptions {
 
 export function registerListCommand(program: Command): void {
   const command = program
-    .command('list')
-    .description('List all skills (INBOX downloaded + installed from lock files)')
-    .option('-i, --info', 'Show skill descriptions and details')
-    .option('--local', 'Show only project-level skills')
-    .option('--global', 'Show only global-level skills')
-    .option('--json', 'Output in JSON format')
+    .command("list")
+    .description(
+      "List all skills (INBOX downloaded + installed from lock files)",
+    )
+    .option("-i, --info", "Show skill descriptions and details")
+    .option("--local", "Show only project-level skills")
+    .option("--global", "Show only global-level skills")
+    .option("--json", "Output in JSON format")
     .action(async (options: ListOptions) => {
       await listSkills(options);
     });
 
   command.addHelpText(
-    'after',
+    "after",
     buildHelpText({
       examples: [
-        '# List all skills (INBOX + installed)\nwopal list',
-        '# List with details\nwopal list --info',
-        '# List in JSON format\nwopal list --json',
-        '# List only project-level skills\nwopal list --local',
-        '# List only global-level skills\nwopal list --global',
+        "# List all skills (INBOX + installed)\nwopal list",
+        "# List with details\nwopal list --info",
+        "# List in JSON format\nwopal list --json",
+        "# List only project-level skills\nwopal list --local",
+        "# List only global-level skills\nwopal list --global",
       ],
       options: [
-        '-i, --info    Show skill descriptions and details',
-        '--local       Show only project-level skills',
-        '--global      Show only global-level skills',
-        '--json        Output in JSON format',
-        '--help        Show this help message',
+        "-i, --info    Show skill descriptions and details",
+        "--local       Show only project-level skills",
+        "--global      Show only global-level skills",
+        "--json        Output in JSON format",
+        "--help        Show this help message",
       ],
       notes: [
-        'By default shows both INBOX (downloaded) and installed skills',
-        'INBOX skills are marked with [Downloaded]',
-        'Installed skills are marked with [Installed]',
-        'Use --local or --global to filter by scope',
+        "By default shows both INBOX (downloaded) and installed skills",
+        "INBOX skills are marked with [Downloaded]",
+        "Installed skills are marked with [Installed]",
+        "Use --local or --global to filter by scope",
       ],
     }),
   );
@@ -84,8 +86,8 @@ async function listAllSkills(
   logger?.log(`Listing skills from INBOX: ${inboxDir}`);
   logger?.log(`Listing skills from installed: ${installedDir}`);
 
-  const inboxSkills = collectSkills(inboxDir, 'downloaded');
-  const installedSkills = collectSkills(installedDir, 'installed');
+  const inboxSkills = collectSkills(inboxDir, "downloaded");
+  const installedSkills = collectSkills(installedDir, "installed");
   const allSkills = mergeSkills(inboxSkills, installedSkills);
 
   if (jsonOutput) {
@@ -108,17 +110,17 @@ async function listAllSkills(
   }
 
   if (allSkills.length === 0) {
-    console.log(pc.yellow('No skills found'));
+    console.log(pc.yellow("No skills found"));
     return;
   }
 
-  console.log(pc.bold('Skills:\n'));
+  console.log(pc.bold("Skills:\n"));
 
   for (const skill of allSkills) {
     const statusIcon =
-      skill.status === 'downloaded'
-        ? pc.yellow('[Downloaded]')
-        : pc.green('[Installed]');
+      skill.status === "downloaded"
+        ? pc.yellow("[Downloaded]")
+        : pc.green("[Installed]");
     console.log(`  ${statusIcon} ${pc.cyan(skill.name)}`);
 
     if (showInfo) {
@@ -161,11 +163,11 @@ async function listInstalledSkills(options: ListOptions): Promise<void> {
             scope:
               options.local && options.global
                 ? projectSkills.some(([n]) => n === name)
-                  ? 'project'
-                  : 'global'
+                  ? "project"
+                  : "global"
                 : options.local
-                  ? 'project'
-                  : 'global',
+                  ? "project"
+                  : "global",
             installedAt: entry.installedAt,
             updatedAt: entry.updatedAt,
             skillFolderHash: entry.skillFolderHash,
@@ -179,21 +181,21 @@ async function listInstalledSkills(options: ListOptions): Promise<void> {
   }
 
   if (skillsToShow.length === 0) {
-    console.log(pc.yellow('No installed skills found'));
+    console.log(pc.yellow("No installed skills found"));
     return;
   }
 
-  console.log(pc.bold('Installed Skills:\n'));
+  console.log(pc.bold("Installed Skills:\n"));
 
   for (const [skillName, entry] of skillsToShow) {
     const scope =
       options.local && options.global
         ? projectSkills.some(([name]) => name === skillName)
-          ? '[Project]'
-          : '[Global]'
+          ? "[Project]"
+          : "[Global]"
         : options.local
-          ? '[Project]'
-          : '[Global]';
+          ? "[Project]"
+          : "[Global]";
 
     console.log(`  ${pc.green(scope)} ${pc.cyan(skillName)}`);
 
