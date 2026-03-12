@@ -1,0 +1,29 @@
+# .deploy-ignore
+# Files and directories to exclude from deployment to .wopal/
+
+# Version control
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (optional - uncomment if needed)
+# README.md
+# docs/
