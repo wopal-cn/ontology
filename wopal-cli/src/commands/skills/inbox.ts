@@ -1,7 +1,6 @@
 import { existsSync, rmSync, readdirSync, statSync, readFileSync } from "fs";
 import { join } from "path";
 import { Command } from "commander";
-import pc from "picocolors";
 import {
   getInboxDir,
   getDirectorySize,
@@ -114,7 +113,7 @@ async function listInboxSkills(jsonOutput: boolean = false): Promise<void> {
     if (jsonOutput) {
       console.log(JSON.stringify({ success: true, data: [] }, null, 2));
     } else {
-      console.log(pc.yellow("INBOX is empty"));
+      console.log("INBOX is empty");
     }
     return;
   }
@@ -128,7 +127,7 @@ async function listInboxSkills(jsonOutput: boolean = false): Promise<void> {
     if (jsonOutput) {
       console.log(JSON.stringify({ success: true, data: [] }, null, 2));
     } else {
-      console.log(pc.yellow("INBOX is empty"));
+      console.log("INBOX is empty");
     }
     return;
   }
@@ -146,9 +145,9 @@ async function listInboxSkills(jsonOutput: boolean = false): Promise<void> {
   if (jsonOutput) {
     console.log(JSON.stringify({ success: true, data: skillList }, null, 2));
   } else {
-    console.log(pc.bold("Skills in INBOX:\n"));
+    console.log("Skills in INBOX:\n");
     for (const skill of skillList) {
-      console.log(`  ${pc.cyan(skill.name)} ${pc.dim(`(${skill.size})`)}`);
+      console.log(`  ${skill.name} (${skill.size})`);
     }
   }
 }
@@ -161,19 +160,19 @@ async function showInboxSkill(skillName: string): Promise<void> {
   logger?.log(`Showing skill: ${skillName} at ${skillDir}`);
 
   if (!existsSync(skillDir)) {
-    console.error(pc.red(`Skill '${skillName}' not found in INBOX`));
+    console.error(`Error: Skill '${skillName}' not found in INBOX`);
     process.exit(1);
   }
 
   if (!existsSync(skillMdPath)) {
-    console.warn(pc.yellow("Invalid skill directory (missing SKILL.md)"));
+    console.warn("Warning: Invalid skill directory (missing SKILL.md)");
     return;
   }
 
   const content = readFileSync(skillMdPath, "utf-8");
   console.log(content);
 
-  console.log(pc.bold("\nDirectory Structure:"));
+  console.log("\nDirectory Structure:");
   const tree = buildDirectoryTree(skillDir);
   console.log(tree);
 }
@@ -185,10 +184,10 @@ async function removeInboxSkill(skillName: string): Promise<void> {
   logger?.log(`Removing skill: ${skillName} from ${skillDir}`);
 
   if (!existsSync(skillDir)) {
-    console.error(pc.red(`Skill '${skillName}' not found in INBOX`));
+    console.error(`Error: Skill '${skillName}' not found in INBOX`);
     process.exit(1);
   }
 
   rmSync(skillDir, { recursive: true, force: true });
-  console.log(pc.green(`✓ Skill '${skillName}' removed from INBOX`));
+  console.log(`Skill '${skillName}' removed from INBOX`);
 }

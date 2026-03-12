@@ -3,13 +3,11 @@ import { join, isAbsolute, resolve } from "path";
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
 import stripJsonComments from "strip-json-comments";
 import { Logger } from "./logger.js";
-import pc from "picocolors";
 import { loadEnv } from "./env-loader.js";
 
 export interface SpaceConfig {
   path: string;
   skillsInboxDir?: string;
-  skillsIocdbDir?: string;
   skillsDir?: string;
   [key: string]: any;
 }
@@ -75,22 +73,18 @@ export class ConfigService {
   private checkDeprecatedConfig(): void {
     const deprecatedEnvVars = [
       { old: "WOPAL_SKILL_INBOX_DIR", new: "WOPAL_SKILLS_INBOX_DIR" },
-      { old: "WOPAL_SKILL_IOCDB_DIR", new: "WOPAL_SKILLS_IOCDB_DIR" },
     ];
 
     for (const { old, new: newVar } of deprecatedEnvVars) {
       if (process.env[old]) {
         console.warn(
-          pc.yellow(
-            `Warning: Environment variable ${old} is deprecated. Please use ${newVar} instead.`,
-          ),
+          `Warning: Environment variable ${old} is deprecated. Please use ${newVar} instead.`,
         );
       }
     }
 
     const deprecatedConfigKeys = [
       { old: "skillInboxDir", new: "skillsInboxDir" },
-      { old: "skillIocdbDir", new: "skillsIocdbDir" },
       { old: "skillsInstallDir", new: "skillsDir" },
     ];
 
@@ -98,9 +92,7 @@ export class ConfigService {
       for (const { old, new: newKey } of deprecatedConfigKeys) {
         if (space[old] !== undefined) {
           console.warn(
-            pc.yellow(
-              `Warning: Configuration key "${old}" is deprecated. Please use "${newKey}" instead in your settings.jsonc.`,
-            ),
+            `Warning: Configuration key "${old}" is deprecated. Please use "${newKey}" instead in your settings.jsonc.`,
           );
         }
       }
@@ -189,11 +181,8 @@ export class ConfigService {
 
   private warnFallbackOnce(key: string, defaultValue: string) {
     if (!this._hasWarned[key]) {
-      // Using picocolors.yellow for explicit warning per design doc
       console.warn(
-        pc.yellow(
-          `Warning: ${key} configuration missing, using default value: ${defaultValue}`,
-        ),
+        `Warning: ${key} configuration missing, using default value: ${defaultValue}`,
       );
       this._hasWarned[key] = true;
     }
@@ -220,29 +209,6 @@ export class ConfigService {
     this.warnFallbackOnce("WOPAL_SKILLS_INBOX_DIR", fallbackVal);
 
     return this.resolveValue(fallbackVal, spaceDir)!;
-  }
-
-  public getSkillIocdbDir(): string {
-    const activeSpace = this.getActiveSpace();
-    const envVal = process.env.WOPAL_SKILLS_IOCDB_DIR;
-    let configVal = activeSpace?.skillsIocdbDir;
-    let spaceDir = activeSpace ? activeSpace.path : process.cwd();
-
-    let targetVal = undefined;
-    if (envVal) {
-      targetVal = envVal;
-    } else if (configVal) {
-      targetVal = configVal;
-    }
-
-    if (targetVal) {
-      return this.resolveValue(targetVal, spaceDir)!;
-    }
-
-    const fallbackVal = join(homedir(), ".wopal", "storage", "ioc-db");
-    this.warnFallbackOnce("WOPAL_SKILLS_IOCDB_DIR", fallbackVal);
-
-    return fallbackVal;
   }
 
   public getSkillsInstallDir(): string {

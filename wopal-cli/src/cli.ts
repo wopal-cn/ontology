@@ -4,9 +4,8 @@ import { loadEnv } from "./lib/env-loader.js";
 import { Logger } from "./lib/logger.js";
 import { checkInitialization } from "./lib/init-check.js";
 import { handleCommandError } from "./lib/error-utils.js";
-import { hasHelpOrVersion, getPrimaryCommand } from "./argv.js";
+import { getPrimaryCommand } from "./argv.js";
 import { tryRouteCli, getVersion } from "./route.js";
-import { registerSubCliByName } from "./program/register-subclis.js";
 import {
   registerInitCommand,
   setLogger as setInitLogger,
@@ -59,46 +58,8 @@ async function runCli(argv: string[] = process.argv): Promise<void> {
   registerInitCommand(program);
 
   const primary = getPrimaryCommand(argv);
-  if (primary && !hasHelpOrVersion(argv)) {
-    if (primary === "skills") {
-      registerSkillsCli(program);
-    }
-  } else {
-    program
-      .command("skills")
-      .description("Manage AI agent skills")
-      .allowUnknownOption(true)
-      .allowExcessArguments(true)
-      .action(async (...actionArgs) => {
-        const commands = program.commands as Command[];
-        const skillsCmd = commands.find((cmd) => cmd.name() === "skills");
-        if (skillsCmd) {
-          const index = commands.indexOf(skillsCmd);
-          if (index >= 0) {
-            commands.splice(index, 1);
-          }
-        }
-        registerSkillsCli(program);
-        const actionCommand = actionArgs.at(-1) as Command | undefined;
-        const rawArgs = (program as Command & { rawArgs?: string[] }).rawArgs;
-        const actionArgsList: string[] = [];
-        const options = actionCommand?.opts() || {};
-        for (const [, value] of Object.entries(options)) {
-          if (typeof value === "string") {
-            actionArgsList.push(value);
-          }
-        }
-        const fallbackArgv = actionCommand?.name()
-          ? [actionCommand.name(), ...actionArgsList]
-          : actionArgsList;
-        const parseArgv = rawArgs || [
-          "node",
-          "wopal",
-          "skills",
-          ...fallbackArgv,
-        ];
-        await program.parseAsync(parseArgv);
-      });
+  if (primary === null || primary === "skills") {
+    registerSkillsCli(program);
   }
 
   await program.parseAsync(argv);

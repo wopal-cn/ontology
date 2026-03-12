@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import { CommandError } from "./error-utils.js";
 import { getConfig } from "./config.js";
+import { getOpenclawDir } from "../scanner/openclaw-updater.js";
 
 export function checkInitialization(): void {
   const config = getConfig();
@@ -15,16 +16,16 @@ export function checkInitialization(): void {
     });
   }
 
-  // 2. Check IOC database exists
-  const iocdbDir = config.getSkillIocdbDir();
+  // 2. Check OpenClaw scanner directory exists
+  const openclawDir = getOpenclawDir();
 
-  if (!existsSync(iocdbDir)) {
+  if (!existsSync(openclawDir)) {
     throw new CommandError({
-      code: "IOC_DATABASE_NOT_FOUND",
-      message: `IOC database not found: ${iocdbDir}`,
+      code: "OPENCLAW_NOT_FOUND",
+      message: `OpenClaw scanner not found: ${openclawDir}`,
       suggestion:
-        "Initialize IOC database with: git submodule update --init\n" +
-        "Or configure a different path with WOPAL_SKILLS_IOCDB_DIR environment variable",
+        "Initialize OpenClaw scanner with: wopal skills update-scanner\n" +
+        "Or configure a different path with WOPAL_OPENCLAW_DIR environment variable",
     });
   }
 }

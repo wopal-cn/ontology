@@ -137,12 +137,13 @@ wopal find [query]                            # 透传搜索
 - 每个命令的 -h --help 输出要完善, 便于 ai agent 了解命令完整使用方法
 - 所有命令必须支持 `--json` 的命令
 - 所有命令在出错后,清晰明了显示错误信息,如果是参数和指令错误,要打印命令帮助信息或指导性说明
+- **禁用颜色输出**：不使用 picocolors 等颜色库，CLI 输出为纯文本，便于 AI agent 解析
 
 ## 环境变量
 
 | 变量名                      | 默认值                  |
 | --------------------------- | ----------------------- |
-| `WOPAL_SKILLS_INBOX_DIR`    | `~/.wopal/skills/INBOX` |
+| `WOPAL_SKILLS_INBOX_DIR`    | `.wopal/skills/INBOX`   |
 | `WOPAL_SKILLS_DIR`          | `.wopal/skills`         |
 | `WOPAL_OPENCLAW_DIR`        | `~/.wopal/storage/openclaw-security-monitor` |
 | `GITHUB_TOKEN` / `GH_TOKEN` | -（可选）               |

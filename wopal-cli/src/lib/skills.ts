@@ -43,7 +43,12 @@ export async function parseSkillMd(
       rawContent: content,
       metadata: data.metadata,
     };
-  } catch {
+  } catch (error) {
+    const skillDir = skillMdPath.replace(/\/SKILL\.md$/i, "");
+    const skillName = basename(skillDir) || skillDir;
+    console.warn(
+      `Warning: Invalid YAML in SKILL.md for skill '${skillName}': ${(error as Error).message}`,
+    );
     return null;
   }
 }

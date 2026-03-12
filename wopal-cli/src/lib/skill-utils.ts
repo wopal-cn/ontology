@@ -16,13 +16,22 @@ export function parseSkillMd(
 ): { name: string; description?: string } | null {
   if (!existsSync(skillMdPath)) return null;
 
-  const content = readFileSync(skillMdPath, "utf-8");
-  const { data } = matter(content);
+  try {
+    const content = readFileSync(skillMdPath, "utf-8");
+    const { data } = matter(content);
 
-  return {
-    name: data.name || "",
-    description: data.description,
-  };
+    return {
+      name: data.name || "",
+      description: data.description,
+    };
+  } catch (error) {
+    const skillDir = skillMdPath.replace(/\/SKILL\.md$/i, "");
+    const skillName = skillDir.split("/").pop() || skillDir;
+    console.warn(
+      `Warning: Invalid YAML in SKILL.md for skill '${skillName}': ${(error as Error).message}`,
+    );
+    return null;
+  }
 }
 
 export function getSkillInfo(skillDir: string): SkillInfo | null {

@@ -1,6 +1,5 @@
 import { existsSync } from "fs";
 import { Command } from "commander";
-import pc from "picocolors";
 import { getInboxDir } from "../../lib/inbox-utils.js";
 import {
   collectSkills,
@@ -110,24 +109,22 @@ async function listAllSkills(
   }
 
   if (allSkills.length === 0) {
-    console.log(pc.yellow("No skills found"));
+    console.log("No skills found");
     return;
   }
 
-  console.log(pc.bold("Skills:\n"));
+  console.log("Skills:\n");
 
   for (const skill of allSkills) {
     const statusIcon =
-      skill.status === "downloaded"
-        ? pc.yellow("[Downloaded]")
-        : pc.green("[Installed]");
-    console.log(`  ${statusIcon} ${pc.cyan(skill.name)}`);
+      skill.status === "downloaded" ? "[Downloaded]" : "[Installed]";
+    console.log(`  ${statusIcon} ${skill.name}`);
 
     if (showInfo) {
       if (skill.description) {
-        console.log(`           ${pc.dim(skill.description)}`);
+        console.log(`           ${skill.description}`);
       }
-      console.log(`           ${pc.dim(`Path: ${skill.path}`)}`);
+      console.log(`           Path: ${skill.path}`);
     }
   }
 }
@@ -181,11 +178,11 @@ async function listInstalledSkills(options: ListOptions): Promise<void> {
   }
 
   if (skillsToShow.length === 0) {
-    console.log(pc.yellow("No installed skills found"));
+    console.log("No installed skills found");
     return;
   }
 
-  console.log(pc.bold("Installed Skills:\n"));
+  console.log("Installed Skills:\n");
 
   for (const [skillName, entry] of skillsToShow) {
     const scope =
@@ -197,16 +194,16 @@ async function listInstalledSkills(options: ListOptions): Promise<void> {
           ? "[Project]"
           : "[Global]";
 
-    console.log(`  ${pc.green(scope)} ${pc.cyan(skillName)}`);
+    console.log(`  ${scope} ${skillName}`);
 
     if (options.info) {
-      console.log(`           ${pc.dim(`Source: ${entry.source}`)}`);
-      console.log(`           ${pc.dim(`Type: ${entry.sourceType}`)}`);
-      console.log(`           ${pc.dim(`Installed: ${entry.installedAt}`)}`);
-      console.log(`           ${pc.dim(`Updated: ${entry.updatedAt}`)}`);
+      console.log(`           Source: ${entry.source}`);
+      console.log(`           Type: ${entry.sourceType}`);
+      console.log(`           Installed: ${entry.installedAt}`);
+      console.log(`           Updated: ${entry.updatedAt}`);
       if (entry.skillFolderHash) {
         console.log(
-          `           ${pc.dim(`Version: ${entry.skillFolderHash.substring(0, 16)}...`)}`,
+          `           Version: ${entry.skillFolderHash.substring(0, 16)}...`,
         );
       }
     }
