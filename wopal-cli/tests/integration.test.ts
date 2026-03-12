@@ -86,7 +86,12 @@ describe("Install Command Integration Tests", () => {
 
     expect(await fs.pathExists(inboxSkillDir)).toBe(false);
 
-    const lockPath = path.join(projectDir, ".wopal", "skills", ".skill-lock.json");
+    const lockPath = path.join(
+      projectDir,
+      ".wopal",
+      "skills",
+      ".skill-lock.json",
+    );
     expect(await fs.pathExists(lockPath)).toBe(true);
 
     const lock = await fs.readJson(lockPath);

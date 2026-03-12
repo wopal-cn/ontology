@@ -1,6 +1,6 @@
-const HELP_FLAGS = new Set(['-h', '--help']);
-const VERSION_FLAGS = new Set(['-v', '-V', '--version']);
-const FLAG_TERMINATOR = '--';
+const HELP_FLAGS = new Set(["-h", "--help"]);
+const VERSION_FLAGS = new Set(["-v", "-V", "--version"]);
+const FLAG_TERMINATOR = "--";
 
 export function hasHelpOrVersion(argv: string[]): boolean {
   return argv.some((arg) => HELP_FLAGS.has(arg) || VERSION_FLAGS.has(arg));
@@ -13,7 +13,7 @@ function isValueToken(arg: string | undefined): boolean {
   if (arg === FLAG_TERMINATOR) {
     return false;
   }
-  if (!arg.startsWith('-')) {
+  if (!arg.startsWith("-")) {
     return true;
   }
   return /^-\d+(?:\.\d+)?$/.test(arg);
@@ -66,10 +66,10 @@ export function getVerboseFlag(
   argv: string[],
   options?: { includeDebug?: boolean },
 ): boolean {
-  if (hasFlag(argv, '--verbose')) {
+  if (hasFlag(argv, "--verbose")) {
     return true;
   }
-  if (options?.includeDebug && hasFlag(argv, '--debug')) {
+  if (options?.includeDebug && hasFlag(argv, "--debug")) {
     return true;
   }
   return false;
@@ -94,10 +94,10 @@ export function getCommandPath(argv: string[], depth = 2): string[] {
     if (!arg) {
       continue;
     }
-    if (arg === '--') {
+    if (arg === "--") {
       break;
     }
-    if (arg.startsWith('-')) {
+    if (arg.startsWith("-")) {
       continue;
     }
     path.push(arg);
@@ -124,15 +124,15 @@ export function buildParseArgv(params: {
       : params.fallbackArgv && params.fallbackArgv.length > 0
         ? params.fallbackArgv
         : process.argv;
-  const programName = params.programName ?? '';
+  const programName = params.programName ?? "";
   const normalizedArgv =
     programName && baseArgv[0] === programName
       ? baseArgv.slice(1)
-      : baseArgv[0]?.endsWith('wopal')
+      : baseArgv[0]?.endsWith("wopal")
         ? baseArgv.slice(1)
         : baseArgv;
   const executable = (
-    normalizedArgv[0]?.split(/[/\\]/).pop() ?? ''
+    normalizedArgv[0]?.split(/[/\\]/).pop() ?? ""
   ).toLowerCase();
   const looksLikeNode =
     normalizedArgv.length >= 2 &&
@@ -140,21 +140,21 @@ export function buildParseArgv(params: {
   if (looksLikeNode) {
     return normalizedArgv;
   }
-  return ['node', programName || 'wopal', ...normalizedArgv];
+  return ["node", programName || "wopal", ...normalizedArgv];
 }
 
 const nodeExecutablePattern = /^node-\d+(?:\.\d+)*(?:\.exe)?$/;
 
 function isNodeExecutable(executable: string): boolean {
   return (
-    executable === 'node' ||
-    executable === 'node.exe' ||
-    executable === 'nodejs' ||
-    executable === 'nodejs.exe' ||
+    executable === "node" ||
+    executable === "node.exe" ||
+    executable === "nodejs" ||
+    executable === "nodejs.exe" ||
     nodeExecutablePattern.test(executable)
   );
 }
 
 function isBunExecutable(executable: string): boolean {
-  return executable === 'bun' || executable === 'bun.exe';
+  return executable === "bun" || executable === "bun.exe";
 }

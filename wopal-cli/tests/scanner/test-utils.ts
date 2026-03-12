@@ -6,7 +6,7 @@ export async function createMockSkill(
   files: Record<string, string>,
 ): Promise<string> {
   const tempDir = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), "skill-check-")
+    path.join(os.tmpdir(), "skill-check-"),
   );
 
   for (const [filePath, content] of Object.entries(files)) {

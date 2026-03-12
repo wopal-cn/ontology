@@ -73,9 +73,7 @@ describe("error-utils", () => {
 
       expect(error.code).toBe("SKILL_NOT_FOUND");
       expect(error.message).toBe("Skill 'my-skill' not found");
-      expect(error.suggestion).toBe(
-        "Use 'wopal list' to see installed skills",
-      );
+      expect(error.suggestion).toBe("Use 'wopal list' to see installed skills");
     });
 
     it("should create skill not in inbox error", () => {

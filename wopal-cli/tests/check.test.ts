@@ -12,7 +12,8 @@ describe("Check Command - Unit Tests", () => {
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "wopal-cli-test-"));
     const mockConfigService = {
-      getProjectLockPath: () => path.join(tempDir, ".wopal", ".skill-lock.json"),
+      getProjectLockPath: () =>
+        path.join(tempDir, ".wopal", ".skill-lock.json"),
     };
     lockManager = new LockManager(mockConfigService as any);
   });

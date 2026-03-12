@@ -45,9 +45,7 @@ describe("source-parser", () => {
     });
 
     it("should parse GitHub URL with tree/branch", () => {
-      const result = parseSource(
-        "https://github.com/owner/repo/tree/develop",
-      );
+      const result = parseSource("https://github.com/owner/repo/tree/develop");
       expect(result.type).toBe("github");
       expect(result.url).toBe("https://github.com/owner/repo.git");
       expect(result.ref).toBe("develop");

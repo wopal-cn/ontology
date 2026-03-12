@@ -1,6 +1,10 @@
-import type { Command } from 'commander';
-import { buildParseArgv, getPrimaryCommand, hasHelpOrVersion } from '../argv.js';
-import { resolveActionArgs } from './helpers.js';
+import type { Command } from "commander";
+import {
+  buildParseArgv,
+  getPrimaryCommand,
+  hasHelpOrVersion,
+} from "../argv.js";
+import { resolveActionArgs } from "./helpers.js";
 
 type SubCliRegistrar = (program: Command) => Promise<void> | void;
 
@@ -25,15 +29,15 @@ const shouldEagerRegisterSubcommands = (_argv: string[]) => {
 };
 
 function isTruthyEnvValue(value: string | undefined): boolean {
-  return value === '1' || value === 'true';
+  return value === "1" || value === "true";
 }
 
 const entries: SubCliEntry[] = [
   {
-    name: 'skills',
-    description: 'Manage AI agent skills',
+    name: "skills",
+    description: "Manage AI agent skills",
     register: async (program) => {
-      const mod = await import('../commands/skills/index.js');
+      const mod = await import("../commands/skills/index.js");
       mod.registerSkillsCli(program);
     },
   },
@@ -68,7 +72,9 @@ export async function registerSubCliByName(
 }
 
 function registerLazyCommand(program: Command, entry: SubCliEntry) {
-  const placeholder = program.command(entry.name).description(entry.description);
+  const placeholder = program
+    .command(entry.name)
+    .description(entry.description);
   placeholder.allowUnknownOption(true);
   placeholder.allowExcessArguments(true);
   placeholder.action(async (...actionArgs) => {

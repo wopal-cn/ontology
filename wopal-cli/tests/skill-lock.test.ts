@@ -8,10 +8,7 @@ vi.mock("child_process", () => ({
   execSync: execSyncMock,
 }));
 
-import {
-  fetchSkillFolderHash,
-  getGitHubToken,
-} from "../src/lib/skill-lock.js";
+import { fetchSkillFolderHash, getGitHubToken } from "../src/lib/skill-lock.js";
 
 describe("skill-lock utils", () => {
   const originalEnv = { ...process.env };
@@ -89,7 +86,7 @@ describe("skill-lock utils", () => {
           "User-Agent": "wopal-cli",
         },
         signal: expect.any(AbortSignal),
-      })
+      }),
     );
   });
 

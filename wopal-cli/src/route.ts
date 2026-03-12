@@ -1,14 +1,14 @@
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { hasFlag, getCommandPath } from './argv.js';
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import { hasFlag, getCommandPath } from "./argv.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export function getVersion(): string {
-  const packageJsonPath = join(__dirname, '..', 'package.json');
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+  const packageJsonPath = join(__dirname, "..", "package.json");
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
   return packageJson.version;
 }
 
@@ -44,14 +44,14 @@ type RouteSpec = {
 
 const routes: RouteSpec[] = [
   {
-    match: (path, argv) => path.length === 0 && hasFlag(argv, '--version'),
+    match: (path, argv) => path.length === 0 && hasFlag(argv, "--version"),
     run: async () => {
       console.log(getVersion());
       return true;
     },
   },
   {
-    match: (path, argv) => path.length === 0 && hasFlag(argv, '--help'),
+    match: (path, argv) => path.length === 0 && hasFlag(argv, "--help"),
     run: async () => {
       console.log(getHelpText());
       return true;

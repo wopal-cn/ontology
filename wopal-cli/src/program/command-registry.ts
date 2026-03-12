@@ -1,5 +1,5 @@
-import type { Command } from 'commander';
-import { getFlagValue, hasFlag } from '../argv.js';
+import type { Command } from "commander";
+import { getFlagValue, hasFlag } from "../argv.js";
 
 export type CommandRegisterParams = {
   program: Command;
