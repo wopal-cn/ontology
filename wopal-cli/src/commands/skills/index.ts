@@ -10,7 +10,7 @@ import { checkSubcommand } from "./check.js";
 import { installSubcommand } from "./install.js";
 import { inboxSubcommands } from "./inbox.js";
 import { updateScannerSubcommand } from "./update-scanner.js";
-import { passthroughSubcommand } from "./passthrough.js";
+import { findSubcommand } from "./find.js";
 
 export const skillsCommand: ModuleEntry = {
   type: "module",
@@ -46,7 +46,7 @@ export const skillsCommand: ModuleEntry = {
         checkSubcommand,
         installSubcommand,
         updateScannerSubcommand,
-        passthroughSubcommand,
+        findSubcommand,
       ],
       helpText: {
         workflow: [
