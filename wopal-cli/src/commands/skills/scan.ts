@@ -1,105 +1,64 @@
 import * as path from "path";
 import * as fs from "fs";
-import { Command } from "commander";
-import { Logger } from "../../lib/logger.js";
-import { ScanResult } from "../../scanner/types.js";
+import type {
+  SubCommandDefinition,
+  ProgramContext,
+} from "../../program/types.js";
+import type { ScanResult } from "../../scanner/types.js";
 import { getInboxDir } from "../../lib/inbox-utils.js";
-import { buildHelpText } from "../../lib/help-texts.js";
 import {
   ensureOpenclawRepo,
   validateOpenclawRepo,
-  setLogger as setOpenclawUpdaterLogger,
 } from "../../scanner/openclaw-updater.js";
 import {
   runOpenclawScan,
   convertToScanResult,
-  setLogger as setOpenclawWrapperLogger,
 } from "../../scanner/openclaw-wrapper.js";
-
-let logger: Logger;
-
-export function setLogger(l: Logger): void {
-  logger = l;
-  setOpenclawUpdaterLogger(l);
-  setOpenclawWrapperLogger(l);
-}
+import { handleCommandError } from "../../lib/error-utils.js";
 
 export interface ScanCommandOptions {
   json?: boolean;
   all?: boolean;
   output?: string;
-  "no-update"?: boolean;
+  noUpdate?: boolean;
 }
 
-export function registerScanCommand(program: Command): void {
-  const command = program
-    .command("scan [skill-name]")
-    .description("Scan INBOX skill for security issues using OpenClaw scanner")
-    .option("--json", "Output JSON format")
-    .option("--all", "Scan all INBOX skills")
-    .option("--output <file>", "Save JSON report to file")
-    .option("--no-update", "Skip automatic scanner update")
-    .action(
-      async (skillName: string | undefined, options: ScanCommandOptions) => {
-        const exitCode = await scanCommand(skillName, options);
-        process.exit(exitCode);
-      },
-    );
-
-  command.addHelpText(
-    "after",
-    buildHelpText({
-      examples: [
-        "wopal skills scan my-skill          # Scan single skill",
-        "wopal skills scan --all            # Scan all INBOX skills",
-        "wopal skills scan my-skill --json  # JSON output",
-        "wopal skills scan my-skill --no-update  # Skip scanner update",
-      ],
-      notes: [
-        "51 security checks (C2, malware, reverse shells, CVEs)",
-        "Exit codes: 0=pass, 1=issues found, 2=error",
-        "Scanner auto-updates every 24 hours",
-      ],
-      workflow: [
-        "Download: wopal skills download <source>",
-        "Scan: wopal skills scan <skill-name>",
-        "Install: wopal skills install <skill-name>",
-      ],
-    }),
-  );
-}
-
-export async function scanCommand(
+async function scanCommand(
   skillName: string | undefined,
   options: ScanCommandOptions,
+  context: ProgramContext,
 ): Promise<number> {
+  const { output, debug } = context;
   try {
-    if (!options["no-update"]) {
-      logger.info("Ensuring OpenClaw scanner is up to date...");
+    if (!options.noUpdate) {
+      if (debug) {
+        output.print("Ensuring OpenClaw scanner is up to date...");
+      }
       await ensureOpenclawRepo(false);
     }
 
     const validation = validateOpenclawRepo();
     if (!validation.valid) {
-      logger.error(`Scanner validation failed: ${validation.error}`);
-      logger.error(
+      output.error(`Scanner validation failed: ${validation.error}`);
+      output.error(
         "Please run 'wopal skills update-scanner' to download the scanner",
       );
       return 2;
     }
 
     if (options.all) {
-      return await scanAllSkills(options);
+      return await scanAllSkills(options, context);
     } else if (skillName) {
-      return await scanSingleSkill(skillName, options);
+      return await scanSingleSkill(skillName, options, context);
     } else {
-      console.error(
-        "Error: Missing required argument: skill-name\n\nUse 'wopal skills scan <skill-name>' to scan a single skill\nUse 'wopal skills scan --all' to scan all skills in INBOX",
+      output.error(
+        "Missing required argument: skill-name",
+        "Use 'wopal skills scan <skill-name>' to scan a single skill\nUse 'wopal skills scan --all' to scan all skills in INBOX",
       );
       return 2;
     }
   } catch (error) {
-    logger.error("Scan failed", { error: (error as Error).message });
+    output.error("Scan failed", (error as Error).message);
     return 2;
   }
 }
@@ -107,16 +66,18 @@ export async function scanCommand(
 async function scanSingleSkill(
   skillName: string,
   options: ScanCommandOptions,
+  context: ProgramContext,
 ): Promise<number> {
+  const { output } = context;
   const inboxPath = getInboxDir();
   const skillPath = path.join(inboxPath, skillName);
 
   if (!fs.existsSync(skillPath)) {
-    logger.error(`Skill not found: ${skillName}`);
+    output.error(`Skill not found: ${skillName}`);
     return 2;
   }
 
-  const result = await scanSkill(skillPath, skillName);
+  const result = await scanSkill(skillPath, skillName, context);
 
   if (options.json) {
     const jsonOutput = options.output
@@ -125,22 +86,26 @@ async function scanSingleSkill(
 
     if (options.output) {
       fs.writeFileSync(options.output, jsonOutput, "utf-8");
-      console.log(`Report saved to ${options.output}`);
+      output.print(`Report saved to ${options.output}`);
     } else {
       console.log(jsonOutput);
     }
   } else {
-    displayScanResult(result);
+    displayScanResult(result, output);
   }
 
   return result.status === "pass" ? 0 : 1;
 }
 
-async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
+async function scanAllSkills(
+  options: ScanCommandOptions,
+  context: ProgramContext,
+): Promise<number> {
+  const { output } = context;
   const inboxPath = getInboxDir();
 
   if (!fs.existsSync(inboxPath)) {
-    logger.error("INBOX directory not found");
+    output.error("INBOX directory not found");
     return 2;
   }
 
@@ -150,7 +115,7 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
     .map((entry) => entry.name);
 
   if (skillDirs.length === 0) {
-    logger.info("No skills found in INBOX");
+    output.print("No skills found in INBOX");
     return 0;
   }
 
@@ -160,7 +125,7 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
 
   for (const skillName of skillDirs) {
     const skillPath = path.join(inboxPath, skillName);
-    const result = await scanSkill(skillPath, skillName);
+    const result = await scanSkill(skillPath, skillName, context);
     results.push(result);
 
     if (result.status === "pass") {
@@ -170,8 +135,8 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
     }
 
     if (!options.json) {
-      const statusIcon = result.status === "pass" ? "✓" : "✗";
-      console.log(
+      const statusIcon = result.status === "pass" ? "PASS" : "FAIL";
+      output.print(
         `${statusIcon} ${skillName}: ${result.status.toUpperCase()} (risk: ${result.riskScore})`,
       );
     }
@@ -193,20 +158,20 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
 
     if (options.output) {
       fs.writeFileSync(options.output, jsonOutput, "utf-8");
-      console.log(`Report saved to ${options.output}`);
+      output.print(`Report saved to ${options.output}`);
     } else {
       console.log(jsonOutput);
     }
   } else {
-    console.log(
-      `\nSummary: ${skillDirs.length} scanned, ${passCount} passed, ${failCount} failed`,
+    output.print(
+      `Summary: ${skillDirs.length} scanned, ${passCount} passed, ${failCount} failed`,
     );
 
     const failedResults = results.filter((r) => r.status === "fail");
     if (failedResults.length > 0) {
-      console.log("\n--- Failed Skills Details ---");
+      output.print("--- Failed Skills Details ---");
       for (const result of failedResults) {
-        displayScanResult(result);
+        displayScanResult(result, output);
       }
     }
   }
@@ -217,40 +182,44 @@ async function scanAllSkills(options: ScanCommandOptions): Promise<number> {
 async function scanSkill(
   skillPath: string,
   skillName: string,
+  context: ProgramContext,
 ): Promise<ScanResult> {
-  logger.info(`Scanning skill: ${skillName}`, { path: skillPath });
+  const { output, debug } = context;
+
+  if (debug) {
+    output.print(`Scanning skill: ${skillName} (path: ${skillPath})`);
+  }
 
   const startTime = Date.now();
 
   try {
-    const output = await runOpenclawScan(skillPath);
-    const result = convertToScanResult(skillName, output);
+    const scanOutput = await runOpenclawScan(skillPath);
+    const result = convertToScanResult(skillName, scanOutput);
 
     const duration = Date.now() - startTime;
-    logger.info(`Scan completed: ${skillName}`, {
-      status: result.status,
-      riskScore: result.riskScore,
-      duration: `${duration}ms`,
-      critical: result.summary.critical,
-      warning: result.summary.warning,
-    });
+    if (debug) {
+      output.print(
+        `Scan completed: ${skillName} (status: ${result.status}, risk: ${result.riskScore}, duration: ${duration}ms, critical: ${result.summary.critical}, warning: ${result.summary.warning})`,
+      );
+    }
 
     return result;
   } catch (error) {
-    logger.error(`Scan failed for ${skillName}`, {
-      error: (error as Error).message,
-    });
+    output.error(`Scan failed for ${skillName}`, (error as Error).message);
     throw error;
   }
 }
 
-function displayScanResult(result: ScanResult): void {
+function displayScanResult(
+  result: ScanResult,
+  output: ProgramContext["output"],
+): void {
   if (result.status === "pass") {
-    console.log(`✓ ${result.skillName}: PASS (risk: ${result.riskScore})`);
+    output.print(`PASS ${result.skillName}: PASS (risk: ${result.riskScore})`);
     return;
   }
 
-  console.log(`\n✗ ${result.skillName}: FAIL (risk: ${result.riskScore})`);
+  output.print(`FAIL ${result.skillName}: FAIL (risk: ${result.riskScore})`);
 
   const failedChecks = Object.values(result.checks).filter(
     (check) => check.status === "fail",
@@ -258,12 +227,12 @@ function displayScanResult(result: ScanResult): void {
 
   if (failedChecks.length > 0) {
     for (const check of failedChecks) {
-      console.log(`  [${check.severity.toUpperCase()}] ${check.name}`);
+      output.print(`  [${check.severity.toUpperCase()}] ${check.name}`);
       for (const finding of check.findings) {
         const location = finding.line
           ? `${finding.file}:${finding.line}`
           : finding.file;
-        console.log(`    ${location}: ${finding.pattern}`);
+        output.print(`    ${location}: ${finding.pattern}`);
       }
     }
   }
@@ -313,3 +282,47 @@ function formatCompactResult(result: ScanResult) {
     findings,
   };
 }
+
+export const scanSubcommand: SubCommandDefinition = {
+  name: "scan [skill-name]",
+  description: "Scan INBOX skill for security issues using OpenClaw scanner",
+  options: [
+    { flags: "--json", description: "Output JSON format" },
+    { flags: "--all", description: "Scan all INBOX skills" },
+    { flags: "--output <file>", description: "Save JSON report to file" },
+    { flags: "--no-update", description: "Skip automatic scanner update" },
+  ],
+  action: async (args, options, context) => {
+    try {
+      const skillName = args.arg0 as string | undefined;
+      const scanOptions: ScanCommandOptions = {
+        json: options.json as boolean | undefined,
+        all: options.all as boolean | undefined,
+        output: options.output as string | undefined,
+        noUpdate: options.noUpdate as boolean | undefined,
+      };
+      const exitCode = await scanCommand(skillName, scanOptions, context);
+      process.exit(exitCode);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  },
+  helpText: {
+    examples: [
+      "wopal skills scan my-skill          # Scan single skill",
+      "wopal skills scan --all            # Scan all INBOX skills",
+      "wopal skills scan my-skill --json  # JSON output",
+      "wopal skills scan my-skill --no-update  # Skip scanner update",
+    ],
+    notes: [
+      "51 security checks (C2, malware, reverse shells, CVEs)",
+      "Exit codes: 0=pass, 1=issues found, 2=error",
+      "Scanner auto-updates every 24 hours",
+    ],
+    workflow: [
+      "Download: wopal skills download <source>",
+      "Scan: wopal skills scan <skill-name>",
+      "Install: wopal skills install <skill-name>",
+    ],
+  },
+};

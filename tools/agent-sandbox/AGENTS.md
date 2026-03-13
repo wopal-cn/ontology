@@ -37,7 +37,7 @@
 3. **`sandbox.sh`：拦截防波堤与控制枢纽台**
    最核心的用户态接入点脚本，它代替了各种零散命令。
    主要挂载清单详情：
-   - `-v "$abs_target:/workspace:rw"`：被指派给它的当前任务**唯一主舞台**，全权可写。
+   - `-v "$abs_target:/project:rw"`：被指派给它的当前任务**唯一主舞台**，全权可写。
    - `-v "$HOME/.local/share/opencode:/home/coder/.local/share/opencode:rw"`：存放你的身份状态与 Auth 信息的互通池，避免重启后丧失状态反复要求登录。
    - `-v "$HOME/.config/opencode:/home/coder/.config/opencode:ro"`：强制让沙箱可以读取但绝对无权更改你在大盘内设定的关于大模型 API Key 之类的高风险配置。只读锁死了其篡改意图。
    - `-v "/var/run/docker.sock:/var/run/docker.sock:rw"`：透传宿主机物理引擎。

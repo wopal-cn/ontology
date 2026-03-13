@@ -1,48 +1,67 @@
-import type { Command } from "commander";
-import { Logger } from "../../lib/logger.js";
-import { registerInboxCommand, setLogger as setInboxLogger } from "./inbox.js";
-import { registerListCommand, setLogger as setListLogger } from "./list.js";
-import {
-  registerPassthroughCommand,
-  setLogger as setPassthroughLogger,
-} from "./passthrough.js";
-import {
-  registerDownloadCommand,
-  setLogger as setDownloadLogger,
-} from "./download.js";
-import { registerScanCommand, setLogger as setScanLogger } from "./scan.js";
-import { registerCheckCommand, setLogger as setCheckLogger } from "./check.js";
-import {
-  registerUpdateScannerCommand,
-  setLogger as setUpdateScannerLogger,
-} from "./update-scanner.js";
-import { createInstallCommand } from "./install.js";
+import type {
+  ModuleEntry,
+  CommandGroupDefinition,
+} from "../../program/types.js";
+import { registerCommandGroup } from "../../program/command-registry.js";
+import { listSubcommand } from "./list.js";
+import { downloadSubcommand } from "./download.js";
+import { scanSubcommand } from "./scan.js";
+import { checkSubcommand } from "./check.js";
+import { installSubcommand } from "./install.js";
+import { inboxSubcommands } from "./inbox.js";
+import { updateScannerSubcommand } from "./update-scanner.js";
+import { passthroughSubcommand } from "./passthrough.js";
 
-let logger: Logger;
+export const skillsCommand: ModuleEntry = {
+  type: "module",
+  id: "skills",
+  description: "Manage AI agent skills",
+  register: ({ program, context }) => {
+    const inboxGroupDef: CommandGroupDefinition = {
+      name: "inbox",
+      description: "Manage skills in INBOX (downloaded but not yet installed)",
+      subcommands: inboxSubcommands,
+      helpText: {
+        examples: [
+          "wopal skills inbox list        # List INBOX skills",
+          "wopal skills inbox show <name> # Show skill details",
+          "wopal skills inbox remove <name> # Remove from INBOX",
+        ],
+        workflow: [
+          "Download: wopal skills download <source>",
+          "Review: wopal skills inbox show <skill-name>",
+          "Scan: wopal skills scan <skill-name>",
+          "Install: wopal skills install <skill-name>",
+        ],
+      },
+    };
 
-export function setLogger(l: Logger): void {
-  logger = l;
-  setInboxLogger(l);
-  setListLogger(l);
-  setPassthroughLogger(l);
-  setDownloadLogger(l);
-  setScanLogger(l);
-  setCheckLogger(l);
-  setUpdateScannerLogger(l);
-}
+    const skillsGroupDef: CommandGroupDefinition = {
+      name: "skills",
+      description: "Manage AI agent skills",
+      subcommands: [
+        listSubcommand,
+        downloadSubcommand,
+        scanSubcommand,
+        checkSubcommand,
+        installSubcommand,
+        updateScannerSubcommand,
+        passthroughSubcommand,
+      ],
+      helpText: {
+        workflow: [
+          "Download: wopal skills download <source>",
+          "Scan: wopal skills scan <skill-name>",
+          "Install: wopal skills install <skill-name>",
+        ],
+      },
+    };
 
-export function registerSkillsCli(program: Command): void {
-  const skillsCommand = program
-    .command("skills")
-    .description("Manage AI agent skills")
-    .addHelpCommand(false);
+    registerCommandGroup(program, skillsGroupDef, context);
 
-  registerInboxCommand(skillsCommand);
-  registerListCommand(skillsCommand);
-  registerPassthroughCommand(skillsCommand);
-  registerDownloadCommand(skillsCommand);
-  registerScanCommand(skillsCommand);
-  registerCheckCommand(skillsCommand);
-  registerUpdateScannerCommand(skillsCommand);
-  skillsCommand.addCommand(createInstallCommand());
-}
+    const skillsCmd = program.commands.find((cmd) => cmd.name() === "skills");
+    if (skillsCmd) {
+      registerCommandGroup(skillsCmd, inboxGroupDef, context);
+    }
+  },
+};

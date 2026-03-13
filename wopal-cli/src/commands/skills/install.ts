@@ -1,7 +1,9 @@
-import { Command } from "commander";
 import fs from "fs-extra";
 import path from "path";
-import { Logger } from "../../lib/logger.js";
+import type {
+  SubCommandDefinition,
+  ProgramContext,
+} from "../../program/types.js";
 import { LockManager } from "../../lib/lock-manager.js";
 import { getInboxDir } from "../../lib/inbox-utils.js";
 import { readMetadata } from "../../lib/metadata.js";
@@ -16,93 +18,43 @@ import type {
   InstallMode,
   InstallScope,
 } from "../../types/lock.js";
-import { getConfig } from "../../lib/config.js";
-import { buildHelpText } from "../../lib/help-texts.js";
+import { handleCommandError } from "../../lib/error-utils.js";
 
 interface InstallOptions {
   global: boolean;
   force: boolean;
   skipScan: boolean;
   mode: InstallMode;
-  debug: boolean;
-}
-
-export function createInstallCommand(): Command {
-  const command = new Command("install");
-
-  command
-    .description("Install a skill from INBOX or local path")
-    .argument("<source>", "Skill name (for INBOX) or local path")
-    .option(
-      "-g, --global",
-      "Install to global scope (~/.wopal/skills/)",
-      false,
-    )
-    .option("--force", "Force overwrite if skill already exists", false)
-    .option("--skip-scan", "Skip security scan for INBOX skills", false)
-    .option("--mode <mode>", "Install mode (copy or symlink)", "copy")
-    .option("-d, --debug", "Enable debug logging", false)
-    .action(async (source: string, options: InstallOptions) => {
-      const logger = new Logger(options.debug);
-
-      try {
-        await installSkill(source, options, logger);
-      } catch (error) {
-        logger.error(
-          `Installation failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        process.exit(1);
-      }
-    });
-
-  command.addHelpText(
-    "after",
-    buildHelpText({
-      examples: [
-        "wopal skills install my-skill          # Install from INBOX",
-        "wopal skills install /path/to/skill    # Install from local path",
-        "wopal skills install my-skill --global # Install globally",
-        "wopal skills install my-skill --force  # Force overwrite",
-      ],
-      notes: [
-        "INBOX skills are automatically scanned for security",
-        "Local skills identified by path separators (/ or \\)",
-        "Lock files updated with skill metadata",
-      ],
-      workflow: [
-        "Download: wopal skills download <source>",
-        "Scan: wopal skills scan <skill-name>",
-        "Install: wopal skills install <skill-name>",
-        "Verify: wopal skills list",
-      ],
-    }),
-  );
-
-  return command;
 }
 
 async function installSkill(
   source: string,
   options: InstallOptions,
-  logger: Logger,
+  context: ProgramContext,
 ): Promise<void> {
-  logger.debug(`Installing skill from: ${source}`);
-  logger.debug(`Options: ${JSON.stringify(options)}`);
+  const { output, debug } = context;
+
+  if (debug) {
+    output.print(`Installing skill from: ${source}`);
+    output.print(`Options: ${JSON.stringify(options)}`);
+  }
 
   if (options.mode === "symlink") {
     throw new Error("symlink mode is not implemented yet");
   }
 
   const scope: InstallScope = options.global ? "global" : "project";
-  logger.debug(`Install scope: ${scope}`);
+  if (debug) {
+    output.print(`Install scope: ${scope}`);
+  }
 
   const isLocal =
     source.includes("/") || source.includes("\\") || source.includes(path.sep);
 
   if (isLocal) {
-    await installLocalSkill(source, scope, options, logger);
+    await installLocalSkill(source, scope, options, context);
   } else {
-    await installInboxSkill(source, scope, options, logger);
+    await installInboxSkill(source, scope, options, context);
   }
 }
 
@@ -110,10 +62,14 @@ async function installLocalSkill(
   skillPath: string,
   scope: InstallScope,
   options: InstallOptions,
-  logger: Logger,
+  context: ProgramContext,
 ): Promise<void> {
+  const { output, config, debug } = context;
   const absolutePath = path.resolve(skillPath);
-  logger.debug(`Resolved local path: ${absolutePath}`);
+
+  if (debug) {
+    output.print(`Resolved local path: ${absolutePath}`);
+  }
 
   if (!(await fs.pathExists(absolutePath))) {
     throw new Error(`Local skill path not found: ${absolutePath}`);
@@ -125,18 +81,22 @@ async function installLocalSkill(
   }
 
   const skillName = path.basename(absolutePath);
-  logger.info(`Installing local skill: ${skillName}`);
+  output.print(`Installing local skill: ${skillName}`);
 
-  const targetDir = getTargetDir(skillName, scope);
-  logger.debug(`Target directory: ${targetDir}`);
+  const targetDir = getTargetDir(skillName, scope, config);
+  if (debug) {
+    output.print(`Target directory: ${targetDir}`);
+  }
 
-  await checkExistingSkill(skillName, targetDir, options.force, scope, logger);
+  await checkExistingSkill(skillName, targetDir, options.force, scope, output);
 
   const skillFolderHash = await computeSkillFolderHash(absolutePath);
-  logger.debug(`Computed skill folder hash: ${skillFolderHash}`);
+  if (debug) {
+    output.print(`Computed skill folder hash: ${skillFolderHash}`);
+  }
 
-  await copySkill(absolutePath, targetDir, logger);
-  console.log(`✓ Skill copied to: ${targetDir}`);
+  await copySkill(absolutePath, targetDir, output);
+  output.print(`Skill copied to: ${targetDir}`);
 
   const lockEntry: SkillLockEntry = {
     source: `my-skills/${skillName}`,
@@ -148,24 +108,27 @@ async function installLocalSkill(
     updatedAt: new Date().toISOString(),
   };
 
-  const lockManager = new LockManager(getConfig());
+  const lockManager = new LockManager(config);
   await lockManager.addSkillToBothLocks(skillName, lockEntry);
-  console.log("✓ Lock files updated");
+  output.print("Lock files updated");
 
-  console.log(`✓ Installation complete: ${skillName}`);
+  output.print(`Installation complete: ${skillName}`);
 }
 
 async function installInboxSkill(
   skillName: string,
   scope: InstallScope,
   options: InstallOptions,
-  logger: Logger,
+  context: ProgramContext,
 ): Promise<void> {
+  const { output, config, debug } = context;
   const inboxDir = getInboxDir();
   const skillDir = path.join(inboxDir, skillName);
 
-  logger.debug(`INBOX directory: ${inboxDir}`);
-  logger.debug(`Skill directory: ${skillDir}`);
+  if (debug) {
+    output.print(`INBOX directory: ${inboxDir}`);
+    output.print(`Skill directory: ${skillDir}`);
+  }
 
   if (!(await fs.pathExists(skillDir))) {
     throw new Error(`Skill not found in INBOX: ${skillName}`);
@@ -176,29 +139,37 @@ async function installInboxSkill(
     throw new Error(`SKILL.md not found in INBOX skill: ${skillName}`);
   }
 
-  const targetDir = getTargetDir(skillName, scope);
-  logger.debug(`Target directory: ${targetDir}`);
+  const targetDir = getTargetDir(skillName, scope, config);
+  if (debug) {
+    output.print(`Target directory: ${targetDir}`);
+  }
 
-  await checkExistingSkill(skillName, targetDir, options.force, scope, logger);
+  await checkExistingSkill(skillName, targetDir, options.force, scope, output);
 
   if (!options.skipScan) {
-    console.log("Running security scan...");
-    await runSecurityScan(skillName, skillDir, logger);
+    output.print("Running security scan...");
+    await runSecurityScan(skillName, skillDir, output);
   } else {
-    logger.debug("Skipping security scan (--skip-scan)");
+    if (debug) {
+      output.print("Skipping security scan (--skip-scan)");
+    }
   }
 
   const metadata = await readMetadata(skillDir);
   if (!metadata) {
     throw new Error(`Failed to read metadata for skill: ${skillName}`);
   }
-  logger.debug(`Skill metadata: ${JSON.stringify(metadata)}`);
+  if (debug) {
+    output.print(`Skill metadata: ${JSON.stringify(metadata)}`);
+  }
 
   let skillFolderHash = metadata.skillFolderHash;
   if (!skillFolderHash) {
-    logger.debug(
-      "skillFolderHash not found in metadata, fetching from GitHub...",
-    );
+    if (debug) {
+      output.print(
+        "skillFolderHash not found in metadata, fetching from GitHub...",
+      );
+    }
     const token = getGitHubToken();
     const [owner, repo] = metadata.source.split("/");
     skillFolderHash = await fetchSkillFolderHash(
@@ -207,14 +178,18 @@ async function installInboxSkill(
       token,
     );
     if (!skillFolderHash) {
-      logger.warn("Failed to fetch skillFolderHash, using empty string");
+      if (debug) {
+        output.print("Failed to fetch skillFolderHash, using empty string");
+      }
       skillFolderHash = "";
     }
   }
-  logger.debug(`Skill folder hash: ${skillFolderHash}`);
+  if (debug) {
+    output.print(`Skill folder hash: ${skillFolderHash}`);
+  }
 
-  await copySkill(skillDir, targetDir, logger);
-  console.log(`✓ Skill copied to: ${targetDir}`);
+  await copySkill(skillDir, targetDir, output);
+  output.print(`Skill copied to: ${targetDir}`);
 
   const lockEntry: SkillLockEntry = {
     source: metadata.source.split("@")[0],
@@ -226,21 +201,27 @@ async function installInboxSkill(
     updatedAt: new Date().toISOString(),
   };
 
-  const lockManager = new LockManager(getConfig());
+  const lockManager = new LockManager(config);
   await lockManager.addSkillToBothLocks(skillName, lockEntry);
-  console.log("✓ Lock files updated");
+  output.print("Lock files updated");
 
   await fs.remove(skillDir);
-  logger.debug(`✓ INBOX skill removed: ${skillDir}`);
+  if (debug) {
+    output.print(`INBOX skill removed: ${skillDir}`);
+  }
 
-  console.log(`✓ Installation complete: ${skillName}`);
+  output.print(`Installation complete: ${skillName}`);
 }
 
-function getTargetDir(skillName: string, scope: InstallScope): string {
+function getTargetDir(
+  skillName: string,
+  scope: InstallScope,
+  config: ProgramContext["config"],
+): string {
   if (scope === "global") {
-    return path.join(getConfig().getGlobalSkillsDir(), skillName);
+    return path.join(config.getGlobalSkillsDir(), skillName);
   } else {
-    return path.join(getConfig().getSkillsInstallDir(), skillName);
+    return path.join(config.getSkillsDir(), skillName);
   }
 }
 
@@ -249,7 +230,7 @@ async function checkExistingSkill(
   targetDir: string,
   force: boolean,
   scope: InstallScope,
-  logger: Logger,
+  output: ProgramContext["output"],
 ): Promise<void> {
   if (await fs.pathExists(targetDir)) {
     if (!force) {
@@ -259,7 +240,7 @@ async function checkExistingSkill(
           `Use --force to overwrite or remove it first.`,
       );
     }
-    logger.warn(`Removing existing skill: ${targetDir}`);
+    output.print(`Removing existing skill: ${targetDir}`);
     await fs.remove(targetDir);
   }
 }
@@ -267,7 +248,7 @@ async function checkExistingSkill(
 async function copySkill(
   sourceDir: string,
   targetDir: string,
-  logger: Logger,
+  output: ProgramContext["output"],
 ): Promise<void> {
   await fs.ensureDir(path.dirname(targetDir));
   await fs.copy(sourceDir, targetDir, {
@@ -281,10 +262,10 @@ async function copySkill(
 async function runSecurityScan(
   skillName: string,
   skillDir: string,
-  logger: Logger,
+  output: ProgramContext["output"],
 ): Promise<void> {
-  const output = await runOpenclawScan(skillDir);
-  const result = convertToScanResult(skillName, output);
+  const scanOutput = await runOpenclawScan(skillDir);
+  const result = convertToScanResult(skillName, scanOutput);
 
   if (result.status === "fail") {
     throw new Error(
@@ -292,5 +273,62 @@ async function runSecurityScan(
     );
   }
 
-  console.log(`✓ Security scan passed (risk score: ${result.riskScore})`);
+  output.print(`Security scan passed (risk score: ${result.riskScore})`);
 }
+
+export const installSubcommand: SubCommandDefinition = {
+  name: "install <source>",
+  description: "Install a skill from INBOX or local path",
+  options: [
+    {
+      flags: "-g, --global",
+      description: "Install to global scope (~/.wopal/skills/)",
+    },
+    {
+      flags: "--force",
+      description: "Force overwrite if skill already exists",
+    },
+    {
+      flags: "--skip-scan",
+      description: "Skip security scan for INBOX skills",
+    },
+    {
+      flags: "--mode <mode>",
+      description: "Install mode (copy or symlink)",
+      defaultValue: "copy",
+    },
+  ],
+  action: async (args, options, context) => {
+    try {
+      const source = args.arg0 as string;
+      const installOptions: InstallOptions = {
+        global: options.global as boolean,
+        force: options.force as boolean,
+        skipScan: options.skipScan as boolean,
+        mode: (options.mode as InstallMode) || "copy",
+      };
+      await installSkill(source, installOptions, context);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  },
+  helpText: {
+    examples: [
+      "wopal skills install my-skill          # Install from INBOX",
+      "wopal skills install /path/to/skill    # Install from local path",
+      "wopal skills install my-skill --global # Install globally",
+      "wopal skills install my-skill --force  # Force overwrite",
+    ],
+    notes: [
+      "INBOX skills are automatically scanned for security",
+      "Local skills identified by path separators (/ or \\)",
+      "Lock files updated with skill metadata",
+    ],
+    workflow: [
+      "Download: wopal skills download <source>",
+      "Scan: wopal skills scan <skill-name>",
+      "Install: wopal skills install <skill-name>",
+      "Verify: wopal skills list",
+    ],
+  },
+};

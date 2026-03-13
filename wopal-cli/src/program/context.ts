@@ -1,9 +1,14 @@
-export type ProgramContext = {
-  programVersion: string;
-};
+import type { ProgramContext, ProgramContextParams } from "./types.js";
 
-export function createProgramContext(version: string): ProgramContext {
+export function createProgramContext(
+  params: ProgramContextParams,
+): ProgramContext {
   return {
-    programVersion: version,
+    version: params.version,
+    debug: params.debug,
+    config: params.config,
+    output: params.output,
   };
 }
+
+export type { ProgramContext, ProgramContextParams } from "./types.js";

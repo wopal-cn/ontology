@@ -129,7 +129,7 @@ RUN npm install -g @fission-ai/openspec@latest
 
 # 入口点配置
 USER root
-WORKDIR /workspace
+WORKDIR /project
 
 # 时区设置（放最后避免缓存失效）
 RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \

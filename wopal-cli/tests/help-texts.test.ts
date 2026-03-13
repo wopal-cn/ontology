@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildHelpText, HELP_TEXTS } from "../src/lib/help-texts.js";
+import {
+  buildHelpText,
+  buildHelpHeader,
+  HELP_TEXTS,
+} from "../src/lib/help-texts.js";
 
 describe("help-texts", () => {
   describe("HELP_TEXTS.sections", () => {
@@ -109,7 +113,7 @@ describe("help-texts", () => {
       const result = HELP_TEXTS.errors.invalidSource("bad-format");
 
       expect(result).toContain("Invalid source format: bad-format");
-      expect(result).toContain("owner/repo@skill-name");
+      expect(result).toContain("owner/repo");
     });
   });
 
@@ -189,6 +193,21 @@ describe("help-texts", () => {
       expect(result).toContain("OPTIONS:");
       expect(result).not.toContain("NOTES:");
       expect(result).not.toContain("WORKFLOW:");
+    });
+  });
+
+  describe("buildHelpHeader", () => {
+    it("should show (none) when no active space", () => {
+      const result = buildHelpHeader(undefined);
+      expect(result).toContain("ACTIVE SPACE:");
+      expect(result).toContain("(none)");
+    });
+
+    it("should show space path when active space exists", () => {
+      const result = buildHelpHeader({ path: "/path/to/workspace" });
+      expect(result).toContain("ACTIVE SPACE:");
+      expect(result).toContain("/path/to/workspace");
+      expect(result).not.toContain("(none)");
     });
   });
 });

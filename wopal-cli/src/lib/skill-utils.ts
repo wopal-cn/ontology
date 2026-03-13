@@ -75,7 +75,7 @@ export function collectSkills(
 }
 
 export function getInstalledSkillsDir(): string {
-  return getConfig().getSkillsInstallDir();
+  return getConfig().getSkillsDir();
 }
 
 export function mergeSkills(

@@ -1,23 +1,13 @@
-import { existsSync } from "fs";
-import { Command } from "commander";
+import type { SubCommandDefinition } from "../../program/types.js";
 import { getInboxDir } from "../../lib/inbox-utils.js";
 import {
   collectSkills,
   getInstalledSkillsDir,
   mergeSkills,
-  SkillInfo,
 } from "../../lib/skill-utils.js";
-import { Logger } from "../../lib/logger.js";
 import { LockManager } from "../../lib/lock-manager.js";
 import type { SkillLockEntry } from "../../types/lock.js";
-import { buildHelpText } from "../../lib/help-texts.js";
-import { getConfig } from "../../lib/config.js";
-
-let logger: Logger;
-
-export function setLogger(l: Logger): void {
-  logger = l;
-}
+import { handleCommandError } from "../../lib/error-utils.js";
 
 interface ListOptions {
   info?: boolean;
@@ -26,102 +16,75 @@ interface ListOptions {
   json?: boolean;
 }
 
-export function registerListCommand(program: Command): void {
-  const command = program
-    .command("list")
-    .description(
-      "List all skills (INBOX downloaded + installed from lock files)",
-    )
-    .option("-i, --info", "Show skill descriptions and details")
-    .option("--local", "Show only project-level skills")
-    .option("--global", "Show only global-level skills")
-    .option("--json", "Output in JSON format")
-    .action(async (options: ListOptions) => {
-      await listSkills(options);
-    });
-
-  command.addHelpText(
-    "after",
-    buildHelpText({
-      examples: [
-        "wopal skills list               # List all skills",
-        "wopal skills list --info        # List with details",
-        "wopal skills list --local       # Project-level only",
-        "wopal skills list --json        # JSON output",
-      ],
-      notes: [
-        "Shows both INBOX (downloaded) and installed skills",
-        "INBOX skills marked with [Downloaded]",
-        "Installed skills marked with [Installed]",
-      ],
-    }),
-  );
-}
-
-async function listSkills(options: ListOptions): Promise<void> {
+async function listSkills(
+  options: ListOptions,
+  context: import("../../program/types.js").ProgramContext,
+): Promise<void> {
   if (options.local || options.global) {
-    await listInstalledSkills(options);
+    await listInstalledSkills(options, context);
   } else {
-    await listAllSkills(options.info || false, options.json || false);
+    await listAllSkills(options.info || false, options.json || false, context);
   }
 }
 
 async function listAllSkills(
   showInfo: boolean,
   jsonOutput: boolean,
+  context: import("../../program/types.js").ProgramContext,
 ): Promise<void> {
+  const { output, config, debug } = context;
   const inboxDir = getInboxDir();
   const installedDir = getInstalledSkillsDir();
 
-  logger?.log(`Listing skills from INBOX: ${inboxDir}`);
-  logger?.log(`Listing skills from installed: ${installedDir}`);
+  if (debug) {
+    output.print(`Listing skills from INBOX: ${inboxDir}`);
+    output.print(`Listing skills from installed: ${installedDir}`);
+  }
 
   const inboxSkills = collectSkills(inboxDir, "downloaded");
   const installedSkills = collectSkills(installedDir, "installed");
   const allSkills = mergeSkills(inboxSkills, installedSkills);
 
   if (jsonOutput) {
-    console.log(
-      JSON.stringify(
-        {
-          success: true,
-          data: allSkills.map((s) => ({
-            name: s.name,
-            status: s.status,
-            description: s.description,
-            path: s.path,
-          })),
-        },
-        null,
-        2,
-      ),
-    );
+    output.json({
+      items: allSkills.map((s) => ({
+        name: s.name,
+        status: s.status,
+        description: s.description,
+        path: s.path,
+      })),
+    });
     return;
   }
 
   if (allSkills.length === 0) {
-    console.log("No skills found");
+    output.print("No skills found");
     return;
   }
 
-  console.log("Skills:\n");
+  output.print("Skills:");
+  output.println();
 
   for (const skill of allSkills) {
     const statusIcon =
       skill.status === "downloaded" ? "[Downloaded]" : "[Installed]";
-    console.log(`  ${statusIcon} ${skill.name}`);
+    output.print(`  ${statusIcon} ${skill.name}`);
 
     if (showInfo) {
       if (skill.description) {
-        console.log(`           ${skill.description}`);
+        output.print(`           ${skill.description}`);
       }
-      console.log(`           Path: ${skill.path}`);
+      output.print(`           Path: ${skill.path}`);
     }
   }
 }
 
-async function listInstalledSkills(options: ListOptions): Promise<void> {
-  const lockManager = new LockManager(getConfig());
+async function listInstalledSkills(
+  options: ListOptions,
+  context: import("../../program/types.js").ProgramContext,
+): Promise<void> {
+  const { output, config } = context;
+  const lockManager = new LockManager(config);
 
   const projectLock = await lockManager.readProjectLock();
   const globalLock = await lockManager.readGlobalLock();
@@ -140,40 +103,34 @@ async function listInstalledSkills(options: ListOptions): Promise<void> {
   }
 
   if (options.json) {
-    console.log(
-      JSON.stringify(
-        {
-          success: true,
-          data: skillsToShow.map(([name, entry]) => ({
-            name,
-            source: entry.source,
-            sourceType: entry.sourceType,
-            scope:
-              options.local && options.global
-                ? projectSkills.some(([n]) => n === name)
-                  ? "project"
-                  : "global"
-                : options.local
-                  ? "project"
-                  : "global",
-            installedAt: entry.installedAt,
-            updatedAt: entry.updatedAt,
-            skillFolderHash: entry.skillFolderHash,
-          })),
-        },
-        null,
-        2,
-      ),
-    );
+    output.json({
+      items: skillsToShow.map(([name, entry]) => ({
+        name,
+        source: entry.source,
+        sourceType: entry.sourceType,
+        scope:
+          options.local && options.global
+            ? projectSkills.some(([n]) => n === name)
+              ? "project"
+              : "global"
+            : options.local
+              ? "project"
+              : "global",
+        installedAt: entry.installedAt,
+        updatedAt: entry.updatedAt,
+        skillFolderHash: entry.skillFolderHash,
+      })),
+    });
     return;
   }
 
   if (skillsToShow.length === 0) {
-    console.log("No installed skills found");
+    output.print("No installed skills found");
     return;
   }
 
-  console.log("Installed Skills:\n");
+  output.print("Installed Skills:");
+  output.println();
 
   for (const [skillName, entry] of skillsToShow) {
     const scope =
@@ -185,18 +142,55 @@ async function listInstalledSkills(options: ListOptions): Promise<void> {
           ? "[Project]"
           : "[Global]";
 
-    console.log(`  ${scope} ${skillName}`);
+    output.print(`  ${scope} ${skillName}`);
 
     if (options.info) {
-      console.log(`           Source: ${entry.source}`);
-      console.log(`           Type: ${entry.sourceType}`);
-      console.log(`           Installed: ${entry.installedAt}`);
-      console.log(`           Updated: ${entry.updatedAt}`);
+      output.print(`           Source: ${entry.source}`);
+      output.print(`           Type: ${entry.sourceType}`);
+      output.print(`           Installed: ${entry.installedAt}`);
+      output.print(`           Updated: ${entry.updatedAt}`);
       if (entry.skillFolderHash) {
-        console.log(
+        output.print(
           `           Version: ${entry.skillFolderHash.substring(0, 16)}...`,
         );
       }
     }
   }
 }
+
+export const listSubcommand: SubCommandDefinition = {
+  name: "list",
+  description: "List all skills (INBOX downloaded + installed from lock files)",
+  options: [
+    { flags: "-i, --info", description: "Show skill descriptions and details" },
+    { flags: "--local", description: "Show only project-level skills" },
+    { flags: "--global", description: "Show only global-level skills" },
+    { flags: "--json", description: "Output in JSON format" },
+  ],
+  action: async (_args, options, context) => {
+    try {
+      const listOptions: ListOptions = {
+        info: options.info as boolean | undefined,
+        local: options.local as boolean | undefined,
+        global: options.global as boolean | undefined,
+        json: options.json as boolean | undefined,
+      };
+      await listSkills(listOptions, context);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  },
+  helpText: {
+    examples: [
+      "wopal skills list               # List all skills",
+      "wopal skills list --info        # List with details",
+      "wopal skills list --local       # Project-level only",
+      "wopal skills list --json        # JSON output",
+    ],
+    notes: [
+      "Shows both INBOX (downloaded) and installed skills",
+      "INBOX skills marked with [Downloaded]",
+      "Installed skills marked with [Installed]",
+    ],
+  },
+};

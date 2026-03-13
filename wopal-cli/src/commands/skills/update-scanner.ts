@@ -1,60 +1,30 @@
-import { Command } from "commander";
-import { Logger } from "../../lib/logger.js";
+import type {
+  SubCommandDefinition,
+  ProgramContext,
+} from "../../program/types.js";
 import {
   ensureOpenclawRepo,
   getOpenclawDir,
   validateOpenclawRepo,
 } from "../../scanner/openclaw-updater.js";
-import { buildHelpText } from "../../lib/help-texts.js";
-
-let logger: Logger;
-
-export function setLogger(l: Logger): void {
-  logger = l;
-}
+import { handleCommandError } from "../../lib/error-utils.js";
 
 export interface UpdateScannerOptions {
   json?: boolean;
   force?: boolean;
 }
 
-export function registerUpdateScannerCommand(program: Command): void {
-  const command = program
-    .command("update-scanner")
-    .description("Update the OpenClaw security scanner database")
-    .option("--json", "Output JSON format")
-    .option("--force", "Force update even if recently updated")
-    .action(async (options: UpdateScannerOptions) => {
-      const exitCode = await updateScannerCommand(options);
-      process.exit(exitCode);
-    });
-
-  command.addHelpText(
-    "after",
-    buildHelpText({
-      examples: [
-        "wopal skills update-scanner         # Update scanner",
-        "wopal skills update-scanner --force # Force update",
-        "wopal skills update-scanner --json  # JSON output",
-      ],
-      notes: [
-        "Updates OpenClaw security scanner repository",
-        "Auto-updates every 24 hours during normal scans",
-        "Location: ~/.wopal/storage/openclaw-security-monitor/",
-      ],
-    }),
-  );
-}
-
-export async function updateScannerCommand(
+async function updateScannerCommand(
   options: UpdateScannerOptions,
+  context: ProgramContext,
 ): Promise<number> {
+  const { output } = context;
   try {
     const result = await ensureOpenclawRepo(options.force || false);
 
     const validation = validateOpenclawRepo();
 
-    const output = {
+    const outputData = {
       success: validation.valid,
       updated: result.updated,
       version: result.version,
@@ -63,14 +33,14 @@ export async function updateScannerCommand(
     };
 
     if (options.json) {
-      console.log(JSON.stringify(output, null, 2));
+      output.json(outputData);
     } else {
       if (validation.valid) {
-        console.log(`✓ Scanner ${result.message}`);
-        console.log(`  Version: ${result.version}`);
-        console.log(`  Path: ${output.path}`);
+        output.print(`Scanner ${result.message}`);
+        output.print(`  Version: ${result.version}`);
+        output.print(`  Path: ${outputData.path}`);
       } else {
-        console.error(`✗ Scanner validation failed: ${validation.error}`);
+        output.error(`Scanner validation failed: ${validation.error}`);
       }
     }
 
@@ -79,23 +49,50 @@ export async function updateScannerCommand(
     const message = (error as Error).message;
 
     if (options.json) {
-      console.log(
-        JSON.stringify(
-          {
-            success: false,
-            updated: false,
-            version: "unknown",
-            message,
-            path: getOpenclawDir(),
-          },
-          null,
-          2,
-        ),
-      );
+      output.json({
+        success: false,
+        updated: false,
+        version: "unknown",
+        message,
+        path: getOpenclawDir(),
+      });
     } else {
-      logger.error("Failed to update scanner", { error: message });
+      output.error("Failed to update scanner", message);
     }
 
     return 2;
   }
 }
+
+export const updateScannerSubcommand: SubCommandDefinition = {
+  name: "update-scanner",
+  description: "Update the OpenClaw security scanner database",
+  options: [
+    { flags: "--json", description: "Output JSON format" },
+    { flags: "--force", description: "Force update even if recently updated" },
+  ],
+  action: async (_args, options, context) => {
+    try {
+      const updateOptions: UpdateScannerOptions = {
+        json: options.json as boolean | undefined,
+        force: options.force as boolean | undefined,
+      };
+      const exitCode = await updateScannerCommand(updateOptions, context);
+      process.exit(exitCode);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  },
+  helpText: {
+    examples: [
+      "wopal skills update-scanner         # Update scanner",
+      "wopal skills update-scanner --force # Force update",
+      "wopal skills update-scanner --json  # JSON output",
+    ],
+    notes: [
+      "Updates OpenClaw security scanner repository",
+      "Auto-updates every 24 hours during normal scans",
+      "Location: ~/.wopal/storage/openclaw-security-monitor/",
+    ],
+  },
+};
