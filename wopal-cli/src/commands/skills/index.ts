@@ -1,5 +1,7 @@
 import type { Command } from "commander";
 import { Logger } from "../../lib/logger.js";
+import { buildHelpHeader } from "../../lib/help-texts.js";
+import { getConfig } from "../../lib/config.js";
 import { registerInboxCommand, setLogger as setInboxLogger } from "./inbox.js";
 import { registerListCommand, setLogger as setListLogger } from "./list.js";
 import {
@@ -36,6 +38,11 @@ export function registerSkillsCli(program: Command): void {
     .command("skills")
     .description("Manage AI agent skills")
     .addHelpCommand(false);
+
+  skillsCommand.addHelpText("before", () => {
+    const config = getConfig();
+    return buildHelpHeader(config.getActiveSpace());
+  });
 
   registerInboxCommand(skillsCommand);
   registerListCommand(skillsCommand);

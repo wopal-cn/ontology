@@ -253,7 +253,7 @@ start_serve_container() {
         -e "HOST_UID=$(id -u)" \
         -e "HOST_GID=$(id -g)" \
         "${DOCKER_MOUNTS[@]}" \
-        -v "$abs_target:/workspace:rw" \
+        -v "$abs_target:/project:rw" \
         "$IMAGE_NAME" opencode serve --port "$port" --hostname 0.0.0.0 --print-logs
     
     if ! wait_for_serve "$port"; then
@@ -584,7 +584,7 @@ run_sandbox() {
         -e "HOST_GID=$(id -g)" \
         -e "TERM=${TERM:-xterm-256color}" \
         "${DOCKER_MOUNTS[@]}" \
-        -v "$abs_target:/workspace:rw" \
+        -v "$abs_target:/project:rw" \
         "$IMAGE_NAME" "${container_cmd[@]}"
 }
 

@@ -94,8 +94,8 @@ RUN mkdir -p /home/coder/.config/opencode \
     /shared/opencode/agents \
     && chown -R coder:coder /home/coder /shared
 
-# 将 /workspace 指定为容器进入后的默认工作目录（此目录会作为宿主机的项目挂载点）
-WORKDIR /workspace
+# 将 /project 指定为容器进入后的默认工作目录（此目录会作为宿主机的项目挂载点）
+WORKDIR /project
 
 # 复制入口处理脚本并赋予可执行权限
 LABEL org.opencontainers.image.version="${SANDBOX_VERSION}" \

@@ -262,7 +262,7 @@ export function registerDownloadCommand(program: Command) {
         options: { force?: boolean; branch?: string; tag?: string },
       ) => {
         try {
-          const inboxPath = getConfig().getSkillInboxDir();
+          const inboxPath = getConfig().getSkillsInboxDir();
           logger?.log(`INBOX directory: ${inboxPath}`);
           logger?.log(`Parsing sources: ${sources.join(", ")}`);
 

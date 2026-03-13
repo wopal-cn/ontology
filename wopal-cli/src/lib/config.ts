@@ -1,19 +1,21 @@
 import { homedir } from "os";
-import { join, isAbsolute, resolve } from "path";
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
-import stripJsonComments from "strip-json-comments";
+import { join } from "path";
+import { mkdirSync, writeFileSync, existsSync } from "fs";
 import { Logger } from "./logger.js";
 import { loadEnv } from "./env-loader.js";
+import { resolveConfig, loadSettingsFile } from "./config-resolver.js";
+import { getWopalHome } from "./config-registry.js";
 
 export interface SpaceConfig {
   path: string;
   skillsInboxDir?: string;
   skillsDir?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface WopalConfig {
   activeSpace: string;
+  globalSkillsDir?: string;
   spaces: Record<string, SpaceConfig>;
 }
 
@@ -21,82 +23,29 @@ export class ConfigService {
   private config: WopalConfig;
   private logger: Logger;
   private settingsPath: string;
+  private envLoaded: boolean = false;
+  private debug: boolean;
 
+  /**
+   * Phase 1: 仅加载 settings.jsonc，不加载 .env
+   */
   constructor(debug: boolean = false) {
+    this.debug = debug;
     this.logger = new Logger(debug);
     this.settingsPath =
       process.env.WOPAL_SETTINGS_PATH ||
       join(homedir(), ".wopal", "config", "settings.jsonc");
-    this.config = this.loadConfig();
-
-    // Check for deprecated configuration items and environment variables
-    this.checkDeprecatedConfig();
-
-    // Once settings.jsonc is loaded, we know the active space (if any).
-    // Now load environment variables with space priority.
-    const spacePath = this.getActiveSpacePath();
-    loadEnv(debug, spacePath);
+    this.config = loadSettingsFile(this.settingsPath);
   }
 
-  private loadConfig(): WopalConfig {
-    const defaultConfig: WopalConfig = {
-      activeSpace: "main",
-      spaces: {},
-    };
-
-    if (!existsSync(this.settingsPath)) {
-      return defaultConfig;
-    }
-
-    try {
-      const content = readFileSync(this.settingsPath, "utf-8");
-      const parsed = JSON.parse(stripJsonComments(content));
-      const config = Object.assign(defaultConfig, parsed);
-
-      // Expand ~ in space paths
-      for (const space of Object.values(config.spaces) as SpaceConfig[]) {
-        if (space.path && space.path.startsWith("~")) {
-          space.path = space.path.replace(/^~(?=$|\/|\\)/, homedir());
-        }
-      }
-
-      return config;
-    } catch (e) {
-      this.logger.error(
-        `Failed to parse config at ${this.settingsPath}, using defaults.`,
-        e,
-      );
-      return defaultConfig;
-    }
-  }
-
-  private checkDeprecatedConfig(): void {
-    const deprecatedEnvVars = [
-      { old: "WOPAL_SKILL_INBOX_DIR", new: "WOPAL_SKILLS_INBOX_DIR" },
-    ];
-
-    for (const { old, new: newVar } of deprecatedEnvVars) {
-      if (process.env[old]) {
-        console.warn(
-          `Warning: Environment variable ${old} is deprecated. Please use ${newVar} instead.`,
-        );
-      }
-    }
-
-    const deprecatedConfigKeys = [
-      { old: "skillInboxDir", new: "skillsInboxDir" },
-      { old: "skillsInstallDir", new: "skillsDir" },
-    ];
-
-    for (const space of Object.values(this.config.spaces)) {
-      for (const { old, new: newKey } of deprecatedConfigKeys) {
-        if (space[old] !== undefined) {
-          console.warn(
-            `Warning: Configuration key "${old}" is deprecated. Please use "${newKey}" instead in your settings.jsonc.`,
-          );
-        }
-      }
-    }
+  /**
+   * Phase 2: 加载环境变量
+   * 在 cli.ts 的 preAction hook 中调用，此时已确定目标空间
+   */
+  public loadEnvForSpace(spacePath?: string): void {
+    if (this.envLoaded) return;
+    loadEnv(this.debug, spacePath);
+    this.envLoaded = true;
   }
 
   public saveConfig(): void {
@@ -111,135 +60,173 @@ export class ConfigService {
     );
   }
 
-  /**
-   * Interpolate custom `${env:VAR}` syntax and expand `~`
-   */
-  private resolveValue(
-    value: string | undefined,
-    spaceDir: string,
-  ): string | undefined {
-    if (!value) return undefined;
-
-    // 1. Expand standard env overrides first if configured implicitly
-    // Wait, the specification (1.3) asks to process `${env:VAR}` pattern.
-    let resolved = value.replace(/\$\{env:([\w\d_]+)\}/g, (_, envVar) => {
-      return process.env[envVar] || "";
-    });
-
-    // 2. Expand homedir
-    resolved = resolved.replace(/^~(?=$|\/|\\)/, homedir());
-
-    // 3. Make absolute relative to spaceDir if it's not absolute already
-    if (!isAbsolute(resolved) && resolved !== "") {
-      resolved = resolve(spaceDir, resolved);
-    }
-
-    return resolved;
-  }
+  // --- 空间查询方法 ---
 
   public getActiveSpace(): SpaceConfig | undefined {
     const spaceName = this.config.activeSpace;
     if (!spaceName || !this.config.spaces[spaceName]) return undefined;
-
     return this.config.spaces[spaceName];
+  }
+
+  public getActiveSpaceName(): string | undefined {
+    return this.config.activeSpace || undefined;
   }
 
   public getActiveSpacePath(): string | undefined {
     return this.getActiveSpace()?.path;
   }
 
-  public addSpace(name: string, path: string): void {
-    const expandedPath = resolve(
-      process.cwd(),
-      path.replace(/^~(?=$|\/|\\)/, homedir()),
-    );
+  /**
+   * 获取有效空间（支持 --space 参数覆盖 activeSpace）
+   */
+  public getEffectiveSpace(spaceOverride?: string): SpaceConfig | undefined {
+    const spaceName = spaceOverride || this.config.activeSpace;
+    if (!spaceName) return undefined;
+    return this.config.spaces[spaceName];
+  }
+
+  public getEffectiveSpaceName(spaceOverride?: string): string | undefined {
+    return spaceOverride || this.config.activeSpace || undefined;
+  }
+
+  public getEffectiveSpacePath(spaceOverride?: string): string | undefined {
+    return this.getEffectiveSpace(spaceOverride)?.path;
+  }
+
+  public getAllSpaces(): Record<string, SpaceConfig> {
+    return this.config.spaces;
+  }
+
+  public listSpaces(): { name: string; path: string; active: boolean }[] {
+    return Object.entries(this.config.spaces).map(([name, space]) => ({
+      name,
+      path: space.path,
+      active: name === this.config.activeSpace,
+    }));
+  }
+
+  // --- 空间管理方法 ---
+
+  public addSpace(name: string, spacePath: string): void {
+    const expandedPath = spacePath.replace(/^~(?=$|\/|\\)/, homedir());
 
     if (this.config.spaces[name]) {
-      throw new Error(`Workspace [${name}] already exists.`);
+      throw new Error(`Space [${name}] already exists.`);
     }
 
-    // Checking if target dir is already registered
     for (const [existingName, space] of Object.entries(this.config.spaces)) {
       if (space.path === expandedPath) {
         throw new Error(
-          `Workspace already initialized at this path. (Registered as [${existingName}])`,
+          `Space already exists at this path (registered as [${existingName}])`,
         );
       }
     }
 
-    this.config.spaces[name] = {
-      path: expandedPath,
-    };
-
+    this.config.spaces[name] = { path: expandedPath };
     this.config.activeSpace = name;
     this.saveConfig();
   }
 
-  // --- Parameter Accessors ---
-
-  private _hasWarned: Record<string, boolean> = {};
-
-  private warnFallbackOnce(key: string, defaultValue: string) {
-    if (!this._hasWarned[key]) {
-      console.warn(
-        `Warning: ${key} configuration missing, using default value: ${defaultValue}`,
-      );
-      this._hasWarned[key] = true;
+  public removeSpace(name: string): void {
+    if (!this.config.spaces[name]) {
+      throw new Error(`Space [${name}] not found.`);
     }
+
+    delete this.config.spaces[name];
+
+    if (this.config.activeSpace === name) {
+      const remainingSpaces = Object.keys(this.config.spaces);
+      this.config.activeSpace =
+        remainingSpaces.length > 0 ? remainingSpaces[0] : "";
+    }
+
+    this.saveConfig();
   }
 
-  public getSkillInboxDir(): string {
-    const activeSpace = this.getActiveSpace();
-    const envVal = process.env.WOPAL_SKILLS_INBOX_DIR;
-    let configVal = activeSpace?.skillsInboxDir;
-    let spaceDir = activeSpace ? activeSpace.path : process.cwd();
-
-    let targetVal = undefined;
-    if (envVal) {
-      targetVal = envVal;
-    } else if (configVal) {
-      targetVal = configVal;
+  public setActiveSpace(name: string): void {
+    if (!this.config.spaces[name]) {
+      throw new Error(`Space [${name}] not found.`);
     }
-
-    if (targetVal) {
-      return this.resolveValue(targetVal, spaceDir)!;
-    }
-
-    const fallbackVal = ".wopal/skills/INBOX";
-    this.warnFallbackOnce("WOPAL_SKILLS_INBOX_DIR", fallbackVal);
-
-    return this.resolveValue(fallbackVal, spaceDir)!;
+    this.config.activeSpace = name;
+    this.saveConfig();
   }
 
-  public getSkillsInstallDir(): string {
-    const activeSpace = this.getActiveSpace();
-    const envVal = process.env.WOPAL_SKILLS_DIR;
-    let configVal = activeSpace?.skillsDir;
-    let spaceDir = activeSpace ? activeSpace.path : process.cwd();
+  // --- 配置解析方法 ---
 
-    let targetVal = undefined;
-    if (envVal) {
-      targetVal = envVal;
-    } else if (configVal) {
-      targetVal = configVal;
-    }
-
-    if (targetVal) {
-      return this.resolveValue(targetVal, spaceDir)!;
-    }
-
-    const fallbackVal = ".wopal/skills";
-    this.warnFallbackOnce("WOPAL_SKILLS_DIR", fallbackVal);
-
-    return this.resolveValue(fallbackVal, spaceDir)!;
+  private getWopalHomePath(): string {
+    return getWopalHome().replace(/^~(?=$|\/|\\)/, homedir());
   }
 
-  public getProjectLockPath(): string {
-    return join(this.getSkillsInstallDir(), ".skill-lock.json");
+  /**
+   * 获取全局技能目录
+   */
+  public getGlobalSkillsDir(): string {
+    return resolveConfig("globalSkillsDir", {
+      config: this.config,
+      wopalHome: this.getWopalHomePath(),
+    });
+  }
+
+  /**
+   * 获取空间技能目录
+   */
+  public getSkillsDir(spaceOverride?: string): string {
+    const spaceConfig = this.getEffectiveSpace(spaceOverride);
+    const spacePath = spaceConfig?.path;
+    return resolveConfig("skillsDir", {
+      config: this.config,
+      spaceConfig,
+      wopalHome: this.getWopalHomePath(),
+      spacePath,
+    });
+  }
+
+  /**
+   * 获取 INBOX 目录
+   */
+  public getSkillsInboxDir(spaceOverride?: string): string {
+    const spaceConfig = this.getEffectiveSpace(spaceOverride);
+    const spacePath = spaceConfig?.path;
+    return resolveConfig("skillsInboxDir", {
+      config: this.config,
+      spaceConfig,
+      wopalHome: this.getWopalHomePath(),
+      spacePath,
+    });
+  }
+
+  /**
+   * 获取 OpenClaw 扫描器目录（固定路径，不支持环境变量覆盖）
+   */
+  public getOpenclawDir(): string {
+    return resolveConfig("openclawIocDir", {
+      config: this.config,
+      wopalHome: this.getWopalHomePath(),
+    });
+  }
+
+  /**
+   * 获取空间锁文件路径
+   */
+  public getSpaceLockPath(spaceOverride?: string): string {
+    return join(this.getSkillsDir(spaceOverride), ".skill-lock.json");
+  }
+
+  /**
+   * 获取全局锁文件路径（存放在 $WOPAL_HOME/skills/）
+   */
+  public getGlobalLockPath(): string {
+    return join(this.getGlobalSkillsDir(), ".skill-lock.json");
+  }
+
+  /**
+   * 获取项目锁文件路径（getSpaceLockPath 的别名，供 LockManager 使用）
+   */
+  public getProjectLockPath(spaceOverride?: string): string {
+    return this.getSpaceLockPath(spaceOverride);
   }
 }
 
-// Singleton export
 let _configInstance: ConfigService | null = null;
 
 export function getConfig(debug: boolean = false): ConfigService {
@@ -250,5 +237,12 @@ export function getConfig(debug: boolean = false): ConfigService {
 }
 
 export function resetConfigForTest(): void {
+  _configInstance = null;
+}
+
+/**
+ * 重置配置单例（供 space 命令在写入 settings.jsonc 后刷新使用）
+ */
+export function invalidateConfigInstance(): void {
   _configInstance = null;
 }

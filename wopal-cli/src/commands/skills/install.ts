@@ -240,7 +240,7 @@ function getTargetDir(skillName: string, scope: InstallScope): string {
   if (scope === "global") {
     return path.join(getConfig().getGlobalSkillsDir(), skillName);
   } else {
-    return path.join(getConfig().getSkillsInstallDir(), skillName);
+    return path.join(getConfig().getSkillsDir(), skillName);
   }
 }
 

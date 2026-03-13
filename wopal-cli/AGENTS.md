@@ -178,12 +178,84 @@ command.addHelpText("after", buildHelpText({
 
 ### 命令开发规范
 
-1. **禁用 help 命令**：主命令和所有子命令必须添加 `.addHelpCommand(false)`，只保留 `--help` / `-h` 参数
-2. **命令注册**：函数命名 `register<Command>Command`，Logger 注入函数命名 `setLogger`
-3. **Logger 注入**：在 `cli.ts` 的 `preAction` hook 中统一注入到各模块
-4. **错误处理**：统一使用 `src/lib/error-utils.ts` 的 `handleCommandError`
-5. **环境变量加载**：`cli.ts` 在 `preAction` hook 中调用 `loadEnvForSpace(debug, spacePath)`，优先级：`<space>/.env` > `~/.wopal/.env`
-6. **初始化检查**：所有命令（除 `init` 和 `space`）在 `cli.ts` 的 `preAction` hook 中统一调用 `checkInitialization()`
+#### 命令文件结构模板
+
+每个顶层命令对应一个文件 `src/commands/<name>.ts`，必须导出以下内容：
+
+```typescript
+import { Command } from "commander";
+import { getConfig } from "../lib/config.js";
+import { buildHelpText, buildHelpHeader } from "../lib/help-texts.js";
+import { CommandError, handleCommandError } from "../lib/error-utils.js";
+import { Logger } from "../lib/logger.js";
+
+// 1. Logger 模块级变量 + setLogger 导出（供 cli.ts preAction 注入）
+let logger: Logger = new Logger(false);
+export function setLogger(l: Logger): void { logger = l; }
+
+// 2. 注册函数（固定命名：register<Name>Command）
+export function register<Name>Command(program: Command): void {
+  const cmd = new Command("<name>")
+    .description("...")
+    .addHelpCommand(false);                   // 3. 必须禁用 help 子命令
+
+  // 4. 帮助头（显示当前 space）
+  cmd.addHelpText("before", () => buildHelpHeader(getConfig().getActiveSpace()));
+
+  // 5. 帮助尾（EXAMPLES / NOTES / WORKFLOW）
+  cmd.addHelpText("after", buildHelpText({
+    examples: ["wopal <name> --flag    # Description"],
+    notes: ["..."],
+  }));
+
+  // 6. 子命令
+  cmd.command("sub <arg>")
+    .description("...")
+    .option("--json", "Output as JSON")
+    .action((arg, options) => {
+      try {
+        doSomething(arg, options.json);
+      } catch (error) {
+        handleCommandError(error);            // 7. 统一错误处理
+      }
+    });
+
+  program.addCommand(cmd);
+}
+```
+
+#### 注册到 cli.ts 的四步流程
+
+新命令开发完成后，按以下步骤接入 `src/cli.ts`：
+
+```typescript
+// Step 1: import 注册函数和 setLogger
+import { register<Name>Command, setLogger as set<Name>Logger } from "./commands/<name>.js";
+
+// Step 2: preAction hook 中注入 Logger
+set<Name>Logger(logger);
+
+// Step 3: 调用注册函数（在 parseAsync 之前）
+register<Name>Command(program);
+
+// Step 4: 按需免初始化检查（在 preAction 的 commandName 判断中添加）
+if (commandName !== "init" && commandName !== "space" && commandName !== "<name>") {
+  checkInitialization();
+}
+```
+
+#### 写入配置后刷新单例
+
+命令中若修改了 `settings.jsonc`（如空间增删改），必须调用 `invalidateConfigInstance()` 使单例失效，确保后续 `getConfig()` 读取到最新状态：
+
+```typescript
+import { getConfig, invalidateConfigInstance } from "../lib/config.js";
+
+config.addSpace(name, path);
+invalidateConfigInstance();                  // 写入后必须刷新
+const freshConfig = getConfig();             // 此时读取到最新数据
+```
+
 
 ### 代码规范
 
@@ -203,14 +275,16 @@ command.addHelpText("after", buildHelpText({
 
 ## 环境变量
 
-| 变量名                      | 默认值                  |
-| --------------------------- | ----------------------- |
-| `WOPAL_HOME`                | `~/.wopal`              |
-| `WOPAL_SKILLS_INBOX_DIR`    | `.wopal/skills/INBOX`   |
-| `WOPAL_SKILLS_DIR`          | `.wopal/skills`         |
-| `WOPAL_GLOBAL_SKILLS_DIR`   | `~/.wopal/skills`       |
-| `WOPAL_OPENCLAW_DIR`        | `~/.wopal/storage/openclaw-security-monitor` |
-| `GITHUB_TOKEN` / `GH_TOKEN` | -（可选）               |
+| 变量名                      | 作用域 | 默认值                                        |
+| --------------------------- | ------ | --------------------------------------------- |
+| `WOPAL_HOME`                | 全局   | `~/.wopal`                                    |
+| `WOPAL_GLOBAL_SKILLS_DIR`   | 全局   | `$WOPAL_HOME/skills`                          |
+| `WOPAL_SKILLS_DIR`          | 空间   | `<space>/.wopal/skills`                       |
+| `WOPAL_SKILLS_INBOX_DIR`    | 空间   | `<space>/.wopal/skills/INBOX`                 |
+| `WOPAL_SETTINGS_PATH`       | 全局   | `~/.wopal/config/settings.jsonc`（覆盖配置路径）|
+| `GITHUB_TOKEN` / `GH_TOKEN` | 全局   | -（可选，用于私有仓库访问）                    |
+
+> **注意**：OpenClaw 固定安装在 `$WOPAL_HOME/storage/openclaw-security-monitor`，**不支持环境变量覆盖**，由 `ConfigService.getOpenclawDir()` 统一管理。
 
 ## 关键模块
 

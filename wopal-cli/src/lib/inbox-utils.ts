@@ -4,7 +4,7 @@ import { homedir } from "os";
 import { getConfig } from "./config.js";
 
 export function getInboxDir(): string {
-  return getConfig().getSkillInboxDir();
+  return getConfig().getSkillsInboxDir();
 }
 
 export function isInboxPath(skillPath: string): boolean {

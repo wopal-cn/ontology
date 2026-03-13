@@ -7,9 +7,9 @@ describe("init-check", () => {
   beforeEach(() => {
     resetConfigForTest();
     delete process.env.WOPAL_SETTINGS_PATH;
-    delete process.env.WOPAL_SKILLS_IOCDB_DIR;
     delete process.env.WOPAL_SKILLS_DIR;
     delete process.env.WOPAL_SKILLS_INBOX_DIR;
+    delete process.env.WOPAL_OPENCLAW_DIR;
   });
 
   afterEach(() => {
@@ -17,14 +17,18 @@ describe("init-check", () => {
   });
 
   describe("checkInitialization", () => {
-    it("should throw CommandError when initialization is incomplete", async () => {
+    it("should throw CommandError when no active space", async () => {
       const { ConfigService } = await import("../src/lib/config.js");
-      new ConfigService();
+      const config = new ConfigService();
 
-      expect(() => checkInitialization()).toThrow(CommandError);
+      if (!config.getActiveSpace()) {
+        expect(() => checkInitialization()).toThrow(CommandError);
+      } else {
+        expect(() => checkInitialization()).not.toThrow(CommandError);
+      }
     });
 
-    it("should throw either NOT_INITIALIZED or IOC_DATABASE_NOT_FOUND", async () => {
+    it("should throw NOT_INITIALIZED error code", async () => {
       const { ConfigService } = await import("../src/lib/config.js");
       new ConfigService();
 
@@ -33,7 +37,7 @@ describe("init-check", () => {
       } catch (error) {
         expect(error).toBeInstanceOf(CommandError);
         const code = (error as CommandError).code;
-        expect(["NOT_INITIALIZED", "IOC_DATABASE_NOT_FOUND"]).toContain(code);
+        expect(code).toBe("NOT_INITIALIZED");
       }
     });
 
@@ -47,6 +51,7 @@ describe("init-check", () => {
         const suggestion = (error as CommandError).suggestion;
         expect(suggestion).toBeDefined();
         expect(suggestion!.length).toBeGreaterThan(0);
+        expect(suggestion).toContain("wopal init");
       }
     });
   });

@@ -48,8 +48,8 @@ fi
 
 # --- 3. 创建 .opencode 符号链接 ---
 # /shared/opencode 由 Dockerfile 预创建，挂载后包含全局工具
-# 创建符号链接让 opencode 能在 /workspace/.opencode 发现这些工具
-ln -sf /shared/opencode /workspace/.opencode
+# 创建符号链接让 opencode 能在 /project/.opencode 发现这些工具
+ln -sf /shared/opencode /project/.opencode
 
 # --- 4. 环境变量固定与执行权交接 ---
 # 确保接下来跑起来的程序的相对家目录指向 /home/coder 

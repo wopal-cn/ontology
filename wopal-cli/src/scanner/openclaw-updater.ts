@@ -1,8 +1,8 @@
-import { homedir } from "os";
 import { join } from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import simpleGit, { SimpleGit } from "simple-git";
 import { Logger } from "../lib/logger.js";
+import { getConfig } from "../lib/config.js";
 
 let logger: Logger;
 
@@ -16,11 +16,8 @@ export const OPENCLAW_DIR_NAME = "openclaw-security-monitor";
 export const UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export function getOpenclawDir(): string {
-  const envVal = process.env.WOPAL_OPENCLAW_DIR;
-  if (envVal) {
-    return envVal;
-  }
-  return join(homedir(), ".wopal", "storage", OPENCLAW_DIR_NAME);
+  // OpenClaw 目录固定由配置系统管理，不支持环境变量覆盖
+  return getConfig().getOpenclawDir();
 }
 
 export interface UpdateResult {
