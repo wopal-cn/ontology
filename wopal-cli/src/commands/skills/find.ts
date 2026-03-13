@@ -144,7 +144,7 @@ function printJson(
 
 async function runFind(
   query: string,
-  limit: number,
+  limit: number | undefined,
   jsonOutput: boolean,
   context: ProgramContext,
 ): Promise<void> {
@@ -152,11 +152,13 @@ async function runFind(
 
   try {
     const parsed = parseWildcardQuery(query);
+    const effectiveLimit = limit ?? DEFAULT_LIMIT;
+
     const apiLimit = parsed.hasWildcard
       ? MAX_API_LIMIT
       : limit === 0
         ? MAX_API_LIMIT
-        : limit;
+        : effectiveLimit;
 
     const data = await searchSkills(parsed.apiQuery, apiLimit);
 
@@ -165,8 +167,13 @@ async function runFind(
       skills = skills.filter((s) => matchWildcard(s, parsed.pattern!));
     }
 
-    const displayLimit = limit === 0 ? MAX_API_LIMIT : limit;
-    skills = skills.slice(0, displayLimit);
+    if (parsed.hasWildcard) {
+      if (limit !== undefined && limit !== 0) {
+        skills = skills.slice(0, limit);
+      }
+    } else if (limit !== 0) {
+      skills = skills.slice(0, effectiveLimit);
+    }
     const showing = skills.length;
     const total = parsed.hasWildcard ? skills.length : data.count;
 
@@ -193,7 +200,7 @@ export const findSubcommand: SubCommandDefinition = {
   options: [
     {
       flags: "--limit <number>",
-      description: `Max results (default: ${DEFAULT_LIMIT}, 0 for all up to ${MAX_API_LIMIT})`,
+      description: `Max results (default: 20, wildcard: all, 0 = all up to ${MAX_API_LIMIT})`,
     },
     { flags: "--json", description: "Output in JSON format" },
   ],
@@ -204,7 +211,7 @@ export const findSubcommand: SubCommandDefinition = {
         limit:
           options.limit !== undefined
             ? parseInt(options.limit as string, 10)
-            : DEFAULT_LIMIT,
+            : undefined,
         json: options.json as boolean | undefined,
       };
 
@@ -215,7 +222,7 @@ export const findSubcommand: SubCommandDefinition = {
 
       await runFind(
         query,
-        findOptions.limit ?? DEFAULT_LIMIT,
+        findOptions.limit,
         findOptions.json ?? false,
         context,
       );
@@ -226,13 +233,14 @@ export const findSubcommand: SubCommandDefinition = {
   helpText: {
     examples: [
       "wopal skills find openspec             # Search openspec skills",
-      "wopal skills find openspec*cn          # Wildcard: openspec...cn",
+      'wopal skills find "openspec*cn"        # Wildcard: quote * in zsh/bash',
       "wopal skills find openspec --limit 50  # Show 50 results",
       "wopal skills find openspec --json      # JSON output",
     ],
     notes: [
       "Results sorted by install count (descending)",
-      "Supports * wildcard (e.g., openspec*cn)",
+      'Wildcards (*) must be quoted in zsh/bash to prevent glob expansion',
+      "Wildcard queries show all matches by default (no limit)",
       "Requires network connection",
     ],
   },
