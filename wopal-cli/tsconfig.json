@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "node",
-    "outDir": "./bin",
+    "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
@@ -14,5 +14,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "bin", "tests"]
+  "exclude": ["node_modules", "bin", "dist", "tests"]
 }

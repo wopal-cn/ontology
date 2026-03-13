@@ -3,7 +3,7 @@ import { createServer } from "http";
 import { execFile } from "child_process";
 import path from "path";
 
-const CLI_PATH = path.join(process.cwd(), "bin", "cli.js");
+const CLI_PATH = path.join(process.cwd(), "bin", "wopal");
 
 interface MockSearchSkill {
   id: string;

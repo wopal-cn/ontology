@@ -6,7 +6,7 @@ import { createServer } from "http";
 import { execFile, execSync } from "child_process";
 import { resetConfigForTest } from "../src/lib/config.js";
 
-const CLI_PATH = path.join(process.cwd(), "bin", "cli.js");
+const CLI_PATH = path.join(process.cwd(), "bin", "wopal");
 const TEST_REPO_SKILL = "forztf/open-skilled-sdd@openspec-proposal-creation";
 
 /**
