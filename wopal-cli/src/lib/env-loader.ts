@@ -28,7 +28,10 @@ function expandEnvVarPaths(): void {
  * @param debug - 调试模式
  * @param targetSpacePath - 目标空间路径，undefined 时仅加载全局
  */
-export function loadEnv(debug: boolean = false, targetSpacePath?: string): void {
+export function loadEnv(
+  debug: boolean = false,
+  targetSpacePath?: string,
+): void {
   // 1. 获取 WOPAL_HOME（可能已被系统环境变量设置）
   const wopalHome = process.env.WOPAL_HOME || join(homedir(), ".wopal");
 
@@ -59,6 +62,9 @@ export function loadEnv(debug: boolean = false, targetSpacePath?: string): void 
 /**
  * @deprecated 请使用 loadEnv()，此函数仅为向后兼容保留
  */
-export function loadEnvForSpace(debug: boolean = false, targetSpacePath?: string): void {
+export function loadEnvForSpace(
+  debug: boolean = false,
+  targetSpacePath?: string,
+): void {
   loadEnv(debug, targetSpacePath);
 }

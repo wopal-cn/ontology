@@ -1,39 +1,19 @@
 import { spawnSync } from "child_process";
-import { Command } from "commander";
-import { Logger } from "../../lib/logger.js";
-import { buildHelpText } from "../../lib/help-texts.js";
+import type {
+  SubCommandDefinition,
+  ProgramContext,
+} from "../../program/types.js";
+import { handleCommandError } from "../../lib/error-utils.js";
 
-let logger: Logger;
+async function passthroughFind(
+  query: string,
+  context: ProgramContext,
+): Promise<void> {
+  const { output, debug } = context;
 
-export function setLogger(l: Logger): void {
-  logger = l;
-}
-
-export function registerPassthroughCommand(program: Command): void {
-  const command = program
-    .command("find <query>")
-    .description("Search for skills (via Skills CLI)")
-    .action(async (query: string) => {
-      await passthroughFind(query);
-    });
-
-  command.addHelpText(
-    "after",
-    buildHelpText({
-      examples: [
-        "wopal skills find \"web scraping\"   # Search for skills",
-        "wopal skills find openspec         # Search by keyword",
-      ],
-      notes: [
-        "Passes through to Skills CLI (npx skills find)",
-        "Requires network connection",
-      ],
-    }),
-  );
-}
-
-async function passthroughFind(query: string): Promise<void> {
-  logger?.log(`Passthrough find: ${query}`);
+  if (debug) {
+    output.print(`Passthrough find: ${query}`);
+  }
 
   const args = ["-y", "skills", "find", query];
 
@@ -43,13 +23,38 @@ async function passthroughFind(query: string): Promise<void> {
   });
 
   if (result.error) {
-    console.error("Error: Skills CLI execution failed");
-    logger?.error(`Skills CLI error: ${result.error}`);
+    output.error("Skills CLI execution failed");
+    if (debug) {
+      output.error(`Skills CLI error: ${result.error}`);
+    }
     process.exit(1);
   }
 
   if (result.status !== 0) {
-    console.error("Error: Skills CLI command failed");
+    output.error("Skills CLI command failed");
     process.exit(result.status || 1);
   }
 }
+
+export const passthroughSubcommand: SubCommandDefinition = {
+  name: "find <query>",
+  description: "Search for skills (via Skills CLI)",
+  action: async (args, _options, context) => {
+    try {
+      const query = args.arg0 as string;
+      await passthroughFind(query, context);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  },
+  helpText: {
+    examples: [
+      'wopal skills find "web scraping"   # Search for skills',
+      "wopal skills find openspec         # Search by keyword",
+    ],
+    notes: [
+      "Passes through to Skills CLI (npx skills find)",
+      "Requires network connection",
+    ],
+  },
+};

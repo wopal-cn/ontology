@@ -1,2 +1,3 @@
-export { registerSkillsCli, setLogger } from "./skills/index.js";
-export { registerInitCommand, setLogger as setInitLogger } from "./init.js";
+export { skillsCommand } from "./skills/index.js";
+export { initCommand } from "./init.js";
+export { spaceCommand } from "./space.js";

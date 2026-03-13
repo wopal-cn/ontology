@@ -1,11 +1,20 @@
-export { createProgramContext, type ProgramContext } from "./context.js";
 export {
-  registerSubCliCommands,
-  registerSubCliByName,
-  getSubCliEntries,
-} from "./register-subclis.js";
+  createProgramContext,
+  type ProgramContext,
+  type ProgramContextParams,
+} from "./context.js";
 export {
-  findRoutedCommand,
-  type CommandRegistration,
+  getCommandRegistry,
+  resetCommandRegistry,
+  registerCommandGroup,
+  registerSubCommand,
+  CommandRegistry,
+  type CommandEntry,
+  type ModuleEntry,
+  type ExternalPassthroughEntry,
+  type ExternalIntegratedEntry,
   type RouteSpec,
+  type CommandGroupDefinition,
+  type SubCommandDefinition,
 } from "./command-registry.js";
+export type { RegisterParams } from "./types.js";

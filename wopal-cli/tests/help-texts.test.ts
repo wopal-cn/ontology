@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildHelpText, buildHelpHeader, HELP_TEXTS } from "../src/lib/help-texts.js";
+import {
+  buildHelpText,
+  buildHelpHeader,
+  HELP_TEXTS,
+} from "../src/lib/help-texts.js";
 
 describe("help-texts", () => {
   describe("HELP_TEXTS.sections", () => {

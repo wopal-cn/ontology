@@ -8,26 +8,50 @@ import { getPrimaryCommand } from "./argv.js";
 import { tryRouteCli, getVersion } from "./route.js";
 import { buildHelpText, buildHelpHeader } from "./lib/help-texts.js";
 import { getConfig } from "./lib/config.js";
-import {
-  registerInitCommand,
-  setLogger as setInitLogger,
-} from "./commands/init.js";
-import {
-  registerSkillsCli,
-  setLogger as setSkillsLogger,
-} from "./commands/skills/index.js";
 import { setLogger as setOpenclawUpdaterLogger } from "./scanner/openclaw-updater.js";
 import { setLogger as setOpenclawWrapperLogger } from "./scanner/openclaw-wrapper.js";
-import { registerSpaceCommand } from "./commands/space.js";
+
+import { initCommand } from "./commands/init.js";
+import { spaceCommand } from "./commands/space.js";
+import { skillsCommand } from "./commands/skills/index.js";
+import {
+  getCommandRegistry,
+  createProgramContext,
+  type ProgramContext,
+} from "./program/index.js";
+import { OutputService } from "./lib/output-service.js";
+import { hasFlag } from "./argv.js";
 
 async function runCli(argv: string[] = process.argv): Promise<void> {
-  if (await tryRouteCli(argv)) {
+  const version = getVersion();
+  const debug = argv.includes("--debug") || argv.includes("-d");
+  const config = getConfig(debug);
+
+  OutputService.init(config);
+  OutputService.reset();
+
+  const context: ProgramContext = createProgramContext({
+    version,
+    debug,
+    config,
+    output: OutputService.get(),
+  });
+
+  if (hasFlag(argv, "--version") || hasFlag(argv, "-v")) {
+    console.log(version);
     return;
   }
 
-  const program = new Command();
-  const version = getVersion();
+  const logger = new Logger(debug);
+  setOpenclawUpdaterLogger(logger);
+  setOpenclawWrapperLogger(logger);
 
+  logger.log("Debug mode enabled");
+
+  const registry = getCommandRegistry();
+  registry.registerAll([initCommand, spaceCommand, skillsCommand]);
+
+  const program = new Command();
   program
     .name("wopal")
     .description("Universal toolbox for wopal agents")
@@ -36,28 +60,25 @@ async function runCli(argv: string[] = process.argv): Promise<void> {
     .option("--space <name>", "Specify workspace scope (overrides activeSpace)")
     .addHelpCommand(false)
     .hook("preAction", (thisCommand, actionCommand) => {
+      OutputService.reset();
+
       const options = thisCommand.opts();
-      const debug = options.debug || false;
       const spaceOverride: string | undefined = options.space;
-
-      // Phase 1: 加载配置（不加载 .env）
-      const config = getConfig(debug);
-
-      // 确定目标空间路径（--space 参数优先于 activeSpace）
       const targetSpacePath = config.getEffectiveSpacePath(spaceOverride);
 
-      // Phase 2: 基于目标空间加载环境变量
       config.loadEnvForSpace(targetSpacePath);
 
-      const logger = new Logger(debug);
-      setInitLogger(logger);
-      setSkillsLogger(logger);
-      setOpenclawUpdaterLogger(logger);
-      setOpenclawWrapperLogger(logger);
+      const isHelp = argv.includes("--help") || argv.includes("-h");
+      if (isHelp) {
+        OutputService.get().setMode({ showHeader: false });
+        return;
+      }
 
-      logger.log("Debug mode enabled");
+      const actionOptions = actionCommand.opts();
+      if (actionOptions.json) {
+        OutputService.get().setMode({ showHeader: false });
+      }
 
-      // --space 参数校验：如果指定了 space 但不存在，给出明确错误
       if (spaceOverride && !config.getEffectiveSpace(spaceOverride)) {
         const available = Object.keys(config.getAllSpaces()).join(", ");
         console.error(`Error: Space '${spaceOverride}' not found`);
@@ -79,7 +100,6 @@ async function runCli(argv: string[] = process.argv): Promise<void> {
     });
 
   program.addHelpText("before", () => {
-    const config = getConfig();
     return buildHelpHeader(config.getActiveSpace());
   });
 
@@ -97,13 +117,7 @@ async function runCli(argv: string[] = process.argv): Promise<void> {
     }),
   );
 
-  registerInitCommand(program);
-  registerSpaceCommand(program);
-
-  const primary = getPrimaryCommand(argv);
-  if (primary === null || primary === "skills") {
-    registerSkillsCli(program);
-  }
+  await registry.registerAllToCommander(program, context);
 
   await program.parseAsync(argv);
 }

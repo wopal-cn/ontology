@@ -12,12 +12,13 @@ describe("LockManager", () => {
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "wopal-cli-test-"));
-    globalTempDir = await fs.mkdtemp(path.join(os.tmpdir(), "wopal-cli-global-"));
+    globalTempDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "wopal-cli-global-"),
+    );
     const mockConfigService = {
       getProjectLockPath: () =>
         path.join(tempDir, ".wopal", ".skill-lock.json"),
-      getGlobalLockPath: () =>
-        path.join(globalTempDir, ".skill-lock.json"),
+      getGlobalLockPath: () => path.join(globalTempDir, ".skill-lock.json"),
     };
     lockManager = new LockManager(mockConfigService as any);
   });

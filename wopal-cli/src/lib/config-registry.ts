@@ -52,7 +52,8 @@ export const CONFIG_REGISTRY: Record<string, ConfigProperty> = {
   openclawIocDir: {
     envVar: null, // 不支持环境变量，固定路径
     scope: "global",
-    default: (ctx) => join(ctx.wopalHome, "storage", "openclaw-security-monitor"),
+    default: (ctx) =>
+      join(ctx.wopalHome, "storage", "openclaw-security-monitor"),
   },
 };
 

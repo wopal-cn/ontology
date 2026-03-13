@@ -1,268 +1,229 @@
-import { Command } from "commander";
-import { getConfig, invalidateConfigInstance } from "../lib/config.js";
-import { buildHelpText, buildHelpHeader } from "../lib/help-texts.js";
-import { CommandError, handleCommandError } from "../lib/error-utils.js";
-import { Logger } from "../lib/logger.js";
+import type { ModuleEntry, SubCommandDefinition } from "../program/types.js";
+import { registerCommandGroup } from "../program/command-registry.js";
+import { handleCommandError, CommandError } from "../lib/error-utils.js";
+import { invalidateConfigInstance } from "../lib/config.js";
 
-let logger: Logger = new Logger(false);
+const listSubcommand: SubCommandDefinition = {
+  name: "list",
+  description: "List all registered spaces",
+  options: [{ flags: "--json", description: "Output as JSON" }],
+  action: async (_args, options, context) => {
+    try {
+      const { output, config } = context;
+      const spaces = config.listSpaces();
 
-export function setLogger(l: Logger): void {
-  logger = l;
-}
-
-export function registerSpaceCommand(program: Command): void {
-  const spaceCommand = new Command("space")
-    .description("Manage workspace spaces")
-    .addHelpCommand(false);
-
-  spaceCommand.addHelpText("before", () => {
-    return buildHelpHeader(getConfig().getActiveSpace());
-  });
-
-  spaceCommand.addHelpText(
-    "after",
-    buildHelpText({
-      examples: [
-        "wopal space list              # List all spaces",
-        "wopal space add my-project    # Add current directory as space",
-        "wopal space add my-project /path/to/dir  # Add specific path",
-        "wopal space use my-project    # Switch to space",
-        "wopal space remove my-project # Remove space",
-        "wopal space show              # Show active space details",
-      ],
-      notes: [
-        "Spaces are stored in ~/.wopal/config/settings.jsonc",
-        "Active space determines skill directories",
-        "Use --space <name> flag to run any command in a different space",
-      ],
-    }),
-  );
-
-  spaceCommand
-    .command("list")
-    .description("List all registered spaces")
-    .option("--json", "Output as JSON")
-    .action((options) => {
-      try {
-        listSpaces(options.json);
-      } catch (error) {
-        handleCommandError(error);
+      if (options.json) {
+        output.json({ spaces });
+        return;
       }
-    });
 
-  spaceCommand
-    .command("add <name> [path]")
-    .description("Add a new space")
-    .option("--json", "Output as JSON")
-    .action(
-      (name: string, path: string | undefined, options: { json?: boolean }) => {
-        try {
-          addSpace(name, path, options.json);
-        } catch (error) {
-          handleCommandError(error);
-        }
-      },
-    );
-
-  spaceCommand
-    .command("remove <name>")
-    .description("Remove a space")
-    .option("--json", "Output as JSON")
-    .action((name: string, options: { json?: boolean }) => {
-      try {
-        removeSpace(name, options.json);
-      } catch (error) {
-        handleCommandError(error);
+      if (spaces.length === 0) {
+        output.print("No spaces registered");
+        output.print("Run 'wopal init' to create a space");
+        return;
       }
-    });
 
-  spaceCommand
-    .command("use <name>")
-    .description("Set active space")
-    .option("--json", "Output as JSON")
-    .action((name: string, options: { json?: boolean }) => {
-      try {
-        useSpace(name, options.json);
-      } catch (error) {
-        handleCommandError(error);
+      const nameWidth = Math.max(...spaces.map((s) => s.name.length), 12);
+      const header = `${"SPACE".padEnd(nameWidth + 2)}PATH`;
+      output.print(header);
+      for (const space of spaces) {
+        const marker = space.active ? " *" : "  ";
+        output.print(`${space.name.padEnd(nameWidth)}${marker}  ${space.path}`);
       }
-    });
-
-  spaceCommand
-    .command("show [name]")
-    .description("Show space details")
-    .option("--json", "Output as JSON")
-    .action((name: string | undefined, options: { json?: boolean }) => {
-      try {
-        showSpace(name, options.json);
-      } catch (error) {
-        handleCommandError(error);
-      }
-    });
-
-  program.addCommand(spaceCommand);
-}
-
-function listSpaces(json?: boolean): void {
-  const config = getConfig();
-  const spaces = config.listSpaces();
-
-  if (json) {
-    console.log(JSON.stringify({ spaces }, null, 2));
-    return;
-  }
-
-  if (spaces.length === 0) {
-    console.log("No spaces registered");
-    console.log("Run 'wopal init' to create a space");
-    return;
-  }
-
-  const nameWidth = Math.max(...spaces.map((s) => s.name.length), 12);
-  const header = `${"SPACE".padEnd(nameWidth + 2)}PATH`;
-  console.log(header);
-  for (const space of spaces) {
-    const marker = space.active ? " *" : "  ";
-    console.log(`${space.name.padEnd(nameWidth)}${marker}  ${space.path}`);
-  }
-  console.log("\n* = active space");
-}
-
-function addSpace(
-  name: string,
-  path: string | undefined,
-  json?: boolean,
-): void {
-  const config = getConfig();
-  const targetPath = path || process.cwd();
-
-  try {
-    config.addSpace(name, targetPath);
-    // 写入后刷新单例，确保后续命令读取最新配置
-    invalidateConfigInstance();
-    const freshConfig = getConfig();
-    const space = freshConfig.listSpaces().find((s) => s.name === name);
-
-    if (json) {
-      console.log(JSON.stringify({ success: true, space }, null, 2));
-      return;
+      output.println();
+      output.print("* = active space");
+    } catch (error) {
+      handleCommandError(error);
     }
+  },
+  helpText: {
+    examples: ["wopal space list    # List all spaces"],
+  },
+};
 
-    console.log(`Space '${name}' added`);
-    console.log(`Path: ${space?.path}`);
-    console.log(`Active: ${space?.active}`);
-  } catch (error) {
-    throw new CommandError({
-      code: "SPACE_ADD_FAILED",
-      message: error instanceof Error ? error.message : String(error),
-      suggestion: "Check if the space name already exists or path is valid",
-    });
-  }
-}
+const addSubcommand: SubCommandDefinition = {
+  name: "add <name> [path]",
+  description: "Add a new space",
+  options: [{ flags: "--json", description: "Output as JSON" }],
+  action: async (args, options, context) => {
+    try {
+      const { output, config } = context;
+      const name = args.arg0 as string;
+      const path = (args.arg1 as string) || process.cwd();
 
-function removeSpace(name: string, json?: boolean): void {
-  const config = getConfig();
+      config.addSpace(name, path);
+      invalidateConfigInstance();
+      const freshConfig = context.config;
+      const space = freshConfig.listSpaces().find((s) => s.name === name);
 
-  try {
-    config.removeSpace(name);
-    invalidateConfigInstance();
+      if (options.json) {
+        output.json({ success: true, space });
+        return;
+      }
 
-    if (json) {
-      console.log(JSON.stringify({ success: true, removed: name }, null, 2));
-      return;
+      output.print(`Space '${name}' added`);
+      output.print(`Path: ${space?.path}`);
+      output.print(`Active: ${space?.active}`);
+    } catch (error) {
+      throw new CommandError({
+        code: "SPACE_ADD_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        suggestion: "Check if the space name already exists or path is valid",
+      });
     }
+  },
+};
 
-    console.log(`Space '${name}' removed`);
-  } catch (error) {
-    throw new CommandError({
-      code: "SPACE_REMOVE_FAILED",
-      message: error instanceof Error ? error.message : String(error),
-      suggestion: "Use 'wopal space list' to see available spaces",
-    });
-  }
-}
+const removeSubcommand: SubCommandDefinition = {
+  name: "remove <name>",
+  description: "Remove a space",
+  options: [{ flags: "--json", description: "Output as JSON" }],
+  action: async (args, options, context) => {
+    try {
+      const { output, config } = context;
+      const name = args.arg0 as string;
 
-function useSpace(name: string, json?: boolean): void {
-  const config = getConfig();
+      config.removeSpace(name);
+      invalidateConfigInstance();
 
-  try {
-    config.setActiveSpace(name);
-    invalidateConfigInstance();
-    const freshConfig = getConfig();
-    const space = freshConfig.listSpaces().find((s) => s.name === name);
+      if (options.json) {
+        output.json({ success: true, removed: name });
+        return;
+      }
 
-    if (json) {
-      console.log(
-        JSON.stringify({ success: true, activeSpace: name, space }, null, 2),
-      );
-      return;
+      output.print(`Space '${name}' removed`);
+    } catch (error) {
+      throw new CommandError({
+        code: "SPACE_REMOVE_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        suggestion: "Use 'wopal space list' to see available spaces",
+      });
     }
+  },
+};
 
-    console.log(`Switched to space '${name}'`);
-    console.log(`Path: ${space?.path}`);
-  } catch (error) {
-    throw new CommandError({
-      code: "SPACE_USE_FAILED",
-      message: error instanceof Error ? error.message : String(error),
-      suggestion: "Use 'wopal space list' to see available spaces",
-    });
-  }
-}
+const useSubcommand: SubCommandDefinition = {
+  name: "use <name>",
+  description: "Set active space",
+  options: [{ flags: "--json", description: "Output as JSON" }],
+  action: async (args, options, context) => {
+    try {
+      const { output, config } = context;
+      const name = args.arg0 as string;
 
-function showSpace(name: string | undefined, json?: boolean): void {
-  const config = getConfig();
+      config.setActiveSpace(name);
+      invalidateConfigInstance();
+      const space = config.listSpaces().find((s) => s.name === name);
 
-  // 修复：明确括号确保 undefined-coalescence 与三元运算符优先级正确
-  const targetName =
-    name ?? config.listSpaces().find((s) => s.active)?.name;
+      if (options.json) {
+        output.json({ success: true, activeSpace: name, space });
+        return;
+      }
 
-  if (!targetName) {
-    throw new CommandError({
-      code: "NO_ACTIVE_SPACE",
-      message: "No active space",
-      suggestion:
-        "Run 'wopal init' to create a space, or use 'wopal space use <name>'",
-    });
-  }
+      output.print(`Switched to space '${name}'`);
+      output.print(`Path: ${space?.path}`);
+    } catch (error) {
+      throw new CommandError({
+        code: "SPACE_USE_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        suggestion: "Use 'wopal space list' to see available spaces",
+      });
+    }
+  },
+};
 
-  const spaces = config.listSpaces();
-  const space = spaces.find((s) => s.name === targetName);
+const showSubcommand: SubCommandDefinition = {
+  name: "show [name]",
+  description: "Show space details",
+  options: [{ flags: "--json", description: "Output as JSON" }],
+  action: async (args, options, context) => {
+    try {
+      const { output, config } = context;
+      const name = args.arg0 as string | undefined;
 
-  if (!space) {
-    throw new CommandError({
-      code: "SPACE_NOT_FOUND",
-      message: `Space '${targetName}' not found`,
-      suggestion: "Use 'wopal space list' to see available spaces",
-    });
-  }
+      const targetName =
+        name ?? config.listSpaces().find((s) => s.active)?.name;
 
-  // 从 ConfigService 获取完整路径信息
-  const skillsDir = config.getSkillsDir(targetName);
-  const skillsInboxDir = config.getSkillsInboxDir(targetName);
-  const lockFile = config.getSpaceLockPath(targetName);
+      if (!targetName) {
+        throw new CommandError({
+          code: "NO_ACTIVE_SPACE",
+          message: "No active space",
+          suggestion:
+            "Run 'wopal init' to create a space, or use 'wopal space use <name>'",
+        });
+      }
 
-  if (json) {
-    console.log(
-      JSON.stringify(
-        {
+      const spaces = config.listSpaces();
+      const space = spaces.find((s) => s.name === targetName);
+
+      if (!space) {
+        throw new CommandError({
+          code: "SPACE_NOT_FOUND",
+          message: `Space '${targetName}' not found`,
+          suggestion: "Use 'wopal space list' to see available spaces",
+        });
+      }
+
+      const skillsDir = config.getSkillsDir(targetName);
+      const skillsInboxDir = config.getSkillsInboxDir(targetName);
+      const lockFile = config.getSpaceLockPath(targetName);
+
+      if (options.json) {
+        output.json({
           name: space.name,
           path: space.path,
           skillsDir,
           skillsInboxDir,
           lockFile,
           active: space.active,
-        },
-        null,
-        2,
-      ),
-    );
-    return;
-  }
+        });
+        return;
+      }
 
-  console.log(`Space: ${space.name}`);
-  console.log(`Path: ${space.path}`);
-  console.log(`Skills Dir: ${skillsDir}`);
-  console.log(`INBOX Dir: ${skillsInboxDir}`);
-  console.log(`Lock File: ${lockFile}`);
-  console.log(`Active: ${space.active}`);
-}
+      output.print(`Space: ${space.name}`);
+      output.print(`Path: ${space.path}`);
+      output.print(`Skills Dir: ${skillsDir}`);
+      output.print(`INBOX Dir: ${skillsInboxDir}`);
+      output.print(`Lock File: ${lockFile}`);
+      output.print(`Active: ${space.active}`);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  },
+};
+
+const spaceGroupDef = {
+  name: "space",
+  description: "Manage workspace spaces",
+  subcommands: [
+    listSubcommand,
+    addSubcommand,
+    removeSubcommand,
+    useSubcommand,
+    showSubcommand,
+  ],
+  helpText: {
+    examples: [
+      "wopal space list              # List all spaces",
+      "wopal space add my-project    # Add current directory as space",
+      "wopal space add my-project /path/to/dir  # Add specific path",
+      "wopal space use my-project    # Switch to space",
+      "wopal space remove my-project # Remove space",
+      "wopal space show              # Show active space details",
+    ],
+    notes: [
+      "Spaces are stored in ~/.wopal/config/settings.jsonc",
+      "Active space determines skill directories",
+      "Use --space <name> flag to run any command in a different space",
+    ],
+  },
+};
+
+export const spaceCommand: ModuleEntry = {
+  type: "module",
+  id: "space",
+  description: "Manage workspace spaces",
+  register: ({ program, context }) => {
+    registerCommandGroup(program, spaceGroupDef, context);
+  },
+};

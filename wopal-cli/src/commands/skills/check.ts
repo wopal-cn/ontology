@@ -1,18 +1,13 @@
-import { Command } from "commander";
-import { Logger } from "../../lib/logger.js";
+import type {
+  SubCommandDefinition,
+  ProgramContext,
+} from "../../program/types.js";
 import { LockManager } from "../../lib/lock-manager.js";
 import type { SkillLockEntry } from "../../types/lock.js";
 import { fetchSkillFolderHash, getGitHubToken } from "../../lib/skill-lock.js";
 import { computeSkillFolderHash } from "../../lib/hash.js";
 import pLimit from "p-limit";
-import { buildHelpText } from "../../lib/help-texts.js";
-import { getConfig } from "../../lib/config.js";
-
-let logger: Logger;
-
-export function setLogger(l: Logger): void {
-  logger = l;
-}
+import { handleCommandError } from "../../lib/error-utils.js";
 
 export interface CheckCommandOptions {
   local?: boolean;
@@ -34,43 +29,14 @@ export interface CheckResult {
   error?: string;
 }
 
-export function registerCheckCommand(program: Command): void {
-  const command = program
-    .command("check [skill-name]")
-    .description("Check installed skills for updates")
-    .option("--local", "Only check project-level skills")
-    .option("--global", "Only check global-level skills")
-    .option("--json", "Output JSON format report")
-    .action(
-      async (skillName: string | undefined, options: CheckCommandOptions) => {
-        await checkCommand(skillName, options);
-      },
-    );
-
-  command.addHelpText(
-    "after",
-    buildHelpText({
-      examples: [
-        "wopal skills check              # Check all installed skills",
-        "wopal skills check my-skill     # Check specific skill",
-        "wopal skills check --local      # Check project-level only",
-        "wopal skills check --json       # JSON output",
-      ],
-      notes: [
-        "GitHub skills: compares Tree SHA from API",
-        "Local skills: compares folder content hash",
-        "Requires GITHUB_TOKEN for higher API rate limits",
-      ],
-    }),
-  );
-}
-
-export async function checkCommand(
+async function checkCommand(
   skillName: string | undefined,
   options: CheckCommandOptions,
+  context: ProgramContext,
 ): Promise<void> {
+  const { output, config } = context;
   try {
-    const lockManager = new LockManager(getConfig());
+    const lockManager = new LockManager(config);
 
     let skills: Record<string, SkillLockEntry>;
 
@@ -96,26 +62,26 @@ export async function checkCommand(
     }
 
     if (Object.keys(skills).length === 0) {
-      console.log("No installed skills found.");
+      output.print("No installed skills found.");
       return;
     }
 
     if (skillName) {
       if (!skills[skillName]) {
-        logger.error(`Skill not found: ${skillName}`);
+        output.error(`Skill not found: ${skillName}`);
         return;
       }
       const singleSkill: Record<string, SkillLockEntry> = {
         [skillName]: skills[skillName],
       };
-      const results = await checkSkills(singleSkill, options);
-      displayResults(results, options);
+      const results = await checkSkills(singleSkill, options, context);
+      displayResults(results, options, output);
     } else {
-      const results = await checkSkills(skills, options);
-      displayResults(results, options);
+      const results = await checkSkills(skills, options, context);
+      displayResults(results, options, output);
     }
   } catch (error) {
-    logger.error("Check failed", { error: (error as Error).message });
+    output.error("Check failed", (error as Error).message);
     process.exit(1);
   }
 }
@@ -123,12 +89,14 @@ export async function checkCommand(
 async function checkSkills(
   skills: Record<string, SkillLockEntry>,
   options: CheckCommandOptions,
+  context: ProgramContext,
 ): Promise<CheckResult[]> {
+  const { output } = context;
   const skillNames = Object.keys(skills);
   const total = skillNames.length;
 
   if (!options.json) {
-    console.log(`Checking ${total} skill${total > 1 ? "s" : ""}...`);
+    output.print(`Checking ${total} skill${total > 1 ? "s" : ""}...`);
   }
 
   const limit = pLimit(5);
@@ -153,7 +121,7 @@ async function checkSkills(
             ? "Fetching GitHub Tree SHA..."
             : "Computing local hash...";
 
-        console.log(
+        output.print(
           `[${bar}] ${percentage}% [${current}/${total}] Checking ${skillName}... (${checkType})`,
         );
       }
@@ -270,6 +238,7 @@ async function checkSkill(
 function displayResults(
   results: CheckResult[],
   options: CheckCommandOptions,
+  output: ProgramContext["output"],
 ): void {
   if (options.json) {
     console.log(JSON.stringify(results, null, 2));
@@ -284,75 +253,112 @@ function displayResults(
   const sourceMissing = results.filter((r) => r.status === "source-missing");
   const errors = results.filter((r) => r.status === "error");
 
-  console.log("\n=== Check Results ===\n");
+  output.print("=== Check Results ===");
+  output.println();
 
   if (updateAvailable.length > 0) {
-    console.log("\x1b[33m⚠ Update Available:\x1b[0m");
+    output.print("Update Available:");
     updateAvailable
       .sort((a, b) => a.skillName.localeCompare(b.skillName))
       .forEach((r) => {
-        console.log(`  ${r.skillName} (${r.sourceType})`);
-        console.log(`    Installed: ${r.installedHash.substring(0, 8)}`);
-        console.log(`    Latest:    ${r.latestHash.substring(0, 8)}`);
+        output.print(`  ${r.skillName} (${r.sourceType})`);
+        output.print(`    Installed: ${r.installedHash.substring(0, 8)}`);
+        output.print(`    Latest:    ${r.latestHash.substring(0, 8)}`);
       });
-    console.log();
+    output.println();
   }
 
   if (sourceChanged.length > 0) {
-    console.log("\x1b[33m⚠ Source Changed:\x1b[0m");
+    output.print("Source Changed:");
     sourceChanged
       .sort((a, b) => a.skillName.localeCompare(b.skillName))
       .forEach((r) => {
-        console.log(`  ${r.skillName} (${r.sourceType})`);
-        console.log(`    Installed: ${r.installedHash.substring(0, 8)}`);
-        console.log(`    Current:   ${r.latestHash.substring(0, 8)}`);
+        output.print(`  ${r.skillName} (${r.sourceType})`);
+        output.print(`    Installed: ${r.installedHash.substring(0, 8)}`);
+        output.print(`    Current:   ${r.latestHash.substring(0, 8)}`);
       });
-    console.log();
+    output.println();
   }
 
   if (sourceMissing.length > 0) {
-    console.log("\x1b[31m✗ Source Missing:\x1b[0m");
+    output.print("Source Missing:");
     sourceMissing
       .sort((a, b) => a.skillName.localeCompare(b.skillName))
       .forEach((r) => {
-        console.log(`  ${r.skillName} (${r.sourceType})`);
+        output.print(`  ${r.skillName} (${r.sourceType})`);
       });
-    console.log();
+    output.println();
   }
 
   if (errors.length > 0) {
-    console.log("\x1b[31m✗ Errors:\x1b[0m");
+    output.print("Errors:");
     errors
       .sort((a, b) => a.skillName.localeCompare(b.skillName))
       .forEach((r) => {
-        console.log(`  ${r.skillName}: ${r.error}`);
+        output.print(`  ${r.skillName}: ${r.error}`);
       });
-    console.log();
+    output.println();
   }
 
   if (upToDate.length > 0) {
-    console.log("\x1b[32m✓ Up to Date:\x1b[0m");
+    output.print("Up to Date:");
     upToDate
       .sort((a, b) => a.skillName.localeCompare(b.skillName))
       .forEach((r) => {
-        console.log(`  ${r.skillName} (${r.sourceType})`);
+        output.print(`  ${r.skillName} (${r.sourceType})`);
       });
-    console.log();
+    output.println();
   }
 
-  console.log("=== Summary ===");
-  console.log(`Total:        ${results.length}`);
-  console.log(`Up to Date:   ${upToDate.length}`);
-  console.log(`Updates:      ${updateAvailable.length}`);
-  console.log(`Changed:      ${sourceChanged.length}`);
-  console.log(`Missing:      ${sourceMissing.length}`);
-  console.log(`Errors:       ${errors.length}`);
+  output.print("=== Summary ===");
+  output.print(`Total:        ${results.length}`);
+  output.print(`Up to Date:   ${upToDate.length}`);
+  output.print(`Updates:      ${updateAvailable.length}`);
+  output.print(`Changed:      ${sourceChanged.length}`);
+  output.print(`Missing:      ${sourceMissing.length}`);
+  output.print(`Errors:       ${errors.length}`);
 
   if (updateAvailable.length > 0 || sourceChanged.length > 0) {
     const updateList = updateAvailable.map((r) => r.skillName);
     const changedList = sourceChanged.map((r) => r.skillName);
     const allUpdates = [...updateList, ...changedList];
 
-    console.log("\nTo update: wopal skills update " + allUpdates.join(" "));
+    output.print(`To update: wopal skills update ${allUpdates.join(" ")}`);
   }
 }
+
+export const checkSubcommand: SubCommandDefinition = {
+  name: "check [skill-name]",
+  description: "Check installed skills for updates",
+  options: [
+    { flags: "--local", description: "Only check project-level skills" },
+    { flags: "--global", description: "Only check global-level skills" },
+    { flags: "--json", description: "Output JSON format report" },
+  ],
+  action: async (args, options, context) => {
+    try {
+      const skillName = args.arg0 as string | undefined;
+      const checkOptions: CheckCommandOptions = {
+        local: options.local as boolean | undefined,
+        global: options.global as boolean | undefined,
+        json: options.json as boolean | undefined,
+      };
+      await checkCommand(skillName, checkOptions, context);
+    } catch (error) {
+      handleCommandError(error);
+    }
+  },
+  helpText: {
+    examples: [
+      "wopal skills check              # Check all installed skills",
+      "wopal skills check my-skill     # Check specific skill",
+      "wopal skills check --local      # Check project-level only",
+      "wopal skills check --json       # JSON output",
+    ],
+    notes: [
+      "GitHub skills: compares Tree SHA from API",
+      "Local skills: compares folder content hash",
+      "Requires GITHUB_TOKEN for higher API rate limits",
+    ],
+  },
+};

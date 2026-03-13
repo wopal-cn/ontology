@@ -129,14 +129,18 @@ describe("config", () => {
       const { ConfigService } = await import("../src/lib/config.js");
       const config = new ConfigService();
 
-      expect(config.getEffectiveSpace("non-existent-space-xyz")).toBeUndefined();
+      expect(
+        config.getEffectiveSpace("non-existent-space-xyz"),
+      ).toBeUndefined();
     });
 
     it("should return undefined for non-existent space path", async () => {
       const { ConfigService } = await import("../src/lib/config.js");
       const config = new ConfigService();
 
-      expect(config.getEffectiveSpacePath("non-existent-space-xyz")).toBeUndefined();
+      expect(
+        config.getEffectiveSpacePath("non-existent-space-xyz"),
+      ).toBeUndefined();
     });
   });
 
