@@ -16,12 +16,56 @@ import type {
   InstallScope,
 } from "../../types/lock.js";
 import { handleCommandError } from "../../lib/error-utils.js";
+import {
+  downloadParsedSourceToInbox,
+  parseDownloadSource,
+} from "../../lib/download-skill.js";
 
 interface InstallOptions {
   global: boolean;
   force: boolean;
   skipScan: boolean;
   mode: InstallMode;
+  rmInbox: boolean;
+}
+
+type SourceType = "local" | "inbox" | "remote";
+
+async function checkGitHubRepoVisibility(
+  owner: string,
+  repo: string,
+): Promise<"public" | "not_found_or_private" | "unknown"> {
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}`,
+      {
+        headers: {
+          Accept: "application/vnd.github.v3+json",
+          "User-Agent": "wopal-cli",
+        },
+      },
+    );
+
+    if (response.ok) {
+      return "public";
+    }
+    if (response.status === 404) {
+      return "not_found_or_private";
+    }
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+function detectSourceType(source: string): SourceType {
+  if (/^\/|^[a-zA-Z]:[/\\]/.test(source)) {
+    return "local";
+  }
+  if (parseDownloadSource(source)) {
+    return "remote";
+  }
+  return "inbox";
 }
 
 async function installSkill(
@@ -40,19 +84,108 @@ async function installSkill(
     throw new Error("symlink mode is not implemented yet");
   }
 
-  const scope: InstallScope = options.global ? "global" : "project";
+  const scope: InstallScope = options.global ? "global" : "space";
   if (debug) {
     output.print(`Install scope: ${scope}`);
   }
 
-  const isLocal =
-    source.includes("/") || source.includes("\\") || source.includes(path.sep);
+  const sourceType = detectSourceType(source);
 
-  if (isLocal) {
-    await installLocalSkill(source, scope, options, context);
-  } else {
-    await installInboxSkill(source, scope, options, context);
+  switch (sourceType) {
+    case "local":
+      await installLocalSkill(source, scope, options, context);
+      break;
+    case "remote":
+      await installRemoteSkill(source, scope, options, context);
+      break;
+    case "inbox":
+      await installInboxSkill(source, scope, options, context);
+      break;
   }
+}
+
+async function installRemoteSkill(
+  source: string,
+  scope: InstallScope,
+  options: InstallOptions,
+  context: ProgramContext,
+): Promise<void> {
+  const { output, config } = context;
+
+  const parsedSource = parseDownloadSource(source);
+  if (!parsedSource) {
+    throw new Error(`Invalid remote source format: ${source}`);
+  }
+
+  const displaySource =
+    parsedSource.type === "github"
+      ? `${parsedSource.owner}/${parsedSource.repo}@${parsedSource.skill}`
+      : `${parsedSource.source}@${parsedSource.skill}`;
+  const skillName = parsedSource.skill;
+
+  output.print(`Installing remote skill: ${displaySource}`);
+  output.print("Downloading...");
+
+  const inboxDir = config.getSkillsInboxDir();
+
+  const result = await downloadParsedSourceToInbox(
+    parsedSource,
+    inboxDir,
+    { force: options.force },
+    context,
+  );
+
+  if (result.failed.length > 0) {
+    const failureMessage = result.failed[0]!.error;
+
+    if (
+      parsedSource.type === "github" &&
+      failureMessage.includes("Failed to get commit info: 404")
+    ) {
+      const visibility = await checkGitHubRepoVisibility(
+        parsedSource.owner,
+        parsedSource.repo,
+      );
+
+      if (visibility === "not_found_or_private") {
+        throw new Error(
+          `Failed to download skill '${skillName}' from ${parsedSource.owner}/${parsedSource.repo}.\n` +
+            `The repository is not publicly accessible (deleted, renamed, or private), but may still appear in skills.sh search results.\n` +
+            `Try another source:\n` +
+            `  wopal skills find ${skillName}`,
+        );
+      }
+    }
+
+    throw new Error(failureMessage);
+  }
+
+  if (result.success.length === 0) {
+    throw new Error(
+      `Failed to download skill '${skillName}' from ${displaySource}`,
+    );
+  }
+
+  const skillDestPath = path.join(inboxDir, skillName);
+
+  if (!options.skipScan) {
+    output.print("Running security scan...");
+    try {
+      const result = await scanSkill(skillDestPath, skillName, context, false);
+      if (result.status === "fail") {
+        throw new Error(
+          `Security scan failed (risk: ${result.riskScore}, critical: ${result.summary.critical})\n` +
+            `Skill preserved in INBOX for manual review`,
+        );
+      }
+      output.print(`Security scan passed (risk: ${result.riskScore})`);
+    } catch (error) {
+      output.print("Skill preserved in INBOX due to scan failure");
+      throw error;
+    }
+  }
+
+  await installInboxSkill(skillName, scope, options, context);
 }
 
 async function installLocalSkill(
@@ -106,8 +239,8 @@ async function installLocalSkill(
   };
 
   const lockManager = new LockManager(config);
-  await lockManager.addSkillToBothLocks(skillName, lockEntry);
-  output.print("Lock files updated");
+  await lockManager.addSkillToLock(skillName, lockEntry, scope);
+  output.print("Lock file updated");
 
   output.print(`Installation complete: ${skillName}`);
 }
@@ -160,25 +293,40 @@ async function installInboxSkill(
     output.print(`Skill metadata: ${JSON.stringify(metadata)}`);
   }
 
+  const source = metadata.source.split("@")[0] || metadata.source;
+  const sourceType: SkillLockEntry["sourceType"] = metadata.sourceUrl.includes(
+    "github.com",
+  )
+    ? "github"
+    : "well-known";
+
   let skillFolderHash = metadata.skillFolderHash;
   if (!skillFolderHash) {
-    if (debug) {
-      output.print(
-        "skillFolderHash not found in metadata, fetching from GitHub...",
-      );
-    }
-    const token = getGitHubToken();
-    const [owner, repo] = metadata.source.split("/");
-    skillFolderHash = await fetchSkillFolderHash(
-      `${owner}/${repo}`,
-      metadata.skillPath,
-      token,
-    );
-    if (!skillFolderHash) {
+    if (sourceType === "github") {
       if (debug) {
-        output.print("Failed to fetch skillFolderHash, using empty string");
+        output.print(
+          "skillFolderHash not found in metadata, fetching from GitHub...",
+        );
       }
-      skillFolderHash = "";
+      const token = getGitHubToken();
+      skillFolderHash = await fetchSkillFolderHash(
+        source,
+        metadata.skillPath,
+        token,
+      );
+      if (!skillFolderHash) {
+        if (debug) {
+          output.print("Failed to fetch skillFolderHash, using empty string");
+        }
+        skillFolderHash = "";
+      }
+    } else {
+      if (debug) {
+        output.print(
+          "skillFolderHash not found in metadata, computing local hash...",
+        );
+      }
+      skillFolderHash = await computeSkillFolderHash(skillDir);
     }
   }
   if (debug) {
@@ -189,8 +337,8 @@ async function installInboxSkill(
   output.print(`Skill copied to: ${targetDir}`);
 
   const lockEntry: SkillLockEntry = {
-    source: metadata.source.split("@")[0],
-    sourceType: "github",
+    source,
+    sourceType,
     sourceUrl: metadata.sourceUrl,
     skillPath: metadata.skillPath,
     skillFolderHash,
@@ -199,12 +347,16 @@ async function installInboxSkill(
   };
 
   const lockManager = new LockManager(config);
-  await lockManager.addSkillToBothLocks(skillName, lockEntry);
-  output.print("Lock files updated");
+  await lockManager.addSkillToLock(skillName, lockEntry, scope);
+  output.print("Lock file updated");
 
-  await fs.remove(skillDir);
-  if (debug) {
-    output.print(`INBOX skill removed: ${skillDir}`);
+  if (options.rmInbox) {
+    await fs.remove(skillDir);
+    if (debug) {
+      output.print(`INBOX skill removed: ${skillDir}`);
+    }
+  } else if (debug) {
+    output.print(`INBOX skill preserved: ${skillDir}`);
   }
 
   output.print(`Installation complete: ${skillName}`);
@@ -231,7 +383,7 @@ async function checkExistingSkill(
 ): Promise<void> {
   if (await fs.pathExists(targetDir)) {
     if (!force) {
-      const scopeText = scope === "global" ? "global" : "project";
+      const scopeText = scope === "global" ? "global" : "space";
       throw new Error(
         `Skill "${skillName}" already installed in ${scopeText} scope.\n` +
           `Use --force to overwrite or remove it first.`,
@@ -275,7 +427,7 @@ async function runSecurityScan(
 
 export const installSubcommand: SubCommandDefinition = {
   name: "install <source>",
-  description: "Install a skill from INBOX or local path",
+  description: "Install a skill from INBOX, local path, or remote source",
   options: [
     {
       flags: "-g, --global",
@@ -287,7 +439,11 @@ export const installSubcommand: SubCommandDefinition = {
     },
     {
       flags: "--skip-scan",
-      description: "Skip security scan for INBOX skills",
+      description: "Skip security scan",
+    },
+    {
+      flags: "--rm-inbox",
+      description: "Remove skill from INBOX after installation",
     },
     {
       flags: "--mode <mode>",
@@ -303,6 +459,7 @@ export const installSubcommand: SubCommandDefinition = {
         force: options.force as boolean,
         skipScan: options.skipScan as boolean,
         mode: (options.mode as InstallMode) || "copy",
+        rmInbox: options.rmInbox as boolean,
       };
       await installSkill(source, installOptions, context);
     } catch (error) {
@@ -311,21 +468,23 @@ export const installSubcommand: SubCommandDefinition = {
   },
   helpText: {
     examples: [
-      "wopal skills install my-skill          # Install from INBOX",
-      "wopal skills install /path/to/skill    # Install from local path",
-      "wopal skills install my-skill --global # Install globally",
-      "wopal skills install my-skill --force  # Force overwrite",
+      "wopal skills install my-skill                    # Install from INBOX",
+      "wopal skills install /path/to/skill             # Install from local path",
+      "wopal skills install owner/repo@skill           # Download, scan, install",
+      "wopal skills install some.domain@skill          # Install from well-known source",
+      "wopal skills install my-skill --global          # Install globally",
+      "wopal skills install my-skill --rm-inbox        # Remove from INBOX after install",
+      "wopal skills install owner/repo@skill --rm-inbox # Full auto with cleanup",
     ],
     notes: [
-      "INBOX skills are automatically scanned for security",
-      "Local skills identified by path separators (/ or \\)",
-      "Lock files updated with skill metadata",
+      "Remote formats (owner/repo@skill, source@skill, skills.sh URL) auto-download and scan",
+      "INBOX skills are preserved by default, use --rm-inbox to remove",
+      "Local paths must be absolute (start with / or drive letter)",
     ],
     workflow: [
-      "Download: wopal skills download <source>",
-      "Scan: wopal skills scan <skill-name>",
-      "Install: wopal skills install <skill-name>",
-      "Verify: wopal skills list",
+      "INBOX: download -> scan -> install",
+      "Remote: auto download + scan + install",
+      "Local: direct install",
     ],
   },
 };

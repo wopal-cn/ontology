@@ -13,7 +13,7 @@ export interface SkillLockEntry {
   source: string;
 
   /** 源类型 */
-  sourceType: "github" | "local";
+  sourceType: "github" | "local" | "well-known";
 
   /** 源 URL（GitHub URL 或本地路径） */
   sourceUrl: string;
@@ -64,4 +64,4 @@ export type InstallMode = "copy" | "symlink";
 /**
  * 安装范围
  */
-export type InstallScope = "project" | "global";
+export type InstallScope = "space" | "global";

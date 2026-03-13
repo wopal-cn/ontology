@@ -111,10 +111,10 @@ async function listInstalledSkills(
         scope:
           options.local && options.global
             ? projectSkills.some(([n]) => n === name)
-              ? "project"
+              ? "space"
               : "global"
             : options.local
-              ? "project"
+              ? "space"
               : "global",
         installedAt: entry.installedAt,
         updatedAt: entry.updatedAt,
@@ -136,10 +136,10 @@ async function listInstalledSkills(
     const scope =
       options.local && options.global
         ? projectSkills.some(([name]) => name === skillName)
-          ? "[Project]"
+          ? "[Space]"
           : "[Global]"
         : options.local
-          ? "[Project]"
+          ? "[Space]"
           : "[Global]";
 
     output.print(`  ${scope} ${skillName}`);
@@ -163,7 +163,7 @@ export const listSubcommand: SubCommandDefinition = {
   description: "List all skills (INBOX downloaded + installed from lock files)",
   options: [
     { flags: "-i, --info", description: "Show skill descriptions and details" },
-    { flags: "--local", description: "Show only project-level skills" },
+    { flags: "--local", description: "Show only space-level skills" },
     { flags: "--global", description: "Show only global-level skills" },
     { flags: "--json", description: "Output in JSON format" },
   ],
@@ -184,7 +184,7 @@ export const listSubcommand: SubCommandDefinition = {
     examples: [
       "wopal skills list               # List all skills",
       "wopal skills list --info        # List with details",
-      "wopal skills list --local       # Project-level only",
+      "wopal skills list --local       # Space-level only",
       "wopal skills list --json        # JSON output",
     ],
     notes: [

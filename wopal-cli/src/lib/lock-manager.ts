@@ -1,5 +1,9 @@
 import fs from "fs-extra";
-import type { SkillLockFile, SkillLockEntry } from "../types/lock.js";
+import type {
+  SkillLockFile,
+  SkillLockEntry,
+  InstallScope,
+} from "../types/lock.js";
 import type { ConfigService } from "./config.js";
 
 export class LockManager {
@@ -27,28 +31,26 @@ export class LockManager {
     await this.writeLockFile(this.projectLockPath, lockFile, true);
   }
 
-  async addSkillToBothLocks(
+  async addSkillToLock(
     skillName: string,
     entry: SkillLockEntry,
+    scope: InstallScope,
   ): Promise<void> {
-    const [projectLock, globalLock] = await Promise.all([
-      this.readProjectLock(),
-      this.readGlobalLock(),
-    ]);
-
     const now = new Date().toISOString();
     const entryWithTimestamp = {
       ...entry,
       updatedAt: now,
     };
 
-    projectLock.skills[skillName] = entryWithTimestamp;
-    globalLock.skills[skillName] = entryWithTimestamp;
-
-    await Promise.all([
-      this.writeProjectLock(projectLock),
-      this.writeGlobalLock(globalLock),
-    ]);
+    if (scope === "global") {
+      const globalLock = await this.readGlobalLock();
+      globalLock.skills[skillName] = entryWithTimestamp;
+      await this.writeGlobalLock(globalLock);
+    } else {
+      const spaceLock = await this.readProjectLock();
+      spaceLock.skills[skillName] = entryWithTimestamp;
+      await this.writeProjectLock(spaceLock);
+    }
   }
 
   private async readLockFile(lockPath: string): Promise<SkillLockFile> {

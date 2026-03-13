@@ -95,7 +95,7 @@ describe("LockManager", () => {
     expect(lock.skills).toEqual({});
   });
 
-  it("should add skill to both locks", async () => {
+  it("should add skill to space lock only when scope is space", async () => {
     const entry: SkillLockEntry = {
       source: "owner/repo",
       sourceType: "github",
@@ -106,15 +106,57 @@ describe("LockManager", () => {
       updatedAt: "2026-03-06T00:00:00.000Z",
     };
 
-    await lockManager.addSkillToBothLocks("test-skill", entry);
+    await lockManager.addSkillToLock("test-skill", entry, "space");
 
-    const projectLock = await lockManager.readProjectLock();
+    const spaceLock = await lockManager.readProjectLock();
     const globalLock = await lockManager.readGlobalLock();
 
-    expect(projectLock.skills["test-skill"]).toBeDefined();
+    expect(spaceLock.skills["test-skill"]).toBeDefined();
+    expect(spaceLock.skills["test-skill"].source).toBe("owner/repo");
+    expect(globalLock.skills["test-skill"]).toBeUndefined();
+  });
+
+  it("should add skill to global lock only when scope is global", async () => {
+    const entry: SkillLockEntry = {
+      source: "owner/repo",
+      sourceType: "github",
+      sourceUrl: "https://github.com/owner/repo",
+      skillPath: "skills/test",
+      skillFolderHash: "abc123",
+      installedAt: "2026-03-06T00:00:00.000Z",
+      updatedAt: "2026-03-06T00:00:00.000Z",
+    };
+
+    await lockManager.addSkillToLock("test-skill", entry, "global");
+
+    const spaceLock = await lockManager.readProjectLock();
+    const globalLock = await lockManager.readGlobalLock();
+
+    expect(spaceLock.skills["test-skill"]).toBeUndefined();
     expect(globalLock.skills["test-skill"]).toBeDefined();
-    expect(projectLock.skills["test-skill"].source).toBe("owner/repo");
     expect(globalLock.skills["test-skill"].source).toBe("owner/repo");
+  });
+
+  it("should update timestamp when adding skill", async () => {
+    const entry: SkillLockEntry = {
+      source: "owner/repo",
+      sourceType: "github",
+      sourceUrl: "https://github.com/owner/repo",
+      skillPath: "skills/test",
+      skillFolderHash: "abc123",
+      installedAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    const beforeAdd = new Date().toISOString();
+    await lockManager.addSkillToLock("test-skill", entry, "space");
+    const afterAdd = new Date().toISOString();
+
+    const spaceLock = await lockManager.readProjectLock();
+    const updatedAt = spaceLock.skills["test-skill"].updatedAt;
+
+    expect(updatedAt >= beforeAdd).toBe(true);
+    expect(updatedAt <= afterAdd).toBe(true);
   });
 
   it("should return global lock path from config service", () => {

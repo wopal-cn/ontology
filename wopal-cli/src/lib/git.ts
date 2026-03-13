@@ -64,7 +64,6 @@ export async function downloadViaGitHubApi(
 
   await mkdir(tempDir, { recursive: true });
 
-  const branch = ref || "main";
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.v3+json",
     "User-Agent": "wopal-cli",
@@ -75,44 +74,58 @@ export async function downloadViaGitHubApi(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const commitResponse = await fetchWithTimeout(
-    `https://api.github.com/repos/${owner}/${repo}/commits/${branch}`,
-    headers,
-  );
+  const candidateRefs: string[] = [];
+  if (ref) {
+    candidateRefs.push(ref);
+  } else {
+    const repoInfoResponse = await fetchWithTimeout(
+      `https://api.github.com/repos/${owner}/${repo}`,
+      headers,
+    );
 
-  if (!commitResponse.ok) {
-    if (commitResponse.status === 404 && !ref) {
-      const masterResponse = await fetchWithTimeout(
-        `https://api.github.com/repos/${owner}/${repo}/commits/master`,
-        headers,
-      );
-      if (masterResponse.ok) {
-        const commitData = (await masterResponse.json()) as { sha: string };
-        await downloadDirectory(
-          owner,
-          repo,
-          skillPath,
-          "master",
-          tempDir,
-          headers,
-        );
-        return { tempDir, commitSha: commitData.sha };
+    if (repoInfoResponse.ok) {
+      const repoData = (await repoInfoResponse.json()) as {
+        default_branch?: string;
+      };
+      if (repoData.default_branch) {
+        candidateRefs.push(repoData.default_branch);
       }
     }
-    throw new GitCloneError(
-      `Failed to get commit info: ${commitResponse.status}`,
-      `https://github.com/${owner}/${repo}`,
-      false,
-      commitResponse.status === 404 || commitResponse.status === 403,
-    );
+    candidateRefs.push("main", "master");
   }
 
-  const commitData = (await commitResponse.json()) as { sha: string };
-  const commitSha = commitData.sha;
+  const uniqueRefs = Array.from(new Set(candidateRefs));
+  let lastStatus: number | null = null;
 
-  await downloadDirectory(owner, repo, skillPath, branch, tempDir, headers);
+  for (const candidateRef of uniqueRefs) {
+    const commitResponse = await fetchWithTimeout(
+      `https://api.github.com/repos/${owner}/${repo}/commits/${candidateRef}`,
+      headers,
+    );
 
-  return { tempDir, commitSha };
+    if (!commitResponse.ok) {
+      lastStatus = commitResponse.status;
+      continue;
+    }
+
+    const commitData = (await commitResponse.json()) as { sha: string };
+    await downloadDirectory(
+      owner,
+      repo,
+      skillPath,
+      candidateRef,
+      tempDir,
+      headers,
+    );
+    return { tempDir, commitSha: commitData.sha };
+  }
+
+  throw new GitCloneError(
+    `Failed to get commit info: ${lastStatus ?? "unknown"}`,
+    `https://github.com/${owner}/${repo}`,
+    false,
+    lastStatus === 404 || lastStatus === 403,
+  );
 }
 
 async function downloadDirectory(

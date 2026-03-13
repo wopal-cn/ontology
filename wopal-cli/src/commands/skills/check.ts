@@ -17,7 +17,7 @@ export interface CheckCommandOptions {
 
 export interface CheckResult {
   skillName: string;
-  sourceType: "github" | "local";
+  sourceType: "github" | "local" | "well-known";
   status:
     | "up-to-date"
     | "update-available"
@@ -119,7 +119,9 @@ async function checkSkills(
         const checkType =
           entry.sourceType === "github"
             ? "Fetching GitHub Tree SHA..."
-            : "Computing local hash...";
+            : entry.sourceType === "local"
+              ? "Computing local hash..."
+              : "Well-known source check not supported";
 
         output.print(
           `[${bar}] ${percentage}% [${current}/${total}] Checking ${skillName}... (${checkType})`,
@@ -204,8 +206,17 @@ async function checkSkill(
         throw new Error("Failed to fetch GitHub Tree SHA");
       }
       latestHash = hash;
-    } else {
+    } else if (entry.sourceType === "local") {
       latestHash = await computeSkillFolderHash(entry.sourceUrl);
+    } else {
+      return {
+        skillName,
+        sourceType: entry.sourceType,
+        status: "error",
+        installedHash: entry.skillFolderHash,
+        latestHash: "",
+        error: "Version check is not supported for well-known sources yet",
+      };
     }
 
     let status: CheckResult["status"];
@@ -331,7 +342,7 @@ export const checkSubcommand: SubCommandDefinition = {
   name: "check [skill-name]",
   description: "Check installed skills for updates",
   options: [
-    { flags: "--local", description: "Only check project-level skills" },
+    { flags: "--local", description: "Only check space-level skills" },
     { flags: "--global", description: "Only check global-level skills" },
     { flags: "--json", description: "Output JSON format report" },
   ],
@@ -352,7 +363,7 @@ export const checkSubcommand: SubCommandDefinition = {
     examples: [
       "wopal skills check              # Check all installed skills",
       "wopal skills check my-skill     # Check specific skill",
-      "wopal skills check --local      # Check project-level only",
+      "wopal skills check --local      # Check space-level only",
       "wopal skills check --json       # JSON output",
     ],
     notes: [

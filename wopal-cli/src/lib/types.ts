@@ -15,3 +15,20 @@ export interface ParsedSource {
   ref?: string;
   skillFilter?: string;
 }
+
+export interface WellKnownSkillEntry {
+  name: string;
+  description?: string;
+  files?: string[];
+}
+
+export interface WellKnownIndex {
+  skills: WellKnownSkillEntry[];
+}
+
+export interface WellKnownSkill {
+  name: string;
+  description: string;
+  files: Map<string, string>;
+  sourceUrl: string;
+}

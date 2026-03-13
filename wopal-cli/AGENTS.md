@@ -12,10 +12,10 @@
 |------|------|------|
 | `wopal init [name] [dir]` | - | 初始化工作空间 |
 | `wopal space <cmd>` | list/add/remove/use/show | 空间管理 |
-| `wopal skills find <query>` | `--limit N` `--json` | 搜索技能 (skills.sh API) |
-| `wopal skills download <src...>` | `--branch` `--tag` `--force` | 下载到 INBOX |
+| `wopal skills find <query>` | `--limit N` `--json` `--verify` | 搜索技能 (skills.sh API) |
+| `wopal skills download <src...>` | `--branch` `--tag` `--force` | 下载到 INBOX（GitHub + well-known） |
 | `wopal skills scan [name]` | `--all` `--json` `--output` | 安全扫描 |
-| `wopal skills install <name>` | `--force` `--skip-scan` `--target` | 安装技能 |
+| `wopal skills install <source>` | `-g` `--force` `--skip-scan` `--rm-inbox` | 安装技能 |
 | `wopal skills check [name]` | `--local` `--global` `--json` | 版本检查 |
 | `wopal skills list` | `--info` `--local` `--global` `--json` | 列出技能 |
 | `wopal skills inbox <cmd>` | list/show/remove | INBOX 管理 |
@@ -56,6 +56,8 @@ src/
 ├── lib/
 │   ├── config.ts          # ConfigService (空间、配置管理)
 │   ├── lock-manager.ts    # wopal-skills.lock 管理
+│   ├── download-skill.ts  # 下载编排（API/clone/well-known）
+│   ├── wellknown-provider.ts # RFC 8615 well-known provider
 │   ├── skill-lock.ts      # 技能元数据
 │   ├── output-service.ts  # 统一输出
 │   ├── inbox-utils.ts     # INBOX 工具
@@ -185,6 +187,52 @@ cmd.addHelpText("after", buildHelpText({
 | `program/command-registry.ts` | CommandRegistry 类 |
 | `lib/output-service.ts` | 统一输出，自动 header + 标准 JSON |
 | `lib/config.ts` | ConfigService 配置管理 |
-| `lib/lock-manager.ts` | wopal-skills.lock 文件管理 |
+| `lib/lock-manager.ts` | skill-lock.json 管理（space/global 分离写入）|
 | `lib/skill-lock.ts` | 技能元数据（版本、来源、哈希）|
 | `scanner/` | OpenClaw 集成，51 项安全检查 |
+
+## 安装源类型
+
+| 格式 | 类型 | 说明 |
+|------|------|------|
+| `skill-name` | INBOX | 从 INBOX 安装已扫描的技能 |
+| `/absolute/path` | 本地 | 本地技能目录（必须绝对路径）|
+| `C:\path` | 本地 | Windows 本地路径 |
+| `owner/repo@skill` | 远程 | GitHub 自动 download → scan → install |
+| `source@skill` | 远程 | well-known 自动 download → scan → install |
+| `https://skills.sh/<source>/<skill>` | 远程 | 自动解析来源后 download → scan → install |
+
+## 下载源类型
+
+| 格式 | 类型 | 说明 |
+|------|------|------|
+| `owner/repo@skill` | GitHub | GitHub API + clone 回退 |
+| `source@skill` | Well-known | 通过 `/.well-known/skills/index.json` 下载 |
+| `https://skills.sh/<source>/<skill>` | skills.sh URL | 自动解析为 GitHub 或 well-known |
+
+## 安装级别
+
+| 级别 | 目标目录 | Lock 文件 |
+|------|----------|-----------|
+| space (默认) | `<space>/.wopal/skills/` | `<space>/.wopal/skills/.skill-lock.json` |
+| global (`-g`) | `~/.wopal/skills/` | `~/.wopal/skills/.skill-lock.json` |
+
+## 工作流
+
+### 标准流程
+```
+download → scan → install
+```
+
+### 快捷流程
+```
+wopal skills install owner/repo@skill  # 自动完成三步
+```
+
+### 远程下载回退策略
+- GitHub API 优先（自动识别默认分支）→ 失败后 git clone HTTPS → 若鉴权失败再尝试 GitHub SSH clone
+- 非 GitHub `source@skill` 走 well-known 协议：`/.well-known/skills/index.json`
+
+### 搜索结果验证
+- `skills find` 默认展示 skills.sh 索引结果，可能存在陈旧条目
+- `skills find --verify` 会临时执行下载验证，标记结果是否真的可下载

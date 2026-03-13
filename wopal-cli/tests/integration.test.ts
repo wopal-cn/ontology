@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
-import { execSync } from "child_process";
+import { createServer } from "http";
+import { execFile, execSync } from "child_process";
 import { resetConfigForTest } from "../src/lib/config.js";
 
 const CLI_PATH = path.join(process.cwd(), "bin", "cli.js");
@@ -37,23 +38,97 @@ async function setupMockOpenclaw(
   await fs.ensureDir(scriptsDir);
   await fs.ensureDir(iocDir);
 
-  // scan.sh 必须包含 SKILLS_DIR= 和 OPENCLAW_DIR= 供 wopal-scan-wrapper.sh sed 替换
+  // Convert scanOutput lines to echo commands
+  const echoCommands = scanOutput
+    .split("\n")
+    .map((line) => `echo "${line.replace(/"/g, '\\"')}"`)
+    .join("\n");
+
+  // scan.sh must contain SKILLS_DIR= and OPENCLAW_DIR= for wopal-scan-wrapper.sh sed replacement
   const scanScript = `#!/bin/bash
 SKILLS_DIR="placeholder"
 OPENCLAW_DIR="placeholder"
 
-${scanOutput}
+${echoCommands}
 exit ${exitCode}
 `;
   const scanPath = path.join(scriptsDir, "scan.sh");
   await fs.writeFile(scanPath, scanScript, { mode: 0o755 });
 
-  // 版本文件：避免触发 git update（距今不到 24 小时）
+  // Version file: avoid triggering git update (less than 24 hours old)
   await fs.writeJson(path.join(openclawDir, ".wopal-version.json"), {
     commit: "mockcommit",
     lastUpdate: new Date().toISOString(),
     source: "mock",
   });
+}
+
+async function startWellKnownSkillServer(skillName: string): Promise<{
+  source: string;
+  host: string;
+  close: () => Promise<void>;
+}> {
+  const server = createServer((req, res) => {
+    if (req.url === "/.well-known/skills/index.json") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          skills: [
+            {
+              name: skillName,
+              description: "Well-known integration test skill",
+              files: ["references/guide.md"],
+            },
+          ],
+        }),
+      );
+      return;
+    }
+
+    if (req.url === `/.well-known/skills/${skillName}/SKILL.md`) {
+      res.writeHead(200, { "Content-Type": "text/markdown" });
+      res.end(
+        `---\nname: ${skillName}\ndescription: Well-known integration test skill\n---\n# ${skillName}`,
+      );
+      return;
+    }
+
+    if (req.url === `/.well-known/skills/${skillName}/references/guide.md`) {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("Guide content");
+      return;
+    }
+
+    res.writeHead(404);
+    res.end("Not found");
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Failed to resolve well-known server address");
+  }
+
+  const host = `127.0.0.1:${address.port}`;
+
+  return {
+    source: `http://${host}`,
+    host,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+        });
+      }),
+  };
 }
 
 describe("Install Command Integration Tests", () => {
@@ -106,8 +181,7 @@ describe("Install Command Integration Tests", () => {
     );
   }
 
-  it("should install skill from INBOX to project-level", async () => {
-    // 设置 mock openclaw：所有检查通过，exit 0
+  it("should install skill from INBOX to space-level and preserve INBOX by default", async () => {
     await setupMockOpenclaw(
       wopalHome,
       `[1/3] Check reverse shell
@@ -147,10 +221,8 @@ CLEAN: No C2 found`,
     expect(await fs.pathExists(installedDir)).toBe(true);
     expect(await fs.pathExists(path.join(installedDir, "SKILL.md"))).toBe(true);
 
-    // INBOX 中的 skill 应已被移除
-    expect(await fs.pathExists(inboxSkillDir)).toBe(false);
+    expect(await fs.pathExists(inboxSkillDir)).toBe(true);
 
-    // 锁文件应已更新
     const lockPath = path.join(
       projectDir,
       ".wopal",
@@ -163,6 +235,12 @@ CLEAN: No C2 found`,
     expect(lock.version).toBe(3);
     expect(lock.skills[skillName]).toBeDefined();
     expect(lock.skills[skillName].source).toBe("owner/repo");
+
+    const globalLockPath = path.join(wopalHome, "skills", ".skill-lock.json");
+    if (await fs.pathExists(globalLockPath)) {
+      const globalLock = await fs.readJson(globalLockPath);
+      expect(globalLock.skills[skillName]).toBeUndefined();
+    }
   }, 30000);
 
   it("should install skill from local path", async () => {
@@ -321,4 +399,209 @@ CLEAN: No C2 found`,
       expect(message).toContain("not found in repository");
     }
   }, 30000);
+
+  it("should remove INBOX skill when --rm-inbox flag is used", async () => {
+    await setupMockOpenclaw(
+      wopalHome,
+      `[1/3] Check reverse shell
+CLEAN: No reverse shell found`,
+      0,
+    );
+
+    const skillName = "rm-inbox-skill";
+    const inboxSkillDir = path.join(inboxDir, skillName);
+
+    await createTestSkill(inboxSkillDir, skillName);
+    await fs.writeJson(path.join(inboxSkillDir, ".source.json"), {
+      name: skillName,
+      source: "owner/repo@skill",
+      sourceUrl: "https://github.com/owner/repo",
+      skillPath: "skills/rm-inbox-skill",
+      downloadedAt: new Date().toISOString(),
+      skillFolderHash: "test-hash-rm",
+    });
+
+    const output = execSync(
+      `node ${CLI_PATH} skills install ${skillName} --rm-inbox`,
+      {
+        cwd: projectDir,
+        encoding: "utf-8",
+        env: { ...process.env },
+      },
+    );
+
+    expect(output).toContain("Installation complete");
+
+    expect(await fs.pathExists(inboxSkillDir)).toBe(false);
+
+    const installedDir = path.join(projectDir, ".wopal", "skills", skillName);
+    expect(await fs.pathExists(installedDir)).toBe(true);
+  });
+
+  it("should install skill to global scope with -g flag", async () => {
+    await setupMockOpenclaw(wopalHome, `CLEAN: All checks passed`, 0);
+
+    const skillName = "global-skill";
+    const inboxSkillDir = path.join(inboxDir, skillName);
+
+    await createTestSkill(inboxSkillDir, skillName);
+    await fs.writeJson(path.join(inboxSkillDir, ".source.json"), {
+      name: skillName,
+      source: "owner/repo@skill",
+      sourceUrl: "https://github.com/owner/repo",
+      skillPath: "skills/global-skill",
+      downloadedAt: new Date().toISOString(),
+      skillFolderHash: "test-hash-global",
+    });
+
+    const output = execSync(
+      `node ${CLI_PATH} skills install ${skillName} -g --skip-scan`,
+      {
+        cwd: projectDir,
+        encoding: "utf-8",
+        env: { ...process.env },
+      },
+    );
+
+    expect(output).toContain("Installation complete");
+
+    const globalInstalledDir = path.join(wopalHome, "skills", skillName);
+    expect(await fs.pathExists(globalInstalledDir)).toBe(true);
+
+    const spaceInstalledDir = path.join(
+      projectDir,
+      ".wopal",
+      "skills",
+      skillName,
+    );
+    expect(await fs.pathExists(spaceInstalledDir)).toBe(false);
+
+    const globalLockPath = path.join(wopalHome, "skills", ".skill-lock.json");
+    const globalLock = await fs.readJson(globalLockPath);
+    expect(globalLock.skills[skillName]).toBeDefined();
+
+    const spaceLockPath = path.join(
+      projectDir,
+      ".wopal",
+      "skills",
+      ".skill-lock.json",
+    );
+    if (await fs.pathExists(spaceLockPath)) {
+      const spaceLock = await fs.readJson(spaceLockPath);
+      expect(spaceLock.skills[skillName]).toBeUndefined();
+    }
+  });
+
+  it("should preserve INBOX when scan fails during install", async () => {
+    await setupMockOpenclaw(
+      wopalHome,
+      `[1/3] Check malware
+CRITICAL: Malware detected`,
+      2,
+    );
+
+    const skillName = "scan-fail-skill";
+    const inboxSkillDir = path.join(inboxDir, skillName);
+
+    await createTestSkill(inboxSkillDir, skillName);
+    await fs.writeJson(path.join(inboxSkillDir, ".source.json"), {
+      name: skillName,
+      source: "owner/repo@skill",
+      sourceUrl: "https://github.com/owner/repo",
+      skillPath: "skills/scan-fail-skill",
+      downloadedAt: new Date().toISOString(),
+      skillFolderHash: "mock-hash-scan-fail",
+    });
+
+    try {
+      execSync(`node ${CLI_PATH} skills install ${skillName}`, {
+        cwd: projectDir,
+        encoding: "utf-8",
+        env: { ...process.env },
+        stdio: "pipe",
+      });
+      expect.fail("Should have thrown an error due to scan failure");
+    } catch (error: any) {
+      const message = `${error.stdout || ""}${error.stderr || ""}`;
+      expect(message).toMatch(/Security scan failed/i);
+    }
+
+    expect(await fs.pathExists(inboxSkillDir)).toBe(true);
+
+    const installedDir = path.join(projectDir, ".wopal", "skills", skillName);
+    expect(await fs.pathExists(installedDir)).toBe(false);
+  });
+
+  it("should install remote well-known source by reusing download flow", async () => {
+    const skillName = "superpowers";
+    const server = await startWellKnownSkillServer(skillName);
+
+    try {
+      const output = await new Promise<string>((resolve, reject) => {
+        execFile(
+          "node",
+          [
+            CLI_PATH,
+            "skills",
+            "install",
+            `${server.source}@${skillName}`,
+            "--skip-scan",
+            "--force",
+          ],
+          {
+            cwd: projectDir,
+            encoding: "utf-8",
+            env: {
+              ...process.env,
+              WOPAL_SKILLS_INBOX_DIR: inboxDir,
+            },
+          },
+          (error, stdout, stderr) => {
+            if (error) {
+              reject(
+                Object.assign(error, {
+                  message: `${error.message}\n${stdout || ""}${stderr || ""}`,
+                }),
+              );
+              return;
+            }
+            resolve(stdout);
+          },
+        );
+      });
+
+      expect(output).toContain(
+        `Installing remote skill: ${server.source}@${skillName}`,
+      );
+      expect(output).toContain(`Installation complete: ${skillName}`);
+
+      const installedSkillDir = path.join(
+        projectDir,
+        ".wopal",
+        "skills",
+        skillName,
+      );
+      expect(
+        await fs.pathExists(path.join(installedSkillDir, "SKILL.md")),
+      ).toBe(true);
+      expect(
+        await fs.pathExists(
+          path.join(installedSkillDir, "references", "guide.md"),
+        ),
+      ).toBe(true);
+
+      const lockPath = path.join(
+        projectDir,
+        ".wopal",
+        "skills",
+        ".skill-lock.json",
+      );
+      const lock = await fs.readJson(lockPath);
+
+      expect(lock.skills[skillName].sourceType).toBe("well-known");
+      expect(lock.skills[skillName].source).toBe(server.host);
+    } finally {
+      await server.close();
+    }
+  });
 });
