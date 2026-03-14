@@ -7,7 +7,7 @@ trigger: always_on
 
 | 原则 | 说明 |
 |------|------|
-| **调用从部署站** | 必须从 `.agents/skills/<name>/` 调用已部署技能 |
+| **调用从部署层** | 必须从 `.agents/skills/<name>/` 调用已部署技能 |
 | **开发在源码** | 技能修改必须在源码中完成，然后部署 |
 | **禁止越界** | 不得直接从 `projects/agent-tools/skills/` 执行（测试除外） |
 
