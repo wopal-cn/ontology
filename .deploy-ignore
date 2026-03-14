@@ -5,6 +5,9 @@
 .git/
 .gitignore
 
+# Skills backup (managed by wopal-cli)
+download/
+
 # Python
 __pycache__/
 *.pyc
