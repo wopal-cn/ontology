@@ -3,7 +3,7 @@ trigger: always_on
 ---
 # Git 工作流规则
 
-## AI 代理约束
+## 基本法
 - 必须先提供代码或文件变更列表供用户在编辑器中评审，**只有在用户明确确认并要求 commit 的情况下**，才能执行 `git commit` 或 `git push` 操作
 - **commit message 必须使用中文**，严格遵循 Conventional Commits 规范
 - 每次提交前确认不在 `detached HEAD` 状态
@@ -32,7 +32,7 @@ trigger: always_on
 
 - 相关变更合并为一个提交
 - 不相关变更拆分为多个提交
-- 拆分好处：原子提交、便于回滚和 bisect 排查
+- 拆分好处：原子(事务性)提交、便于回滚和 bisect 排查
 
 ## 分支策略
 
@@ -40,10 +40,11 @@ trigger: always_on
 - `feature/*` - 功能分支
 - `bugfix/*` - Bug 修复分支
 - `hotfix/*` - 紧急修复分支
+- `refactor/*` - 重构分支
 
 ## 子项目工作流
 
-**核心原则**: 逐层提交，先子项目后主仓库
+**核心原则**: 逐层提交，先子项目后工作空间
 
 1. **开发前**: 确保 `git checkout <branch>` 脱离 detached HEAD
 2. **开发后**: 在子项目内完成 `git add` → `git commit` → `git push`

@@ -71,9 +71,3 @@ description: 技能描述（1-1024 字符）
 
 2. **修改源码**：在源码目录进行开发
 
-3. **重新部署**：使用 `skill-deployer` 部署更新
-
-## 部署位置
-
-- 项目级：`.agents/skills/<name>/`
-- 全局级：`~/.agents/skills/<name>/`
