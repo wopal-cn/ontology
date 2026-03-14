@@ -1,289 +1,230 @@
 ---
-description: 为子项目创建项目规范 (AGENTS.md) 和 README.md
+description: 创建/更新子项目 AGENTS.md 和 README.md
 ---
 
-# 创建/更新项目规范
+# 创建/更新项目规范 AGENTS.md 或 README.md 文档
 
-通过分析代码库并提取模式，为子项目生成 AGENTS.md（项目规范）和 README.md 文件。
+## 项目和目标: `$ARGUMENTS` -> [project] [target]
 
-> **重要声明**: 主仓库 AGENTS.md 系工作空间宪法，应手动演进，不在此命令职责范围内。本命令仅用于子项目规范的创建与更新。
-
----
-
-## 使用方式
-
-```bash
-/cupdate-project-spec                    # 当前项目（若在子项目内）
-/cupdate-project-spec --project <name>   # 指定项目
-/cupdate-project-spec --all              # 所有子项目
-/cupdate-project-spec --agents-only      # 仅规范
-/cupdate-project-spec --readme-only      # 仅 README
-```
-
----
-
-## 输出文件定位
-
-| 文件 | 面向 | 目的 |
+| 参数 | 必填 | 说明 |
 |------|------|------|
-| **README.md** | 人类开发者 | 项目介绍、快速上手 |
-| **AGENTS.md** | AI Agent | 项目规范（项目级规则） |
+| `project` | 否 | 项目路径，未提供则从上下文推断 |
+| `target` | 否 | `agent` / `readme` / `both`，默认 `both`, 需要模糊推断 |
 
-**职责分离**:
-
-| 内容类型 | 放置位置 | 说明 |
-|---------|---------|------|
-| 项目概览、技术栈、结构 | AGENTS.md | 项目特定 |
-| 常用命令、关键文件 | AGENTS.md | 项目特定 |
-| 代码风格、命名约定 | rules/*.md | 通用规范，通过 glob 自动触发 |
-| 错误处理、Git 工作流 | rules/*.md | 通用规范 |
-
-**AGENTS.md 中的 "适用规则" 章节**:
-- 列出项目适用的 rules 文件
-- 不重复通用规范内容
-- 仅填写项目**特有**的模式
+**示例**:
+- `/cupdate-project-spec` → 推断项目，生成两个文件（需确认）
+- `/cupdate-project-spec wopal-cli` → 指定项目，生成两个文件（需确认）
+- `/cupdate-project-spec wopal-cli AGENTS` → 指定项目，仅生成 AGENTS.md
 
 ---
 
-## 目标
+## 执行流程
 
-创建项目规范，让 AI Agent 了解：
-- 这个项目是什么
-- 使用了哪些技术
-- 代码如何组织
-- 需要遵循的模式和约定
-- 如何构建、测试和验证
+### 1. 确定目标项目
 
----
+**有参数**: 使用 `$ARGUMENTS` 中的项目路径
 
-## Phase 0: 定位 (LOCATE)
-
-> **关键**: 首先确定当前位置是否在子项目内。
-
-### 检测当前位置
+**无参数**: 从上下文推断
+1. 检查当前工作目录是否在 `projects/` 下
+2. 检查最近操作的文件所属项目
+3. 检查会话中讨论的项目
 
 ```bash
-# 检测是否在 git 仓库中
-git rev-parse --is-inside-work-tree
-
-# 获取当前仓库根目录
-git rev-parse --show-toplevel
-
-# 检测是否在子项目中
-# 方法：检查是否在 projects/ 目录下，或是否有父级 .git（主仓库）
-git rev-parse --show-superproject-working-tree
+# 检测当前位置
+git rev-parse --show-superproject-working-tree  # 非空 = 子项目内
+pwd | grep -o 'projects/[^/]*'                  # 提取项目名
 ```
 
-### 识别项目结构
+### 2. 确认操作
 
-| 位置判断方法 | 结果 |
-|-------------|------|
-| `show-superproject-working-tree` 非空 | 当前在子项目中 |
-| 当前路径包含 `projects/` | 当前在子项目中 |
-| 主仓库根目录 | 需要用户指定 `--project` 参数 |
-
-### 确定目标
-
-根据参数和当前位置确定生成目标：
-
-| 参数 | 当前位置 | 目标 |
-|------|---------|------|
-| 无 | 子项目内 | 当前项目 AGENTS.md + README.md |
-| 无 | 主仓库根目录 | 提示用户指定 `--project` |
-| `--project <name>` | 任意 | 指定项目 |
-| `--all` | 任意 | 所有子项目 |
-| `--agents-only` | 任意 | 仅 AGENTS.md |
-| `--readme-only` | 任意 | 仅 README.md |
-
-### 子项目列表
-
-如需列出可用子项目：
-
-```bash
-ls -d projects/*/
+向用户确认：
 ```
+将为 projects/<project> 生成/更新以下文档：
+- AGENTS.md
+- README.md
+
+确认？[Y/n]
+```
+
+### 3. 分析项目
+
+识别：
+- **项目类型**: CLI / Web App / API / Library / Monorepo
+- **技术栈**: 语言、框架、测试工具、构建工具
+- **目录结构**: 源码、测试、配置位置
+- **关键文件**: 入口点、核心逻辑
+- **开发约束**: 从代码中提取的约束规则（如禁止 console.*、禁用颜色等）
+
+### 4. 生成文档
+
+根据 target 生成对应文件。
 
 ---
 
-## Phase 1: 探索 (DISCOVER)
+## AGENTS.md 模板
 
-### 识别项目类型
-
-首先，确定这是什么类型的项目：
-
-| 类型 | 指标 |
-|------|------|
-| Web App (全栈) | 分离的 client/server 目录，API routes |
-| Web App (前端) | React/Vue/Svelte，无服务端代码 |
-| API/Backend | Express/Fastify 等，无前端 |
-| Library/Package | package.json 中有 `main`/`exports`，可发布 |
-| CLI Tool | package.json 中有 `bin`，命令行界面 |
-| Monorepo | 多个 packages，workspaces 配置 |
-| Script/Automation | 独立脚本，任务导向 |
-
-### 分析配置
-
-查看根目录配置文件：
-
-```
-package.json       → dependencies, scripts, type
-tsconfig.json      → TypeScript 设置
-pyproject.toml     → Python 项目配置
-requirements.txt   → Python 依赖
-vite.config.*      → 构建工具
-*.config.js/ts     → 各种工具配置
-```
-
-### 映射目录结构
-
-探索代码库以理解组织方式：
-- 源代码在哪里？
-- 测试在哪里？
-- 有共享代码吗？
-- 配置文件位置？
-
----
-
-## Phase 2: 分析 (ANALYZE)
-
-### 提取技术栈
-
-从 package.json / pyproject.toml 和配置文件中识别：
-- 运行时/语言 (Node, Bun, Deno, Python, browser)
-- 框架
-- 数据库（如有）
-- 测试工具
-- 构建工具
-- Linting/格式化
-
-### 识别模式
-
-研究现有代码：
-- **命名**: 文件、函数、类如何命名？
-- **结构**: 代码在文件内如何组织？
-- **错误**: 错误如何创建和处理？
-- **类型**: 类型/接口如何定义？
-- **测试**: 测试如何结构化？
-
-### 找到关键文件
-
-识别需要了解的重要文件：
-- 入口点
-- 配置
-- 核心业务逻辑
-- 共享工具
-- 类型定义
-
-### 子项目特有分析
-
-识别与主仓库的关系：
-- 共享什么资源（规则、技能、命令）？
-- 独立的生命周期（CI/CD、发布）？
-- 依赖主仓库的哪些资源？
-
----
-
-## Phase 3: 生成 (GENERATE)
-
-### 选择模板
-
-| 场景 | AGENTS 模板 | README 模板 |
-|------|-------------|-------------|
-| 子项目规范 | `templates/AGENTS-project-template.md` | `templates/README-project-template.md` |
-
-### 创建 AGENTS.md（项目规范）
-
-**输出路径**: `<project>/AGENTS.md`
-
-**核心章节**:
-
-1. **项目概览** - 这是什么，做什么用？
-2. **技术栈** - 使用了哪些技术？
-3. **常用命令** - 如何开发、构建、测试、lint？
-4. **项目结构** - 代码如何组织？
-5. **适用规则** - 适用哪些通用规则？（引用工作空间 rules/）
-6. **项目特有模式** - 项目特有的模式（非通用规范）
-7. **关键文件** - 哪些文件需要了解？
-
-**与主仓库的关系**:
-- 引用工作空间的共享规则
-- 说明依赖的共享资源
-
-### 创建 README.md
-
-**输出路径**: `<project>/README.md`
-
-**核心章节**:
-
-1. **项目名称 + 一句话简介** - 这是什么？
-2. **快速开始** - 如何安装和运行？
-3. **核心功能/组件** - 主要特性列表
-4. **技术栈**（可选）- 关键技术
-5. **文档链接** - 相关文档
-
-**风格要求**:
-- 简洁、可扫描
-- 使用表格展示组件/功能列表
-- 代码块展示命令
-- 中文撰写
-- **严禁包含内部架构信息**: README.md 面向外部开源社区，**绝对不要**在其中包含"这是一个子项目"、"主仓库是什么"等纯粹为了内部代码库组织的结构信息。把这些留给 `AGENTS.md`。
-
----
-
-## Phase 4: 输出 (OUTPUT)
-
-### 单项目输出
+> 面向 AI Agent，聚焦开发细节和约束。
 
 ```markdown
-## 项目文档已创建/更新
+# [项目名称] - 项目规范
 
-| 文件 | 状态 | 说明 |
-|------|------|------|
-| `AGENTS.md` | 已创建 | 项目规范 |
-| `README.md` | 已创建 | 项目介绍和快速开始 |
+<CRITICAL_RULE>
+此文档为 AI agents 提供项目开发规范，当项目设计或代码变更后，必须及时更新本文档。
+</CRITICAL_RULE>
 
-### 项目类型
+---
 
-{检测到的项目类型}
+## 架构
 
-### 技术栈摘要
+[简要架构图或描述，如：核心模块 + 数据流]
 
-{检测到的关键技术}
+---
 
-### 后续步骤
+## 目录结构
 
-1. 检查生成的 `README.md` 和 `AGENTS.md`
-2. 添加任何项目特定的内容
-3. 可选：在 `docs/` 下创建参考文档
+\`\`\`
+[root]/
+├── [dir]/     # [描述]
+├── [dir]/     # [描述]
+└── [dir]/     # [描述]
+\`\`\`
+
+---
+
+## 开发命令
+
+\`\`\`bash
+# 开发
+[dev-command]
+
+# 构建
+[build-command]
+
+# 测试
+[test-command]
+
+# 格式化
+[format-command]
+\`\`\`
+
+---
+
+## 开发约束
+
+> **关键规则**：必须遵守的开发约束，从代码中提取。
+
+### 代码风格
+
+- [约束，如：Prettier, 2 空格, 单引号]
+- [约束，如：TypeScript 严格模式]
+
+### 输出规范
+
+- [约束，如：禁止 console.*，必须使用 output.* 或 logger.*]
+- [约束，如：禁用颜色输出]
+
+### 术语规范
+
+- [约束，如：统一使用 space，避免 workspace/project/scope]
+
+### 测试约束
+
+- [约束，如：涉及子进程的测试必须隔离 WOPAL_HOME 环境]
+
+### 敏感信息
+
+- **禁止记录**: [如：GITHUB_TOKEN、*_API_KEY、*_SECRET]
+
+---
+
+## 项目特有模式
+
+> 仅填写此项目**特有**的模式。
+
+### [特有模式名称]
+
+- [描述]
+
+---
+
+## 测试
+
+- **运行测试**: `[test-command]`
+- **测试位置**: `[test-directory]`
+
+---
+
+## 关键模块
+
+| 模块 | 说明 |
+|------|------|
+| `[path]` | [描述] |
+
 ```
 
-### 批量输出 (--all)
+---
+
+## README.md 模板
+
+> 面向人类开发者，视为独立项目介绍，**不提及** monorepo/子项目关系。
+
+```markdown
+# [项目名称]
+
+[一句话项目简介，说明核心价值和用途]。
+
+## 快速开始
+
+\`\`\`bash
+# 安装依赖
+[install-command]
+
+# 开发模式
+[dev-command]
+\`\`\`
+
+## 核心功能
+
+| 功能 | 说明 |
+|------|------|
+| [功能 1] | [简要描述] |
+| [功能 2] | [简要描述] |
+
+## 技术栈
+
+| 技术 | 用途 |
+|------|------|
+| [技术 1] | [用途] |
+
+## 项目结构
+
+\`\`\`
+[root]/
+├── [dir]/     # [描述]
+└── [dir]/     # [描述]
+\`\`\`
+
+## 文档
+
+- [AGENTS.md](AGENTS.md) - 开发规范
+
+## License
+
+[许可证]
+```
+
+---
+
+## 输出格式
 
 ```markdown
 ## 项目文档已创建
 
-| 位置 | AGENTS.md | README.md | 项目类型 |
-|------|-----------|-----------|---------|
-| wopal | 已创建 | 已创建 | Web App (前端) |
-| flex-scheduler | 已创建 | 已创建 | API/Backend |
+| 文件 | 状态 |
+|------|------|
+| AGENTS.md | 已创建 |
+| README.md | 已创建 |
 
-### 后续步骤
-
-1. 检查各生成的文档
-2. 确认项目正确引用了工作空间规则
-3. 为各项目添加特定内容
+**项目类型**: {类型}
+**技术栈**: {关键技术}
 ```
-
----
-
-## 提示 (Tips)
-
-- **README.md**: 面向人类，保持简洁，聚焦"是什么"和"怎么用"。将项目作为一个独立产品来介绍，**绝不要**提及它是子项目或属于某个 Monorepo。
-- **AGENTS.md**: 面向 AI，可以详细，聚焦"怎么开发"
-- 不要在两者中重复相同内容（README 引用 AGENTS 获取详情）
-- 随项目演进及时更新
-- 项目的 `AGENTS.md` 应简洁，复杂通用规则引用工作空间规则
-
----
-
-> Generated by `/cupdate-project-spec` command
