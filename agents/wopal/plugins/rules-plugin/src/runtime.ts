@@ -15,6 +15,7 @@ import { extractConnectedMcpCapabilityIDs } from "./mcp-tools.js";
 import { createDebugLog, type DebugLog } from "./debug.js";
 import type { SessionStore } from "./session-store.js";
 import type { Model } from "@opencode-ai/sdk";
+import type { SimpleTaskManager } from "./simple-task-manager.js";
 
 interface MessagesTransformOutput {
   messages: MessageWithInfo[];
@@ -37,6 +38,7 @@ export interface OpenCodeRulesRuntimeOptions {
   sessionStore: SessionStore;
   debugLog?: DebugLog;
   now?: () => number;
+  taskManager?: SimpleTaskManager;
 }
 
 export class OpenCodeRulesRuntime {
@@ -47,6 +49,7 @@ export class OpenCodeRulesRuntime {
   private sessionStore: SessionStore;
   private debugLog: DebugLog;
   private now: () => number;
+  private taskManager: SimpleTaskManager | undefined;
 
   constructor(opts: OpenCodeRulesRuntimeOptions) {
     this.client = opts.client;
@@ -56,6 +59,7 @@ export class OpenCodeRulesRuntime {
     this.sessionStore = opts.sessionStore;
     this.debugLog = opts.debugLog ?? createDebugLog();
     this.now = opts.now ?? (() => Date.now());
+    this.taskManager = opts.taskManager ?? undefined;
   }
 
   createHooks(): Record<string, unknown> {
@@ -66,6 +70,7 @@ export class OpenCodeRulesRuntime {
       "chat.message": this.onChatMessage.bind(this),
       "experimental.chat.system.transform": this.onSystemTransform.bind(this),
       "experimental.session.compacting": this.onSessionCompacting.bind(this),
+      "event": this.onEvent.bind(this),
     };
   }
 
@@ -352,5 +357,61 @@ export class OpenCodeRulesRuntime {
     this.debugLog(
       `Added ${pathsToInclude.length} context path(s) to compaction for session ${sessionID}`,
     );
+  }
+
+  private async onEvent(
+    input: { event: { type: string; properties?: Record<string, unknown> } },
+  ): Promise<void> {
+    if (!this.taskManager) return
+
+    const eventType = input.event.type
+    const props = input.event.properties
+
+    if (eventType === "session.idle") {
+      const sessionID = props?.sessionID as string | undefined
+      if (!sessionID) return
+
+      const task = this.taskManager.markTaskCompletedBySession(sessionID)
+      if (task) {
+
+        this.debugLog(`[event] task ${task.id} completed via session.idle`)
+
+        this.taskManager.notifyParent(task.id).catch(() => {})
+      }
+    }
+
+    if (eventType === "session.error") {
+      const sessionID = props?.sessionID as string | undefined
+      const error = this.stringifyEventError(props?.error)
+
+      if (sessionID) {
+        const task = this.taskManager.markTaskErrorBySession(sessionID, error)
+        if (task) {
+
+          this.taskManager.notifyParent(task.id).catch(() => {})
+        }
+      }
+    }
+  }
+
+  private stringifyEventError(error: unknown): string {
+    if (typeof error === "string" && error.length > 0) {
+      return error
+    }
+
+    if (error instanceof Error && error.message) {
+      return error.message
+    }
+
+    try {
+      const serialized = JSON.stringify(error)
+      if (serialized && serialized !== "{}") {
+        return serialized
+      }
+    } catch {
+      // Ignore JSON serialization failures and fall back to String().
+    }
+
+    return String(error)
   }
 }

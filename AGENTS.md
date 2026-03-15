@@ -188,7 +188,7 @@ bun test
 
 | 插件 | 说明 |
 |------|------|
-| `rules-plugin` | OpenCode 规则注入插件（TypeScript） |
+| `rules-plugin` | OpenCode 规则注入插件（TypeScript），含 wopal_task 会话归属校验与后台任务状态管理 |
 
 ---
 
@@ -207,6 +207,7 @@ bun test
 
 - **运行测试**: `cd agents/wopal/plugins/rules-plugin && bun test`
 - **测试位置**: `agents/wopal/plugins/rules-plugin/src/*.test.ts`
+- **任务委派测试重点**: launch 失败显式报错、父会话 ownership 校验、session.idle/session.error 与 cancel 竞态保护
 
 ---
 

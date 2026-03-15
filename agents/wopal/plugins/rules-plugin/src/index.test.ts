@@ -1999,8 +1999,8 @@ describe("OpenCodeRulesPlugin", () => {
 
       // Assert - hooks are returned even when no rules exist
       // They handle the empty case gracefully
-      expect(hooks).toHaveProperty("experimental.chat.messages.transform");
-      expect(hooks).toHaveProperty("experimental.chat.system.transform");
+      expect("experimental.chat.messages.transform" in hooks).toBe(true);
+      expect("experimental.chat.system.transform" in hooks).toBe(true);
       expect(typeof hooks["experimental.chat.messages.transform"]).toBe(
         "function",
       );
@@ -2034,8 +2034,8 @@ describe("OpenCodeRulesPlugin", () => {
       const hooks = await plugin(mockInput);
 
       // Assert
-      expect(hooks).toHaveProperty("experimental.chat.messages.transform");
-      expect(hooks).toHaveProperty("experimental.chat.system.transform");
+      expect("experimental.chat.messages.transform" in hooks).toBe(true);
+      expect("experimental.chat.system.transform" in hooks).toBe(true);
       expect(typeof hooks["experimental.chat.messages.transform"]).toBe(
         "function",
       );

@@ -2,21 +2,31 @@
  * OpenCode Rules Plugin
  *
  * Discovers markdown rule files and injects them into the system prompt.
+ * Also provides non-blocking task delegation tools (wopal_task, wopal_output, wopal_cancel).
  */
 
 import type { PluginInput } from "@opencode-ai/plugin";
 import { discoverRuleFiles } from "./utils.js";
 import { OpenCodeRulesRuntime } from "./runtime.js";
 import { createSessionStore, type SessionState } from "./session-store.js";
+import { createDebugLog } from "./debug.js";
+import { SimpleTaskManager } from "./simple-task-manager.js";
+import { createWopalTools } from "./tools/index.js";
 
 const sessionStore = createSessionStore();
-import { createDebugLog } from "./debug.js";
 
 const debugLog = createDebugLog();
+console.log("[rules-plugin] Plugin module loaded");
 
 const openCodeRulesPlugin = async (pluginInput: PluginInput) => {
   const ruleFiles = await discoverRuleFiles(pluginInput.directory);
   debugLog(`Discovered ${ruleFiles.length} rule file(s)`);
+
+  const taskManager = new SimpleTaskManager(
+    pluginInput.client,
+    pluginInput.directory,
+    debugLog,
+  );
 
   const runtime = new OpenCodeRulesRuntime({
     client: pluginInput.client,
@@ -25,9 +35,15 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput) => {
     ruleFiles,
     sessionStore,
     debugLog,
+    taskManager,
   });
 
-  return runtime.createHooks();
+  const hooks = runtime.createHooks();
+
+  return {
+    ...hooks,
+    tool: createWopalTools(taskManager),
+  };
 };
 
 /**
