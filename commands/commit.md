@@ -27,16 +27,25 @@ description: 为未提交的更改创建 Git commit
 
 ### 无参数
 
-按优先级推断：
+**默认全量扫描**：同时检查工作空间 + 所有子项目的变更状态。
 
-1. **当前目录**：在子项目内 → 仅处理该子项目
-2. **会话上下文**：本次对话操作过的文件所属项目
-3. **最近变更**：`git status` 显示的唯一有变更的项目
-4. **全量扫描**：以上都无法确定时，扫描所有子项目 + 工作空间
+```bash
+# 检查工作空间
+git status --short
+
+# 检查每个子项目
+git submodule status --quiet 2>/dev/null | while read sha path; do
+  (cd "$path" && git status --short) | sed "s|^|$path: |"
+done
+```
+
+**输出格式**：列出所有有变更的仓库，按仓库分组展示。
 
 ---
 
 ## 步骤2：分析变更意图
+
+**对每个有变更的仓库**执行：
 
 ```bash
 git status --short
@@ -44,23 +53,26 @@ git diff --stat
 ```
 
 **核心任务**：
-1. 列出所有变更文件
+1. 列出所有变更文件（按仓库分组）
 2. **读取 diff 内容**，理解每个变更的目的
-3. 按「变更意图」分组（同一功能/修复/重构的文件归一组）
+3. 按「仓库 × 变更意图」双重分组
 4. 为每组确定 type 和 message
 
 ### 分组示例
 
 ```
-变更文件:
-  - src/auth/login.ts
-  - src/auth/token.ts
-  - docs/api/auth.md
-  - README.md (无关修改，更新安装说明)
+📦 工作空间:
+  - MEMORY.md
+  - docs/products/plans/xxx.md
+
+📦 projects/agent-tools:
+  - agents/wopal/commands/summon.md
+  - commands/commit.md
 
 分组:
-  组1 (feat): 登录功能增强 → login.ts + token.ts + auth.md
-  组2 (docs): 更新安装说明 → README.md
+  [workspace] 组1 (docs): 更新知识沉淀 → MEMORY.md
+  [workspace] 组2 (chore): 归档计划 → plans/xxx.md
+  [agent-tools] 组1 (feat): 优化命令提示词 → summon.md + commit.md
 ```
 
 ### Type 判断
@@ -79,15 +91,19 @@ git diff --stat
 ## 步骤3：生成提交计划
 
 ```
-📋 提交计划（共 N 个提交）
+📋 提交计划（共 N 个仓库，M 个提交）
 
+📦 工作空间 (main)
 1. feat: 增加登录 token 自动刷新
    - src/auth/login.ts
    - src/auth/token.ts
-   - docs/api/auth.md
 
-2. docs: 更新安装说明中的依赖版本
-   - README.md
+2. docs: 更新知识沉淀
+   - MEMORY.md
+
+📦 projects/agent-tools (main)
+1. fix: 修复 commit 命令子项目扫描漏洞
+   - commands/commit.md
 
 ...
 ```
@@ -102,15 +118,21 @@ git diff --stat
 
 ## 步骤4：执行提交
 
-```bash
-# 按组依次提交
-git add <files-group-1>
-git commit -m "feat: 增加登录 token 自动刷新"
+**按仓库顺序执行**（先子项目，后工作空间）：
 
-git add <files-group-2>
-git commit -m "docs: 更新安装说明中的依赖版本"
+```bash
+# 1. 进入子项目提交
+cd projects/agent-tools
+git add <files-group-1>
+git commit -m "fix: 修复 commit 命令子项目扫描漏洞"
+
+# 2. 回到工作空间提交
+cd ../..
+git add <files-group-1>
+git commit -m "docs: 更新知识沉淀"
 ```
 
-**完成后**：
-- 单子项目变更 → 结束
-- 多子项目/工作空间变更 → 提醒 `/pin-submodule`
+**提交顺序**：
+1. 子项目提交（projects/*）
+2. 工作空间提交
+3. 有子模块变更 → 提醒 `/pin-submodule`
