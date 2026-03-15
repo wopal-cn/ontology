@@ -1,6 +1,19 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin"
 import type { SimpleTaskManager } from "../simple-task-manager.js"
 
+const REPORT_TEMPLATE = `
+
+---
+[MANDATORY - Include this report at the end of your response]
+
+## Task Report
+**Summary**: <1-2 sentences describing what you did>
+**Files**: <List all created/modified files with full paths>
+**Commands**: <List any commands you executed>
+**Issues**: <Any problems, or "None">
+**Status**: COMPLETED | FAILED
+---`
+
 export function createWopalTaskTool(manager: SimpleTaskManager): ToolDefinition {
   return tool({
     description: "Launch a non-blocking background task with a subagent",
@@ -8,17 +21,22 @@ export function createWopalTaskTool(manager: SimpleTaskManager): ToolDefinition 
       description: tool.schema.string().describe("Short description of the task (3-5 words)"),
       prompt: tool.schema.string().describe("Detailed instructions for the subagent"),
       agent: tool.schema.string().optional().default("general").describe("Agent type: 'general', 'explore', 'code-quality-reviewer', etc."),
+      timeout: tool.schema.number().min(10).max(3600).optional().describe("Timeout in seconds (default: 300, max: 3600)"),
     },
-    execute: async (args: { description: string; prompt: string; agent?: string }, context: ToolContext) => {
+    execute: async (args, context: ToolContext) => {
       if (!context.sessionID) {
         return "Failed to launch task: current session ID is unavailable."
       }
 
+      // Handle default for agent (schema default may be bypassed in direct calls)
+      const agent = args.agent ?? "general"
+      const fullPrompt = args.prompt + REPORT_TEMPLATE
       const result = await manager.launch({
         description: args.description,
-        prompt: args.prompt,
-        agent: args.agent ?? "general",
+        prompt: fullPrompt,
+        agent,
         parentSessionID: context.sessionID,
+        ...(args.timeout !== undefined ? { timeout: args.timeout } : {}),
       })
 
       if (!result.ok) {
@@ -26,7 +44,8 @@ export function createWopalTaskTool(manager: SimpleTaskManager): ToolDefinition 
         return `Failed to launch task.\n${taskLine}Reason: ${result.error}`
       }
 
-      return `Task launched: ${result.taskId}\nStatus: ${result.status}\n\nUse \`wopal_output(task_id="${result.taskId}")\` to check task status.`
+      const timeoutInfo = args.timeout ? ` (timeout: ${args.timeout}s)` : ""
+      return `Task launched: ${result.taskId}\nStatus: ${result.status}${timeoutInfo}\n\nUse \`wopal_output(task_id="${result.taskId}")\` to check task status and retrieve results.`
     },
   })
 }

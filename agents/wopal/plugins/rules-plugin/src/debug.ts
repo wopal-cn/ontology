@@ -4,6 +4,8 @@ import { tmpdir } from "os";
 
 export type LogFn = (message: string) => void;
 
+export type DebugLog = LogFn;
+
 /**
  * Module names for debug filtering:
  * - "rules" for [wopal-rules] prefix

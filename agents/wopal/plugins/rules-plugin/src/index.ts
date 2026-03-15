@@ -24,7 +24,6 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput) => {
   const taskManager = new SimpleTaskManager(
     pluginInput.client,
     pluginInput.directory,
-    debugLog,
   );
 
   const runtime = new OpenCodeRulesRuntime({

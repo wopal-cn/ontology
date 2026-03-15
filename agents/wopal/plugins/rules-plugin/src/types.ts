@@ -11,6 +11,7 @@ export interface WopalTask {
   createdAt: Date
   completedAt?: Date
   error?: string
+  timeoutMs?: number
 }
 
 export interface LaunchInput {
@@ -18,6 +19,35 @@ export interface LaunchInput {
   prompt: string
   agent: string
   parentSessionID: string
+  timeout?: number
+}
+
+// Session message types for result extraction
+export interface SessionMessage {
+  id?: string
+  info?: {
+    id?: string
+    role?: string
+    time?: string | { created?: number }
+    finish?: string
+    agent?: string
+    model?: { providerID: string; modelID: string; variant?: string }
+    modelID?: string
+    providerID?: string
+    variant?: string
+  }
+  parts?: Array<{
+    type?: string
+    text?: string
+    tool?: string
+    callID?: string
+    content?: string | Array<{ type: string; text?: string }>
+  }>
+}
+
+export interface MessagesResult {
+  data?: SessionMessage[]
+  error?: unknown
 }
 
 export interface LaunchSuccess {

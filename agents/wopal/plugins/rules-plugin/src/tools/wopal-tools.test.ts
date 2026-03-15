@@ -62,7 +62,7 @@ describe("wopal tools", () => {
       expect(result).toContain("running")
       expect(manager.launch).toHaveBeenCalledWith({
         description: "Test task",
-        prompt: "Do something",
+        prompt: expect.stringContaining("Do something"),
         agent: "general",
         parentSessionID: "parent-1",
       })
@@ -87,6 +87,29 @@ describe("wopal tools", () => {
         expect.objectContaining({ agent: "general" }),
       )
     })
+
+    it("appends report template to prompt", async () => {
+      const manager = {
+        launch: vi.fn().mockResolvedValue({
+          ok: true,
+          taskId: "task-1",
+          status: "running",
+        }),
+      }
+
+      const execute = getExecute(createWopalTaskTool(manager as never))
+      await execute(
+        { description: "Test task", prompt: "Do something" },
+        { sessionID: "parent-1" },
+      )
+
+      const callArgs = manager.launch.mock.calls[0][0]
+      expect(callArgs.prompt).toContain("Do something")
+      expect(callArgs.prompt).toContain("[MANDATORY - Include this report at the end of your response]")
+      expect(callArgs.prompt).toContain("## Task Report")
+      expect(callArgs.prompt).toContain("**Summary**:")
+      expect(callArgs.prompt).toContain("**Files**:")
+    })
   })
 
   describe("wopal_output", () => {
@@ -106,10 +129,20 @@ describe("wopal tools", () => {
       const manager = {
         getTaskForParent: vi.fn().mockReturnValue({
           id: "task-1",
+          sessionID: "session-1",
           status: "completed",
           description: "Test task",
           agent: "general",
           completedAt: new Date("2026-03-15T10:00:00.000Z"),
+        }),
+        getClient: vi.fn().mockReturnValue({
+          session: {
+            messages: vi.fn().mockResolvedValue({
+              data: [
+                { info: { role: "assistant" }, parts: [{ type: "text", text: "Task output" }] },
+              ],
+            }),
+          },
         }),
       }
 
@@ -117,7 +150,7 @@ describe("wopal tools", () => {
       const output = await execute({ task_id: "task-1" }, { sessionID: "parent-1" })
 
       expect(output).toContain("**Status:** completed")
-      expect(output).toContain("Result retrieval is not supported by this tool.")
+      expect(output).toContain("Task output")
     })
 
     it("describes running tasks", async () => {

@@ -9,6 +9,11 @@ import { createDebugLog } from "./debug.js"
 
 const defaultManagerLog = createDebugLog("[wopal-task]", "task")
 
+const DEFAULT_TIMEOUT_MS = 300_000  // 5 minutes
+const MAX_TIMEOUT_MS = 3_600_000    // 1 hour
+const CLEANUP_INTERVAL_MS = 600_000 // 10 minutes
+const CLEANUP_MAX_AGE_MS = 3600_000 // 1 hour
+
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message
@@ -41,6 +46,8 @@ export class SimpleTaskManager {
   private client: any
   private directory: string
   private debugLog: DebugLog
+  private timeoutTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private cleanupInterval: ReturnType<typeof setInterval> | undefined = undefined
 
   constructor(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,6 +58,12 @@ export class SimpleTaskManager {
     this.client = client
     this.directory = directory
     this.debugLog = debugLog ?? defaultManagerLog
+
+    // Setup automatic cleanup interval
+    this.cleanupInterval = setInterval(() => {
+      this.cleanup(CLEANUP_MAX_AGE_MS)
+    }, CLEANUP_INTERVAL_MS)
+    this.cleanupInterval.unref()
   }
 
   /** Get the working directory for this manager */
@@ -58,8 +71,29 @@ export class SimpleTaskManager {
     return this.directory
   }
 
+  /** Get the client instance for external use (e.g., fetching session messages) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getClient(): any {
+    return this.client
+  }
+
+  /** Dispose of all timers and cleanup resources */
+  dispose(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval)
+    }
+    this.cleanupInterval = undefined
+    for (const timer of this.timeoutTimers.values()) {
+      clearTimeout(timer)
+    }
+    this.timeoutTimers.clear()
+  }
+
   async launch(input: LaunchInput): Promise<LaunchOutput> {
+    this.debugLog(`[launch] starting: description="${input.description}" agent="${input.agent}" timeout=${input.timeout ?? 300}s parentSessionID=${input.parentSessionID}`)
+
     if (!input.parentSessionID) {
+      this.debugLog(`[launch] failed: parent session ID is required`)
       return {
         ok: false,
         status: 'error',
@@ -68,6 +102,7 @@ export class SimpleTaskManager {
     }
 
     if (typeof this.client.session?.create !== "function") {
+      this.debugLog(`[launch] failed: session.create is unavailable`)
       return {
         ok: false,
         status: 'error',
@@ -85,6 +120,10 @@ export class SimpleTaskManager {
       prompt: input.prompt,
       parentSessionID: input.parentSessionID,
       createdAt: new Date(),
+      timeoutMs: Math.min(
+        (input.timeout ?? DEFAULT_TIMEOUT_MS / 1000) * 1000,
+        MAX_TIMEOUT_MS
+      ),
     }
     this.tasks.set(taskId, task)
 
@@ -94,7 +133,7 @@ export class SimpleTaskManager {
         title: input.description,
       })
 
-this.debugLog(`[SimpleTaskManager] session.create returned: ${JSON.stringify(session)}`)
+this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
       task.sessionID = session?.data?.id ?? session?.id ?? session?.info?.id
       if (task.sessionID) {
         this.sessionToTask.set(task.sessionID, taskId)
@@ -103,10 +142,11 @@ this.debugLog(`[SimpleTaskManager] session.create returned: ${JSON.stringify(ses
           "Background task launch failed: child session did not provide an ID"
 
         this.failTask(task, error)
+        this.debugLog(`[launch] failed: child session did not provide an ID`)
         return { ok: false, taskId, status: 'error', error }
       }
     } catch (err) {
-      this.debugLog(`[SimpleTaskManager] session.create error: ${err}`)
+      this.debugLog(`[launch] session.create error: ${err}`)
       const error = `Background task launch failed: ${toErrorMessage(err)}`
       this.failTask(task, error)
       return { ok: false, taskId, status: 'error', error }
@@ -115,7 +155,7 @@ this.debugLog(`[SimpleTaskManager] session.create returned: ${JSON.stringify(ses
     if (typeof this.client.session?.promptAsync !== "function") {
       const error =
         "Background task launch failed: session.promptAsync is unavailable"
-
+      this.debugLog(`[launch] failed: session.promptAsync is unavailable`)
       await this.abortSession(task.sessionID)
       this.failTask(task, error)
       return { ok: false, taskId, status: 'error', error }
@@ -132,24 +172,25 @@ this.debugLog(`[SimpleTaskManager] session.create returned: ${JSON.stringify(ses
     if (!isPromiseLike(promptResult)) {
       const error =
         "Background task launch failed: session.promptAsync did not return a promise"
-
+      this.debugLog(`[launch] failed: promptAsync did not return a promise`)
       await this.abortSession(task.sessionID)
       this.failTask(task, error)
       return { ok: false, taskId, status: 'error', error }
     }
 
     task.status = 'running'
+    this.scheduleTimeoutCheck(task.id, task.timeoutMs ?? DEFAULT_TIMEOUT_MS)
 
     void Promise.resolve(promptResult).catch(async (err: unknown) => {
       const error = `Background task execution failed: ${toErrorMessage(err)}`
-      this.debugLog(`[SimpleTaskManager] promptAsync error for ${taskId}: ${error}`)
+      this.debugLog(`[launch] promptAsync error for ${taskId}: ${error}`)
 
       if (this.failTask(task, error)) {
         await this.abortSession(task.sessionID)
       }
     })
 
-    this.debugLog(`[SimpleTaskManager] launched task ${taskId} with session ${task.sessionID}`)
+    this.debugLog(`[launch] success: taskId=${taskId} sessionID=${task.sessionID} timeoutMs=${task.timeoutMs}`)
 
     return { ok: true, taskId, status: 'running' }
   }
@@ -176,31 +217,48 @@ this.debugLog(`[SimpleTaskManager] session.create returned: ${JSON.stringify(ses
   markTaskCompletedBySession(sessionID: string): WopalTask | undefined {
     const task = this.findBySession(sessionID)
     if (!task || task.status !== 'running') {
+      if (task) {
+        this.debugLog(`[markCompleted] skipped: taskId=${task.id} status=${task.status} (not running)`)
+      }
       return undefined
     }
 
+    this.clearTimeoutTimer(task.id)
     task.status = 'completed'
     task.completedAt = new Date()
+    this.debugLog(`[markCompleted] taskId=${task.id} sessionID=${sessionID}`)
     return task
   }
 
   markTaskErrorBySession(sessionID: string, error: string): WopalTask | undefined {
     const task = this.findBySession(sessionID)
     if (!task) {
+      this.debugLog(`[markError] skipped: no task found for sessionID=${sessionID}`)
       return undefined
     }
 
+    this.clearTimeoutTimer(task.id)
     if (!this.failTask(task, error)) {
+      this.debugLog(`[markError] skipped: taskId=${task.id} status=${task.status} (already terminal)`)
       return undefined
     }
 
+    this.debugLog(`[markError] taskId=${task.id} sessionID=${sessionID} error="${error.substring(0, 100)}"`)
     return task
   }
 
   async cancel(id: string, parentSessionID: string): Promise<CancelResult> {
+    this.debugLog(`[cancel] requested: taskId=${id} parentSessionID=${parentSessionID}`)
+    
     const task = this.getTaskForParent(id, parentSessionID)
-    if (!task) return 'not_found'
-    if (task.status !== 'running') return 'not_running'
+    if (!task) {
+      this.debugLog(`[cancel] failed: taskId=${id} not found or ownership mismatch`)
+      return 'not_found'
+    }
+    if (task.status !== 'running') {
+      this.debugLog(`[cancel] failed: taskId=${id} status=${task.status} (not running)`)
+      return 'not_running'
+    }
 
     if (task.sessionID) {
       if (typeof this.client.session?.abort === "function") {
@@ -209,18 +267,21 @@ this.debugLog(`[SimpleTaskManager] session.create returned: ${JSON.stringify(ses
             path: { id: task.sessionID },
           })
         } catch (err) {
-          this.debugLog(
-            `[SimpleTaskManager] abort error for ${id}: ${toErrorMessage(err)}`,
-          )
+          this.debugLog(`[cancel] failed: taskId=${id} abort error: ${toErrorMessage(err)}`)
           return 'abort_failed'
         }
       }
     }
 
-    if (task.status !== 'running') return 'not_running'
+    if (task.status !== 'running') {
+      this.debugLog(`[cancel] failed: taskId=${id} status changed during abort`)
+      return 'not_running'
+    }
 
+    this.clearTimeoutTimer(task.id)
     task.status = 'cancelled'
     task.completedAt = new Date()
+    this.debugLog(`[cancel] success: taskId=${id}`)
     return 'cancelled'
   }
 
@@ -235,12 +296,11 @@ this.debugLog(`[SimpleTaskManager] session.create returned: ${JSON.stringify(ses
 **Description:** ${task.description}
 ${task.error ? `**Error:** ${task.error}` : ''}
 
-Use \`wopal_output(task_id="${task.id}")\` to check task status.
-Result retrieval is not supported by this tool.
+Use \`wopal_output(task_id="${task.id}")\` to retrieve the result.
 </system-reminder>`
 
     if (typeof this.client.session?.promptAsync !== "function") {
-      this.debugLog("[SimpleTaskManager] notifyParent skipped: session.promptAsync unavailable")
+      this.debugLog("[notifyParent] skipped: session.promptAsync unavailable")
       return
     }
 
@@ -252,33 +312,40 @@ Result retrieval is not supported by this tool.
       },
     }).catch((err: unknown) => {
       this.debugLog(
-        `[SimpleTaskManager] notifyParent error: ${toErrorMessage(err)}`,
+        `[notifyParent] error: ${toErrorMessage(err)}`,
       )
     })
 
-    this.debugLog(`[SimpleTaskManager] notified parent for task ${taskId}`)
+    this.debugLog(`[notifyParent] success: taskId=${taskId}`)
   }
 
   cleanup(maxAgeMs = 3600_000): void {
     const now = Date.now()
+    let cleanedCount = 0
     for (const [id, task] of this.tasks) {
       if (task.completedAt && now - task.completedAt.getTime() > maxAgeMs) {
         this.tasks.delete(id)
         if (task.sessionID) {
           this.sessionToTask.delete(task.sessionID)
         }
+        cleanedCount++
       }
+    }
+    if (cleanedCount > 0) {
+      this.debugLog(`[cleanup] removed ${cleanedCount} old task(s)`)
     }
   }
 
   private failTask(task: WopalTask, error: string): boolean {
-    if (task.status === 'completed' || task.status === 'cancelled') {
+    if (task.status === 'completed' || task.status === 'cancelled' || task.status === 'error') {
+      this.debugLog(`[failTask] skipped: taskId=${task.id} status=${task.status} (already terminal)`)
       return false
     }
 
     task.status = 'error'
     task.error = error
     task.completedAt = task.completedAt ?? new Date()
+    this.debugLog(`[failTask] taskId=${task.id} error="${error.substring(0, 100)}"`)
     return true
   }
 
@@ -293,8 +360,40 @@ Result retrieval is not supported by this tool.
       })
     } catch (err) {
       this.debugLog(
-        `[SimpleTaskManager] cleanup abort error for ${sessionID}: ${toErrorMessage(err)}`,
+        `[abortSession] error for ${sessionID}: ${toErrorMessage(err)}`,
       )
+    }
+  }
+
+  private scheduleTimeoutCheck(taskId: string, timeoutMs: number): void {
+    this.debugLog(`[timeout] scheduled: taskId=${taskId} timeoutMs=${timeoutMs}`)
+    
+    const timer = setTimeout(async () => {
+      const task = this.tasks.get(taskId)
+      if (!task || task.status !== 'running') return
+
+      this.timeoutTimers.delete(taskId)
+
+      // Set status BEFORE abort to prevent race with promptAsync.catch and session.error
+      task.status = 'error'
+      task.error = `Task timed out after ${timeoutMs / 1000} seconds`
+      task.completedAt = new Date()
+
+      this.debugLog(`[timeout] triggered: taskId=${taskId} after ${timeoutMs / 1000}s`)
+
+      await this.abortSession(task.sessionID)
+      await this.notifyParent(taskId)
+    }, timeoutMs)
+
+    this.timeoutTimers.set(taskId, timer)
+  }
+
+  private clearTimeoutTimer(taskId: string): void {
+    const timer = this.timeoutTimers.get(taskId)
+    if (timer) {
+      clearTimeout(timer)
+      this.timeoutTimers.delete(taskId)
+      this.debugLog(`[timeout] cleared: taskId=${taskId}`)
     }
   }
 }
