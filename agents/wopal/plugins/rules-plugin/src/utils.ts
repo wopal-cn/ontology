@@ -7,9 +7,10 @@ import path from "path";
 import os from "os";
 import { minimatch } from "minimatch";
 import { parse as parseYaml } from "yaml";
-import { createDebugLog } from "./debug.js";
+import { createDebugLog, createWarnLog } from "./debug.js";
 
 const debugLog = createDebugLog();
+const warnLog = createWarnLog();
 
 /**
  * Cached rule data for performance optimization
@@ -77,9 +78,7 @@ async function getCachedRule(
     // Remove stale cache entry if file no longer exists
     ruleCache.delete(filePath);
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(
-      `[opencode-rules] Warning: Failed to read rule file ${filePath}: ${message}`,
-    );
+    warnLog(`Failed to read rule file ${filePath}: ${message}`);
     return undefined;
   }
 }
@@ -243,9 +242,7 @@ export function parseRuleMetadata(content: string): RuleMetadata | undefined {
   } catch (error) {
     // Log warning for YAML parsing errors
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(
-      `[opencode-rules] Warning: Failed to parse YAML frontmatter: ${message}`,
-    );
+    warnLog(`Failed to parse YAML frontmatter: ${message}`);
     return undefined;
   }
 }
@@ -304,9 +301,7 @@ async function scanDirectoryRecursively(
   } catch (error) {
     // Log directory read errors instead of silently ignoring
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(
-      `[opencode-rules] Warning: Failed to read directory ${dir}: ${message}`,
-    );
+    warnLog(`Failed to read directory ${dir}: ${message}`);
   }
 
   return results;

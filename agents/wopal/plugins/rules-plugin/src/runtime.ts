@@ -48,6 +48,7 @@ export class OpenCodeRulesRuntime {
   private ruleFiles: DiscoveredRule[];
   private sessionStore: SessionStore;
   private debugLog: DebugLog;
+  private taskDebugLog: DebugLog;
   private now: () => number;
   private taskManager: SimpleTaskManager | undefined;
 
@@ -58,6 +59,7 @@ export class OpenCodeRulesRuntime {
     this.ruleFiles = opts.ruleFiles;
     this.sessionStore = opts.sessionStore;
     this.debugLog = opts.debugLog ?? createDebugLog();
+    this.taskDebugLog = createDebugLog("[wopal-task]", "task");
     this.now = opts.now ?? (() => Date.now());
     this.taskManager = opts.taskManager ?? undefined;
   }
@@ -373,9 +375,7 @@ export class OpenCodeRulesRuntime {
 
       const task = this.taskManager.markTaskCompletedBySession(sessionID)
       if (task) {
-
-        this.debugLog(`[event] task ${task.id} completed via session.idle`)
-
+        this.taskDebugLog(`task ${task.id} completed via session.idle`)
         this.taskManager.notifyParent(task.id).catch(() => {})
       }
     }
@@ -387,7 +387,7 @@ export class OpenCodeRulesRuntime {
       if (sessionID) {
         const task = this.taskManager.markTaskErrorBySession(sessionID, error)
         if (task) {
-
+          this.taskDebugLog(`task ${task.id} error: ${error}`)
           this.taskManager.notifyParent(task.id).catch(() => {})
         }
       }

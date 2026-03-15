@@ -16,7 +16,6 @@ import { createWopalTools } from "./tools/index.js";
 const sessionStore = createSessionStore();
 
 const debugLog = createDebugLog();
-console.log("[rules-plugin] Plugin module loaded");
 
 const openCodeRulesPlugin = async (pluginInput: PluginInput) => {
   const ruleFiles = await discoverRuleFiles(pluginInput.directory);

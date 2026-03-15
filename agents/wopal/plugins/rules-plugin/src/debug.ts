@@ -2,16 +2,22 @@ import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 import { tmpdir } from "os";
 
-export type DebugLog = (message: string) => void;
+export type LogFn = (message: string) => void;
+
+/**
+ * Module names for debug filtering:
+ * - "rules" for [wopal-rules] prefix
+ * - "task" for [wopal-task] prefix
+ */
+export type DebugModule = "rules" | "task";
 
 function getLogFile(): string {
-  const logPath = process.env.OPENCODE_RULES_LOG_FILE;
+  const logPath = process.env.WOPAL_PLUGIN_LOG_FILE;
   if (logPath) {
     return logPath;
   }
 
-  // Default log path in temp directory
-  return join(tmpdir(), "opencode-rules-debug.log");
+  return join(tmpdir(), "wopal-plugin.log");
 }
 
 function ensureLogFile(logFile: string): boolean {
@@ -26,25 +32,94 @@ function ensureLogFile(logFile: string): boolean {
   return true;
 }
 
-export function createDebugLog(prefix = "[opencode-rules]"): DebugLog {
+/**
+ * Format timestamp in China Standard Time (UTC+8)
+ * Output format: YYYY-MM-DD HH:mm:ss
+ */
+function formatCSTTimestamp(): string {
+  const now = new Date();
+  const parts = now.toLocaleString('en-US', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).split(/[,\/\s:]+/);
+  
+  const [month, day, year, hour, minute, second] = parts;
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+
+/**
+ * Check if debug output is enabled for a specific module.
+ * 
+ * WOPAL_PLUGIN_DEBUG values:
+ * - "1", "*", "all" → enable all modules
+ * - "task" → enable only task module
+ * - "rules" → enable only rules module  
+ * - "task,rules" → enable multiple modules (comma-separated)
+ */
+function isDebugEnabled(module: DebugModule): boolean {
+  const debug = process.env.WOPAL_PLUGIN_DEBUG;
+  if (!debug) {
+    return false;
+  }
+
+  const normalized = debug.trim().toLowerCase();
+  
+  // Enable all
+  if (normalized === "1" || normalized === "*" || normalized === "all") {
+    return true;
+  }
+
+  // Check specific modules
+  const modules = normalized.split(",").map(m => m.trim());
+  return modules.includes(module);
+}
+
+function writeLog(prefix: string, message: string): void {
   const logFile = getLogFile();
+  if (!ensureLogFile(logFile)) {
+    return;
+  }
 
+  const timestamp = formatCSTTimestamp();
+  const logMessage = `${timestamp} ${prefix} ${message}\n`;
+
+  try {
+    appendFileSync(logFile, logMessage, "utf-8");
+  } catch {
+    // Silently ignore write errors
+  }
+}
+
+/**
+ * Create a debug log function for a specific module.
+ * 
+ * @param prefix - Log prefix (e.g., "[wopal-rules]", "[wopal-task]")
+ * @param module - Module name for filtering ("rules" or "task")
+ * 
+ * Environment variables:
+ * - WOPAL_PLUGIN_DEBUG: "1"/"*"/"all" for all, or comma-separated modules ("task", "rules")
+ * - WOPAL_PLUGIN_LOG_FILE: Custom log file path (default: tmpdir/wopal-plugin.log)
+ */
+export function createDebugLog(prefix = "[wopal-rules]", module: DebugModule = "rules"): LogFn {
   return (message: string): void => {
-    if (!process.env.OPENCODE_RULES_DEBUG) {
+    if (!isDebugEnabled(module)) {
       return;
     }
+    writeLog(prefix, message);
+  };
+}
 
-    if (!ensureLogFile(logFile)) {
-      return;
-    }
-
-    const timestamp = new Date().toISOString();
-    const logMessage = `${timestamp} ${prefix} ${message}\n`;
-
-    try {
-      appendFileSync(logFile, logMessage, "utf-8");
-    } catch {
-      // Silently ignore write errors
-    }
+/**
+ * Create a warn log function (always outputs to log file, ignores debug filter)
+ */
+export function createWarnLog(prefix = "[wopal-rules]"): LogFn {
+  return (message: string): void => {
+    writeLog(`${prefix} [WARN]`, message);
   };
 }

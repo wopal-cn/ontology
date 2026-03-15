@@ -72,6 +72,38 @@ describe("SimpleTaskManager", () => {
       expect(manager.findBySession("child-session-1")?.id).toBe(result.taskId)
     })
 
+    it("extracts session id from session.data.id (OpenCode API structure)", async () => {
+      mockClient.session.create.mockResolvedValueOnce({ data: { id: "session-from-data-id" } })
+
+      const result = await manager.launch({
+        description: "Test task",
+        prompt: "Do something",
+        agent: "general",
+        parentSessionID: "parent-1",
+      })
+
+      expect(result).toMatchObject({ ok: true })
+      if (!result.ok) throw new Error("expected success")
+
+      expect(manager.findBySession("session-from-data-id")?.id).toBe(result.taskId)
+    })
+
+    it("extracts session id from session.id as fallback", async () => {
+      mockClient.session.create.mockResolvedValueOnce({ id: "session-from-id" })
+
+      const result = await manager.launch({
+        description: "Test task",
+        prompt: "Do something",
+        agent: "general",
+        parentSessionID: "parent-1",
+      })
+
+      expect(result).toMatchObject({ ok: true })
+      if (!result.ok) throw new Error("expected success")
+
+      expect(manager.findBySession("session-from-id")?.id).toBe(result.taskId)
+    })
+
     it("fails when parent session id is missing", async () => {
       const result = await manager.launch({
         description: "Test task",
@@ -259,6 +291,26 @@ describe("SimpleTaskManager", () => {
       expect(manager.getTask(result.taskId)?.status).toBe("cancelled")
     })
 
+    it("returns abort_failed when session.abort rejects", async () => {
+      mockClient.session.abort.mockRejectedValueOnce(new Error("Abort failed"))
+
+      const result = await manager.launch({
+        description: "Test task",
+        prompt: "Do something",
+        agent: "general",
+        parentSessionID: "parent-1",
+      })
+
+      if (!result.ok) {
+        throw new Error("expected successful launch")
+      }
+
+      const cancelled = await manager.cancel(result.taskId, "parent-1")
+
+      expect(cancelled).toBe("abort_failed")
+      expect(manager.getTask(result.taskId)?.status).toBe("running")
+    })
+
     it("rejects cancellation from a different parent session", async () => {
       const result = await manager.launch({
         description: "Test task",
@@ -344,7 +396,7 @@ describe("SimpleTaskManager", () => {
       const notification = call?.[0]?.body?.parts?.[0]?.text as string
 
       expect(notification).toContain(result.taskId)
-      expect(notification).toContain("Use `wopal_output")
+      expect(notification).toContain("Use \`wopal_output")
       expect(notification).toContain("Result retrieval is not supported by this tool.")
     })
   })

@@ -7,7 +7,7 @@ import type {
 import type { DebugLog } from "./debug.js"
 import { createDebugLog } from "./debug.js"
 
-const defaultManagerLog = createDebugLog("[wopal-task]")
+const defaultManagerLog = createDebugLog("[wopal-task]", "task")
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
