@@ -24,7 +24,7 @@ trigger: always_on
 ### Message 规则
 
 - 使用祈使句：`添加` 而非 `添加了`
-- 首行不超过 50 字
+- 首行（type + scope + description）不超过 72 字符
 - 复杂变更添加 body 说明
 - 破坏性变更标注 `BREAKING CHANGE:`
 
@@ -48,7 +48,7 @@ trigger: always_on
 
 1. **开发前**: 确保 `git checkout <branch>` 脱离 detached HEAD
 2. **开发后**: 在子项目内完成 `git add` → `git commit` → `git push`
-3. **里程碑**: 在主仓库使用 `/pin-submodule` 更新指针
+3. **里程碑**: 在工作空间仓库使用 `/pin-submodule` 更新指针
 
 > 详细指南请使用 `/git-submodule` 技能
 
