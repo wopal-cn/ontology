@@ -33,11 +33,19 @@ description: 为未提交的更改创建 Git commit
 # 检查工作空间
 git status --short
 
-# 检查每个子项目
-git submodule status --quiet 2>/dev/null | while read sha path; do
-  (cd "$path" && git status --short) | sed "s|^|$path: |"
+# 检查 projects/ 下所有独立 Git 仓库（兼容 submodule 和独立仓库）
+for dir in projects/*/; do
+  if [ -d "$dir.git" ] || [ -f "$dir.git" ]; then
+    _git_status=$(cd "$dir" && git status --short)
+    if [ -n "$_git_status" ]; then
+      echo "=== ${dir%/} ==="
+      echo "$_git_status"
+    fi
+  fi
 done
 ```
+
+> ⚠️ **关键**：必须遍历 `projects/*/` 检查 `.git`，而非仅依赖 `git submodule status`（只能检测 submodule，无法发现独立仓库）
 
 **输出格式**：列出所有有变更的仓库，按仓库分组展示。
 
@@ -108,9 +116,7 @@ git diff --stat
 ...
 ```
 
-**message 规范**：
-- 描述"为什么改"或"改了什么功能"，而非"改了什么文件"
-- 简洁明确，避免笼统的"更新文件"
+**message 规范**：遵循 Git 工作流规则
 
 ⚠️ 等待用户确认（yes/no）
 
