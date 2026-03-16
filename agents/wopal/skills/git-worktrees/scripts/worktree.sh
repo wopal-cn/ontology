@@ -32,6 +32,7 @@ error() { echo -e "${RED}[ERROR]${NC} $1" >&2; exit 1; }
 WORKTREE_DIR=".worktrees"
 INSTALL_DEPS=true
 RUN_TESTS=true
+PLAN_DOC=""
 
 # 获取 Git 仓库根目录
 git_root() {
@@ -83,6 +84,67 @@ validate_project() {
 is_ignored() {
     local dir="$1"
     git check-ignore -q "$dir" 2>/dev/null
+}
+
+# 检查工作区是否干净（可选忽略计划文档）
+check_clean_working_tree() {
+    local project_dir="$1"
+    local plan_doc="${2:-}"
+
+    cd "$project_dir"
+
+    # 构建排除参数
+    local exclude_args=()
+    if [ -n "$plan_doc" ]; then
+        exclude_args+=(":!docs/products/plans/${plan_doc}.md")
+        exclude_args+=(":!projects/*/docs/products/plans/${plan_doc}.md")
+    fi
+
+    # 检查未暂存的变更
+    if [ ${#exclude_args[@]} -gt 0 ]; then
+        git diff --quiet -- "${exclude_args[@]}" 2>/dev/null || return 1
+    else
+        git diff --quiet 2>/dev/null || return 1
+    fi
+
+    # 检查已暂存未提交的变更
+    if [ ${#exclude_args[@]} -gt 0 ]; then
+        git diff --cached --quiet -- "${exclude_args[@]}" 2>/dev/null || return 1
+    else
+        git diff --cached --quiet 2>/dev/null || return 1
+    fi
+
+    return 0
+}
+
+# 迁移计划文档到 worktree
+move_plan_doc() {
+    local workspace_root="$1"
+    local project="$2"
+    local worktree_path="$3"
+    local plan_doc="$4"
+
+    # 源路径：先查空间级，再查子项目级
+    local plan_src="$workspace_root/docs/products/plans/${plan_doc}.md"
+
+    if [ ! -f "$plan_src" ]; then
+        plan_src="$workspace_root/projects/$project/docs/products/plans/${plan_doc}.md"
+    fi
+
+    if [ ! -f "$plan_src" ]; then
+        warn "计划文档不存在: ${plan_doc}.md（已跳过）"
+        return 1
+    fi
+
+    # 目标路径
+    local plan_dest_dir="$worktree_path/docs/products/plans"
+    local plan_dest="$plan_dest_dir/${plan_doc}.md"
+
+    mkdir -p "$plan_dest_dir"
+    mv "$plan_src" "$plan_dest"
+
+    success "计划文档已迁移: $plan_dest"
+    info "文档将在 worktree 中随实现一起提交，合并时返回主分支"
 }
 
 # 检测项目类型并安装依赖
@@ -178,6 +240,10 @@ cmd_create() {
                 create_branch=false
                 shift
                 ;;
+            --plan)
+                PLAN_DOC="$2"
+                shift 2
+                ;;
             *)
                 error "未知参数: $1"
                 ;;
@@ -197,7 +263,24 @@ cmd_create() {
         error "项目目录不存在: $project_dir"
     fi
     cd "$project_dir"
-    
+
+    # 检查工作区状态
+    if ! check_clean_working_tree "$project_dir" "${PLAN_DOC:-}"; then
+        warn "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        warn "主分支存在未提交的变更！"
+        warn "建议先提交变更后再创建 worktree。"
+        warn "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        git status --short
+        echo ""
+        read -p "仍要继续创建 worktree？[y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            info "已取消"
+            exit 0
+        fi
+    fi
+
     local root
     root="$(git_root)"
 
@@ -228,6 +311,11 @@ cmd_create() {
     fi
 
     success "Worktree 创建成功"
+
+    # 迁移计划文档（如果指定）
+    if [ -n "${PLAN_DOC:-}" ]; then
+        move_plan_doc "$workspace_root" "$project" "$worktree_path" "$PLAN_DOC"
+    fi
 
     # 安装依赖
     if [ "$INSTALL_DEPS" = true ]; then
@@ -438,6 +526,7 @@ Git Worktree 管理工具 - 工作空间级管理
   --no-install      跳过依赖安装
   --no-test         跳过测试运行
   --existing        使用已存在的分支而非创建新分支
+  --plan <name>     迁移计划文档到 worktree（不含 .md 后缀）
 
 路径规则：
   worktree 统一创建在工作空间级的 .worktrees/ 目录下
