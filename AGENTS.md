@@ -1,22 +1,46 @@
 # Agent Tools - 项目规范
 
 <CRITICAL_RULE>
-此文档为 AI agents 提供项目开发规范，当项目设计或代码变更后，必须及时更新本文档。
+本项目是本工作空间内各类 agents 能力工具开发，本文档为 AI agents 提供开发规范和指导，当项目设计、代码、资料变更后，必须及时更新本文档。
 </CRITICAL_RULE>
 
 ---
 
 ## 架构
 
+### 三层部署架构
+
+| 层级 | 路径 | 定位 | 写权限 |
+|------|------|------|--------|
+| 源码层 | `projects/agent-tools/` | 所有修改在此进行 | ✅ |
+| 部署层 | `.wopal/` | 版本追踪的只读副本 | ❌ |
+| 适配分身层 | `.agents/` | 合并共享 + 专用，供各工具引用 | ❌ |
+
 ```
-源码层 (projects/agent-tools/)
+agent 系统提示词:
+源码层 (agents/*/agents/*.md)
     ↓ sync-to-wopal.py
-部署层 (.wopal/)
-    ↓ symlink/copy
-适配分身层 (.agents/)
+部署层 (.wopal/*/agents/*.md)
+    ↓ copy
+适配分身层 (.opencode/agents/*.md, .claude/agents/*.md, ...)  
+
+命令/规则:
+源码层 ({commands,rules})
+    ↓ sync-to-wopal.py
+部署层 (.wopal/{commands,rules})
+    ↓ copy
+适配分身层 (.agents/{commands,rules}, .opencode, .claude, ...)  
+
+技能 (skills):
+源码层 (/skills/, agents/*/skills/)
+    ↓ wopal-cli install
+部署层 (.wopal/skills/)
+    ↓ symlink
+适配分身层 (.agents/skills/, .claude/skills/, ...)
 ```
 
-**核心数据流**: 命令/规则/技能的定义 → 部署脚本 → 各 AI 工具配置目录
+**核心数据流**: 系统提示词/命令/规则的定义 → sync-to-wopal.py → 各 AI 工具配置目录
+**技能安装**: wopal-cli → `.wopal/skills/` → symlink 到 `.agents/skills/`
 
 ---
 
@@ -26,16 +50,13 @@
 agent-tools/
 ├── commands/            # 共享命令（所有 Agent 通用）
 ├── rules/               # 共享规则（所有 Agent 通用）
-├── skills/              # 共享技能（所有 Agent 通用）
+├── skills/              # 共享技能源码（通过 wopal-cli 安装）
 ├── agents/              # Agent 专用资源
 │   ├── wopal/           # Wopal 专用（合并到适配分身层）
 │   │   ├── commands/    # Wopal 专用命令
 │   │   ├── rules/       # Wopal 专用规则
-│   │   ├── skills/      # Wopal 专用技能
-│   │   ├── agents/      # 子代理 + 模板
-│   │   │   ├── ref/     # 子代理定义
-│   │   │   ├── SOUL.md  # Wopal 身份定义
-│   │   │   └── USER.md  # 用户偏好
+│   │   ├── skills/      # Wopal 专用技能源码（通过 wopal-cli 安装）
+│   │   ├── agents/      # 代理系统提示词（多代理定义）
 │   │   └── plugins/     # 插件（如 rules-plugin）
 │   └── fae/             # Fae 专用（独立，不合并）
 └── .deploy-ignore       # 部署排除规则
@@ -46,11 +67,13 @@ agent-tools/
 ## 开发命令
 
 ```bash
-# 部署到工作空间（修改后必须执行）
+# 部署代理/命令/规则到工作空间（修改后必须执行）
 python ../scripts/sync-to-wopal.py -y
 
-# 验证部署
-ls -la ../../.wopal/commands ../../.wopal/rules ../../.wopal/skills
+# 技能安装（使用 wopal-cli）
+wopal skills install /absolute/path/to/skill   # 本地技能
+wopal skills install owner/repo@skill          # 远程技能
+wopal skills list                              # 查看已安装技能
 
 # 插件开发（rules-plugin）
 cd agents/wopal/plugins/rules-plugin
@@ -68,9 +91,9 @@ bun test
 ### 部署铁律
 
 - **所有修改必须在源码层进行**：禁止直接编辑 `.wopal/` 或 `.agents/`
-- **修改后必须运行部署脚本**：`python ../scripts/sync-to-wopal.py -y`
+- **命令/规则修改后必须运行部署脚本**：`python ../scripts/sync-to-wopal.py -y`
+- **技能使用 wopal-cli 安装**：`wopal skills install <source>`
 - **命令/规则使用 copy**：AI 工具兼容性要求
-- **技能使用 symlink**：目录级合并
 
 ### 代码风格
 
@@ -85,29 +108,22 @@ bun test
 
 ### 资源分类
 
-- **共享资源**（`commands/`, `rules/`, `skills/`）：所有 Agent 通用
+- **共享资源**（`commands/`, `rules/`）：所有 Agent 通用，通过 sync-to-wopal.py 部署
+- **技能资源**（`skills/`）：通过 wopal-cli 独立安装管理
 - **专用资源**（`agents/<name>/`）：特定 Agent 专用，需明确归属
 
 ---
 
-## 项目特有模式
-
-### 三层部署架构
-
-| 层级 | 路径 | 定位 | 写权限 |
-|------|------|------|--------|
-| 源码层 | `projects/agent-tools/` | 所有修改在此进行 | ✅ |
-| 部署层 | `.wopal/` | 版本追踪的只读副本 | ❌ |
-| 适配分身层 | `.agents/` | 合并共享 + 专用，供各工具引用 | ❌ |
-
-### 资源合并规则
+### 适配层资源合并规则
 
 ```
-.agents/ = .wopal/ (共享) + agents/wopal/ (专用)
+.agents/commands/ = .wopal/commands/ (共享) + .wopal/agents/wopal/commands/ (专用)
+.agents/rules/ = .wopal/rules/ (共享) + .wopal/agents/wopal/rules/ (专用)
+.agents/skills/ → symlink to .wopal/skills/ (由 wopal-cli 管理)
 ```
 
 - 命令/规则：copy 合并
-- 技能：symlink 目录级合并
+- 技能：wopal-cli 安装到 `.wopal/skills/`，symlink 到 `.agents/skills/`
 
 ---
 
@@ -178,17 +194,14 @@ bun test
 | `tutorial-generator` | 教程生成器 |
 | `website-doc-scraper` | 网站文档抓取 |
 
-### 子代理 (agents/wopal/agents/ref/)
-
-**Claude Code (9个)**: architect, build-error-resolver, code-reviewer, doc-updater, e2e-runner, planner, refactor-cleaner, security-reviewer, tdd-guide
-
-**OpenCode (3个)**: code-quality-reviewer, docs-writer, security-auditor
-
-### 插件 (agents/wopal/plugins/)
+### Wopal 专用插件 (agents/wopal/plugins/)
 
 | 插件 | 说明 |
 |------|------|
 | `rules-plugin` | OpenCode 规则注入插件（TypeScript），含 wopal_task 会话归属校验与后台任务状态管理 |
+
+- **运行测试**: `cd agents/wopal/plugins/rules-plugin && bun test`
+- **测试位置**: `agents/wopal/plugins/rules-plugin/src/*.test.ts`
 
 ---
 
@@ -200,28 +213,4 @@ bun test
 | `rules/*.md` | 规则定义（Markdown 格式） |
 | `skills/*/SKILL.md` | 技能定义（Markdown 格式） |
 | `agents/wopal/plugins/rules-plugin/` | OpenCode 规则插件（TypeScript） |
-
----
-
-## 测试
-
-- **运行测试**: `cd agents/wopal/plugins/rules-plugin && bun test`
-- **测试位置**: `agents/wopal/plugins/rules-plugin/src/*.test.ts`
-- **任务委派测试重点**: launch 失败显式报错、父会话 ownership 校验、session.idle/session.error 与 cancel 竞态保护
-
----
-
-## 关键文件
-
-| 文件 | 用途 |
-|------|------|
 | `.deploy-ignore` | 部署排除规则 |
-| `agents/wopal/agents/SOUL.md` | Wopal 身份定义 |
-| `agents/wopal/agents/USER.md` | 用户偏好 |
-
----
-
-## 备注
-
-- 技能详情读取 `skills/<技能名>/SKILL.md` 或 `agents/wopal/skills/<技能名>/SKILL.md`
-- Fae 专用资源位于 `agents/fae/`，不参与合并
