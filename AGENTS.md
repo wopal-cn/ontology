@@ -6,44 +6,6 @@
 
 ---
 
-## 架构
-
-### 三层部署架构
-
-| 层级 | 路径 | 定位 | 写权限 |
-|------|------|------|--------|
-| 源码层 | `projects/agent-tools/` | 所有修改在此进行 | ✅ |
-| 部署层 | `.wopal/` | 版本追踪的只读副本 | ❌ |
-| 适配分身层 | `.agents/` | 合并共享 + 专用，供各工具引用 | ❌ |
-
-```
-agent 系统提示词:
-源码层 (agents/*/agents/*.md)
-    ↓ sync-to-wopal.py
-部署层 (.wopal/*/agents/*.md)
-    ↓ copy
-适配分身层 (.opencode/agents/*.md, .claude/agents/*.md, ...)  
-
-命令/规则:
-源码层 ({commands,rules})
-    ↓ sync-to-wopal.py
-部署层 (.wopal/{commands,rules})
-    ↓ copy
-适配分身层 (.agents/{commands,rules}, .opencode, .claude, ...)  
-
-技能 (skills):
-源码层 (/skills/, agents/*/skills/)
-    ↓ wopal-cli install
-部署层 (.wopal/skills/)
-    ↓ symlink
-适配分身层 (.agents/skills/, .claude/skills/, ...)
-```
-
-**核心数据流**: 系统提示词/命令/规则的定义 → sync-to-wopal.py → 各 AI 工具配置目录
-**技能安装**: wopal-cli → `.wopal/skills/` → symlink 到 `.agents/skills/`
-
----
-
 ## 目录结构
 
 ```
@@ -84,46 +46,10 @@ bun test
 
 ---
 
-## 开发约束
-
-> **关键规则**：必须遵守的开发约束。
-
-### 部署铁律
-
-- **所有修改必须在源码层进行**：禁止直接编辑 `.wopal/` 或 `.agents/`
-- **命令/规则修改后必须运行部署脚本**：`python ../scripts/sync-to-wopal.py -y`
-- **技能使用 wopal-cli 安装**：`wopal skills install <source>`
-- **命令/规则使用 copy**：AI 工具兼容性要求
-
-### 代码风格
+## 代码风格
 
 - Markdown 文件使用 LF 换行
 - TypeScript 插件遵循项目 eslint/prettier 配置
-
-### 术语规范
-
-- **space**：统一使用 space，避免 workspace/project/scope 混用
-- **技能**：skill，非 plugin/extension
-- **命令**：command，非 workflow
-
-### 资源分类
-
-- **共享资源**（`commands/`, `rules/`）：所有 Agent 通用，通过 sync-to-wopal.py 部署
-- **技能资源**（`skills/`）：通过 wopal-cli 独立安装管理
-- **专用资源**（`agents/<name>/`）：特定 Agent 专用，需明确归属
-
----
-
-### 适配层资源合并规则
-
-```
-.agents/commands/ = .wopal/commands/ (共享) + .wopal/agents/wopal/commands/ (专用)
-.agents/rules/ = .wopal/rules/ (共享) + .wopal/agents/wopal/rules/ (专用)
-.agents/skills/ → symlink to .wopal/skills/ (由 wopal-cli 管理)
-```
-
-- 命令/规则：copy 合并
-- 技能：wopal-cli 安装到 `.wopal/skills/`，symlink 到 `.agents/skills/`
 
 ---
 
@@ -157,6 +83,7 @@ bun test
 | `download` | 技能下载缓存 |
 | `firecrawl` | 网页提取和爬取 |
 | `openspec-*` | OpenSpec 工作流系列 |
+| `todo-tracker` | TODO 管理（位置：`memory/TODO.md`）|
 
 ### Wopal 专用命令 (agents/wopal/commands/)
 
@@ -189,8 +116,9 @@ bun test
 | `git-worktrees` | Worktree 工作流管理 |
 | `opencode-config` | OpenCode 配置管理 |
 | `skill-deployer` | 技能部署器 |
+| `skill-master` | 技能生命周期管理（find/download/scan/install） |
 | `skill-security-scanner` | 技能安全扫描 |
-| `skills-research` | 技能研究与下载 |
+| `skills-research` | 技能研究与下载（旧版，保留） |
 | `tutorial-generator` | 教程生成器 |
 | `website-doc-scraper` | 网站文档抓取 |
 
