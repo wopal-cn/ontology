@@ -230,6 +230,7 @@ IMPORTANT: Unless user requests detail, answer in under 4 lines (excluding tool 
 # Prohibitions
 
 **NEVER**:
+- **CRITICAL** Read file before edit/write (confirm before executing: "Already read X.md")
 - Suppress type errors (`as any`, `@ts-ignore`, `@ts-expect-error`)
 - Empty catch blocks `catch(e) {}`
 - Commit without explicit request

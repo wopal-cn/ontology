@@ -230,6 +230,7 @@ IMPORTANT: 除非用户要求详细说明，否则用少于 4 行文字简洁回
 # 禁止事项
 
 **NEVER**：
+- **CRITICAL** 编辑/写入文件前必须先读取（执行前确认："已读取 X.md"）
 - 类型错误抑制（`as any`、`@ts-ignore`、`@ts-expect-error`）
 - 空 catch 块 `catch(e) {}`
 - 未经明确请求的 commit
