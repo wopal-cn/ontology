@@ -39,7 +39,7 @@ keywords:
 | 2 | `AGENTS.md` | 行为规则、安全红线 |
 | 3 | `MEMORY.md` | 隐性知识、操作经验、负向警示 |
 | 4 | 子项目 `AGENTS.md` | 项目特有技术细节 |
-| 5 | `memory/YYYY-MM-DD.md` | 日常流水（默认） |
+| 5 | `memory/diary/YYYY-MM-DD.md` | 日常流水（默认） |
 
 ## 主动进化机制
 
@@ -113,7 +113,7 @@ keywords:
 
 ## 快速记录流程（/memo）
 
-1. 确定目标文件：`memory/YYYY-MM-DD.md`
+1. 确定目标文件：`memory/diary/YYYY-MM-DD.md`
 2. 获取当前时间
 3. 追加内容（无需确认）
 4. 确认完成
