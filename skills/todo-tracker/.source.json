@@ -1,0 +1,10 @@
+{
+  "name": "todo-tracker",
+  "description": "Persistent TODO scratch pad for tracking tasks across sessions. Use when user says \"add to TODO\", \"what's on the TODO\", \"mark X done\", \"show TODO list\", \"remove from TODO\", or asks about pending tasks. Also triggers on heartbeat to remind about stale items.",
+  "source": "sundial-org/awesome-openclaw-skills@todo-tracker",
+  "sourceUrl": "https://github.com/sundial-org/awesome-openclaw-skills.git",
+  "skillPath": "/skills/todo-tracker",
+  "downloadedAt": "2026-03-17T02:33:21.569Z",
+  "skillFolderHash": "5dfc26b5ff81888ea697d0992731e9de40d251a6",
+  "commit": "b80cde2ef85241dd4fd54a1b934f5e22835f78ba"
+}
