@@ -9,7 +9,27 @@
 
 set -e
 
-TODO_FILE="${TODO_FILE:-memory/TODO.md}"
+# Auto-detect workspace root by finding .wopal or .git directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SEARCH_DIR="$SCRIPT_DIR"
+while [[ "$SEARCH_DIR" != "/" ]]; do
+  if [[ "$(basename "$SEARCH_DIR")" == ".wopal" ]]; then
+    ROOT_DIR="$(dirname "$SEARCH_DIR")"
+    break
+  fi
+  if [[ -d "$SEARCH_DIR/.wopal" ]]; then
+    ROOT_DIR="$SEARCH_DIR"
+    break
+  fi
+  SEARCH_DIR="$(dirname "$SEARCH_DIR")"
+done
+
+# Fallback to .git if .wopal not found
+if [[ -z "$ROOT_DIR" ]]; then
+  ROOT_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "")"
+fi
+
+TODO_FILE="${TODO_FILE:-${ROOT_DIR:-.}/memory/TODO.md}"
 DATE=$(date +%Y-%m-%d)
 
 # Ensure TODO.md exists with proper structure
