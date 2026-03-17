@@ -1,5 +1,5 @@
 ---
-description: 创建/更新子项目 AGENTS.md 和 README.md
+description: 创建/更新项目 AGENTS.md 和 README.md
 ---
 
 # 创建/更新项目规范 AGENTS.md 或 README.md 文档
@@ -31,7 +31,7 @@ description: 创建/更新子项目 AGENTS.md 和 README.md
 
 ```bash
 # 检测当前位置
-git rev-parse --show-superproject-working-tree  # 非空 = 子项目内
+git rev-parse --show-superproject-working-tree  # 非空 = 项目内
 pwd | grep -o 'projects/[^/]*'                  # 提取项目名
 ```
 
@@ -166,7 +166,7 @@ pwd | grep -o 'projects/[^/]*'                  # 提取项目名
 
 ## README.md 模板
 
-> 面向人类开发者，视为独立项目介绍，**不提及** monorepo/子项目关系。
+> 面向人类开发者，视为独立项目介绍，**不提及** monorepo/项目关系。
 
 ```markdown
 # [项目名称]

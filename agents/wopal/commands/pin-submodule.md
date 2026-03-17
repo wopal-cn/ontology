@@ -1,5 +1,5 @@
 ---
-description: 更新主仓库的子项目指针到最新快照
+description: 更新主仓库的项目指针到最新快照
 ---
 
 ## 扫描指针变化
@@ -22,7 +22,7 @@ git status --short
 ## 提交
 
 ```bash
-git commit -m "chore: 更新子项目快照"
+git commit -m "chore: 更新项目快照"
 ```
 
 完成后告知用户。如需推送远程，等待明确指示。

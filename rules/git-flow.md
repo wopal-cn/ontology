@@ -42,12 +42,12 @@ trigger: always_on
 - `hotfix/*` - 紧急修复分支
 - `refactor/*` - 重构分支
 
-## 子项目工作流
+## 项目工作流
 
-**核心原则**: 逐层提交，先子项目后工作空间
+**核心原则**: 逐层提交，先项目后工作空间
 
 1. **开发前**: 确保 `git checkout <branch>` 脱离 detached HEAD
-2. **开发后**: 在子项目内完成 `git add` → `git commit` → `git push`
+2. **开发后**: 在项目内完成 `git add` → `git commit` → `git push`
 3. **里程碑**: 在工作空间仓库使用 `/pin-submodule` 更新指针
 
 > 详细指南请使用 `/git-submodule` 技能

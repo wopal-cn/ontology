@@ -12,7 +12,7 @@ keywords:
 
 **核心原则**：
 - 创建 OpenSpec 产物（proposal、specs、design、tasks）并传递给执行 Agent
-- 完成后**必须更新子项目规范**：将新增能力、架构决策同步到子项目的 `AGENTS.md`
+- 完成后**必须更新项目规范**：将新增能力、架构决策同步到项目的 `AGENTS.md`
 
 **Capability 命名规范**：
 - 格式：`<产品>-<功能域>-<具体能力>`

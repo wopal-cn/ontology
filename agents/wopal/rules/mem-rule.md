@@ -38,7 +38,7 @@ keywords:
 | 1 | `USER.md` | 用户偏好、沟通方式 |
 | 2 | `AGENTS.md` | 行为规则、安全红线 |
 | 3 | `MEMORY.md` | 隐性知识、操作经验、负向警示 |
-| 4 | 子项目 `AGENTS.md` | 项目特有技术细节 |
+| 4 | 项目 `AGENTS.md` | 项目特有技术细节 |
 | 5 | `memory/diary/YYYY-MM-DD.md` | 日常流水（默认） |
 
 ## 主动进化机制

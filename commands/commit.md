@@ -27,7 +27,7 @@ description: 为未提交的更改创建 Git commit
 
 ### 无参数
 
-**默认全量扫描**：同时检查工作空间 + 所有子项目的变更状态。
+**默认全量扫描**：同时检查工作空间 + 所有项目的变更状态。
 
 ```bash
 # 检查工作空间
@@ -110,7 +110,7 @@ git diff --stat
    - MEMORY.md
 
 📦 projects/agent-tools (main)
-1. fix: 修复 commit 命令子项目扫描漏洞
+1. fix: 修复 commit 命令项目扫描漏洞
    - commands/commit.md
 
 ...
@@ -124,13 +124,13 @@ git diff --stat
 
 ## 步骤4：执行提交
 
-**按仓库顺序执行**（先子项目，后工作空间）：
+**按仓库顺序执行**（先项目，后工作空间）：
 
 ```bash
-# 1. 进入子项目提交
+# 1. 进入项目提交
 cd projects/agent-tools
 git add <files-group-1>
-git commit -m "fix: 修复 commit 命令子项目扫描漏洞"
+git commit -m "fix: 修复 commit 命令项目扫描漏洞"
 
 # 2. 回到工作空间提交
 cd ../..
@@ -139,6 +139,6 @@ git commit -m "docs: 更新知识沉淀"
 ```
 
 **提交顺序**：
-1. 子项目提交（projects/*）
+1. 项目提交（projects/*）
 2. 工作空间提交
 3. 有子模块变更 → 提醒 `/pin-submodule`

@@ -23,9 +23,9 @@ description: 基于代码库深度分析创建详尽的功能实现计划 (Plan)
 
 ### Phase 0: 前置上下文检查
 
-**确定目标子项目：**
-- [ ] 检测当前工作目录所在的子项目
-- [ ] 读取目标子项目的 `AGENTS.md`
+**确定目标项目：**
+- [ ] 检测当前工作目录所在的项目
+- [ ] 读取目标项目的 `AGENTS.md`
 
 ### Phase 1: 需求理解
 
@@ -191,9 +191,9 @@ description: 基于代码库深度分析创建详尽的功能实现计划 (Plan)
 
 ### 归属判断逻辑
 
-**1. 子项目计划** → `<project>/docs/products/plans/`
-- 功能属于特定子项目（wopal、flex-scheduler、agent-tools）
-- 代码修改范围仅在单一子项目内
+**1. 项目计划** → `<project>/docs/products/plans/`
+- 功能属于特定项目（wopal、flex-scheduler、agent-tools）
+- 代码修改范围仅在单一项目内
 - 受益范围为单一项目
 
 **2. 工作空间计划** → `docs/products/plans/`
@@ -208,7 +208,7 @@ description: 基于代码库深度分析创建详尽的功能实现计划 (Plan)
 
 ### 示例
 
-**子项目计划**：
+**项目计划**：
 - `projects/web/wopal/docs/products/plans/add-oauth-login.md`
 - `projects/python/flex-scheduler/docs/products/plans/cron-job.md`
 - `projects/agent-tools/docs/products/plans/optimize-commit-command.md`
