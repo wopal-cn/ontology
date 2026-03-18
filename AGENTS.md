@@ -26,6 +26,26 @@ agent-tools/
 
 ---
 
+## ⚠️ 技能操作规范（强制）
+
+**任何技能相关操作（安装、更新、部署）都必须通过 `skill-master` 技能完成，禁止手动执行。**
+
+| 操作 | 正确方式 | 错误方式 |
+|------|----------|----------|
+| 安装技能 | 加载 `skill-master` → 执行命令 | 直接 `wopal skills install` |
+| 更新技能 | 加载 `skill-master` → 修改源码 → 重新安装 | 直接编辑 `.agents/skills/` |
+| 部署技能 | 加载 `skill-master` → 按类型选择命令 | 猜测 `--agent` 参数 |
+
+**执行技能操作前必须：**
+1. 加载 `skill-master` 技能
+2. 阅读相关参考文档（`lifecycle-install.md` 或 `lifecycle-develop.md`）
+3. 确认技能类型（Shared vs Wopal-specific）
+4. 使用正确的命令参数
+
+**违反此规范视为严重错误。**
+
+---
+
 ## 开发命令
 
 ```bash

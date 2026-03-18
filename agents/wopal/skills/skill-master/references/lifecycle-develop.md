@@ -5,6 +5,15 @@ description: Workflow for developing, optimizing, and deploying skills
 
 # Skill Development Lifecycle
 
+## ⚠️ Critical: Shared vs Agent-Specific Skills
+
+| Type | Source Location | Reinstall Command |
+|------|-----------------|-------------------|
+| **Shared** | `projects/agent-tools/skills/<name>/` | `wopal skills install /path --force` |
+| **Wopal-specific** | `projects/agent-tools/agents/wopal/skills/<name>/` | `wopal skills install /path --agent wopal --force` |
+
+**Common mistake**: Reinstalling Wopal-specific skills without `--agent wopal` deploys to wrong location.
+
 ## Create New Skill
 
 Use `skill-creator` for guided creation with scaffolding, validation, and optimization.
@@ -53,22 +62,34 @@ Optional fields: `license`, `compatibility`, `metadata`
 ### Workflow
 
 ```bash
-# Find source path
+# 1. Find source path
 cat .agents/skills/<name>/.source.json | jq -r '.source'
 
-# Edit in source directory
-# - Shared: projects/agent-tools/skills/<name>/
-# - Wopal-specific: projects/agent-tools/agents/wopal/skills/<name>/
+# 2. Determine skill type from source path:
+#    - Contains "agents/wopal/skills/" → Wopal-specific
+#    - Otherwise → Shared
 
-# Reinstall
-wopal skills install /path/to/source --force
+# 3. Edit in source directory
+#    - Shared: projects/agent-tools/skills/<name>/
+#    - Wopal-specific: projects/agent-tools/agents/wopal/skills/<name>/
+
+# 4. Reinstall with correct parameters
+# Shared skill:
+wopal skills install /path/to/shared/skill --force
+
+# Wopal-specific skill (⚠️ must include --agent wopal):
+wopal skills install /path/to/wopal/skill --agent wopal --force
+
+# 5. Verify
+ls .agents/skills/<name>
+wopal skills merge  # If symlink broken
 ```
 
 ### Common Optimizations
 
 | Task | Action |
 |------|--------|
-| Fix bugs | Edit scripts, reinstall |
+| Fix bugs | Edit scripts, reinstall with `--force` |
 | Improve description | Update SKILL.md metadata |
 | Add features | Extend scripts/SKILL.md |
 | Enhance triggers | Update description keywords |
@@ -78,4 +99,4 @@ wopal skills install /path/to/source --force
 - Keep SKILL.md <500 lines; move details to `references/`
 - Progressive loading for complex skills
 - Extract to `references/*.md` with frontmatter when large
-- Test with `wopal skills install --force && wopal skills list | grep <name>`
+- **Always verify after reinstall**: `ls .agents/skills/<name>`

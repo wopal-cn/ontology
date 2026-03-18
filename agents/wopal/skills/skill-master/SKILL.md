@@ -1,11 +1,18 @@
 ---
 name: skill-master
-description: Master the full skill lifecycle using wopal-cli. Use when user wants to find, download, scan, install, develop, optimize, or evaluate AI agent skills. Triggers on queries about skill search, installation, INBOX management, or skill quality evaluation.
+description: ⚠️ MUST LOAD BEFORE any skill operation (install/update/deploy). Provides skill lifecycle commands (find/download/scan/install). Triggers on skill search, installation, INBOX management, or skill quality queries.
 ---
 
 # Skill Master
 
-Manage the complete skill lifecycle with wopal-cli.
+## ⚠️ Critical: Shared vs Wopal-Specific Skills
+
+| Type | Source Location | Install Command |
+|------|-----------------|-----------------|
+| **Shared** | `projects/agent-tools/skills/<name>/` | `wopal skills install /path` |
+| **Wopal-specific** | `projects/agent-tools/agents/wopal/skills/<name>/` | `wopal skills install /path --agent wopal` |
+
+**Common mistake**: Forgetting `--agent wopal` when installing Wopal-specific skills.
 
 ## Core Workflow
 
@@ -30,14 +37,22 @@ Find → Download → Scan → Install → Develop → Optimize → Evaluate
 ## Quick Commands
 
 ```bash
+# Search
 wopal skills find "query"
+
+# Download & Scan
 wopal skills download owner/repo@skill
 wopal skills scan skill-name
-wopal skills install skill-name
-wopal skills install /path/to/source --force
+
+# Install - shared skill
+wopal skills install /path/to/skill --force
+
+# Install - Wopal-specific skill (⚠️ use --agent)
+wopal skills install /path/to/skill --agent wopal --force
+
+# Verify & Repair
 wopal skills list
 wopal skills merge
-wopal skills inbox list
 ```
 
 ## When to Use
@@ -76,9 +91,11 @@ find <skill-path> -type f
 
 ## Tips
 
-1. Scan before install — Remote sources auto-scan; INBOX skills need explicit scan
-2. Use `--rm-inbox` — Keeps INBOX clean after installation
-3. Never edit `.agents/skills/` — Modify source and reinstall
+1. **Determine skill type first** — Check source path for `agents/wopal/skills/`
+2. **Use `--agent wopal` for Wopal-specific skills** — Otherwise deploys to wrong location
+3. **Verify after install** — `ls .agents/skills/<name>` and `wopal skills merge` if needed
+4. **Never edit `.agents/skills/`** — Modify source and reinstall
+5. **Scan before install** — Remote sources auto-scan; INBOX skills need explicit scan
 
 ## Browse Online
 

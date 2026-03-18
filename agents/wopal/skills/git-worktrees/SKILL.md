@@ -1,19 +1,18 @@
 ---
 name: git-worktrees
-description: Workspace-level Git worktree management for parallel development across multiple branches. Supports dynamic project validation, automated dependency installation, and plan-driven development with --plan flag for migrating plan documents. Use this skill when creating isolated development environments, working on multiple features in parallel, or when you have a plan document ready for implementation.
+description: Workspace-level Git worktree management for parallel development across multiple branches. Supports dynamic project validation and automated dependency installation. Use this skill when creating isolated development environments or working on multiple features in parallel.
 ---
 
 # Git Worktree 管理工具
 
 ## 概述
 
-工作空间级 Git worktree 管理工具，实现统一的 worktree 创建、管理和清理。支持多分支并行开发、实验性功能隔离，以及计划驱动开发工作流。
+工作空间级 Git worktree 管理工具，实现统一的 worktree 创建、管理和清理。支持多分支并行开发、实验性功能隔离。
 
 **核心特性**：
 - 工作空间级统一管理（`.worktrees/` 目录）
 - 动态项目验证（从 `.workspace.md` 读取）
 - 自动依赖安装和测试验证
-- 计划驱动开发支持（`--plan` 参数）
 
 ## 快速开始
 
@@ -47,9 +46,6 @@ description: Workspace-level Git worktree management for parallel development ac
 
 # 跳过测试
 ./scripts/worktree.sh create agent-tools feature/test --no-test
-
-# 创建 worktree 并迁移计划文档
-./scripts/worktree.sh create agent-tools feature/auth --plan auth-feature-plan
 ```
 
 ## 使用场景
@@ -66,27 +62,7 @@ cd .worktrees/agent-tools-feature-auth
 cd .worktrees/agent-tools-feature-logging
 ```
 
-### 2. 计划驱动开发
-
-```bash
-# 1. 编写计划文档
-# docs/products/plans/my-feature.md
-
-# 2. 创建 worktree 并迁移计划
-./scripts/worktree.sh create agent-tools feature/my-feature --plan my-feature
-
-# 3. 在 worktree 中按计划开发
-cd .worktrees/agent-tools-feature-my-feature
-# ... 开发 ...
-
-# 4. 提交（文档 + 代码一起）
-git add .
-git commit -m "feat: 实现我的功能"
-
-# 5. 合并回主分支，计划文档也随之进入
-```
-
-### 3. 紧急修复隔离
+### 2. 紧急修复隔离
 
 ```bash
 # 创建紧急修复的隔离环境
@@ -119,9 +95,6 @@ git merge hotfix/security-patch
 - `--existing`: 使用已存在的分支而非创建新分支
 - `--no-install`: 跳过依赖安装
 - `--no-test`: 跳过测试运行
-- `--plan <name>`: 迁移计划文档到 worktree（指定文档名，不含 .md 后缀）
-    - 文档从 `docs/products/plans/` 或 `projects/<name>/docs/products/plans/` 迁移
-    - 迁移后在 worktree 中随实现一起提交，合并时返回主分支
 
 **路径规则**：
 ```
@@ -220,9 +193,6 @@ A: 使用 `list` 命令查看现有 worktree，然后删除或使用不同的分
 
 **Q: 测试失败？**
 A: 脚本会警告但不会阻止创建。检查测试失败原因，确认是否为预存在问题。
-
-**Q: 创建 worktree 时提示"主分支存在未提交的变更"？**
-A: 如有未提交变更，脚本会警告并询问是否继续。建议先提交其他变更。如果只是计划文档的变更，可使用 `--plan` 参数自动忽略该文档。
 
 ## 完整工作流示例
 

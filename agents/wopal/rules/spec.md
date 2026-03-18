@@ -19,4 +19,4 @@ keywords:
 - 示例：`wopal-cli-skills-download`、`wopal-cli-skills-scan`
 - 原则：包含产品/功能前缀，明确归属关系
 
-**详细指南**：参见 `docs/openspec-guide.md`
+**详细指南**：参见 `docs/ai-references/openspec/openspec-guide.md`
