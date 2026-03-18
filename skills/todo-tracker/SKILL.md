@@ -1,6 +1,6 @@
 ---
 name: todo-tracker
-description: Persistent TODO scratch pad for tracking tasks across sessions. Use when user says "add to TODO", "what's on the TODO", "mark X done", "show TODO list", "remove from TODO", or asks about pending tasks. Also triggers on heartbeat to remind about stale items.
+description: ⚠️ MUST USE for TODO management (never edit TODO.md directly). Provides persistent task tracking. Triggers on "add to TODO", "what's on the TODO", "mark X done", "show TODO list", "remove from TODO", or pending task queries.
 ---
 
 # TODO Tracker
