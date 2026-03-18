@@ -36,7 +36,7 @@ DATE=$(date +%Y-%m-%d)
 init_plan() {
     if [[ ! -f "$PLAN_FILE" ]]; then
         cat > "$PLAN_FILE" << 'EOF'
-# PLAN - Wopal Scratch Pad
+# PLANS
 
 *Last updated: DATE_PLACEHOLDER*
 

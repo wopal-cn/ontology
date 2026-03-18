@@ -69,7 +69,7 @@ bash skills/plan-master/scripts/plan.sh summary
 ## PLAN.md Format
 
 ```markdown
-# PLAN - Wopal Scratch Pad
+# PLANS
 
 *Last updated: 2026-01-17*
 
