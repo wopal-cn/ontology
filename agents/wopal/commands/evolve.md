@@ -16,7 +16,7 @@ description: 进化沉淀：从短期记忆提取高价值信息到长期文件
 
 同时扫描：
 - **本次会话**：关键事件、决策、教训
-- **短期记忆**：`memory/diary/` 下近 3 天的日记
+- **短期记忆**：`memory/diary/` 下的日记
 
 **跳过已标记条目**：`[进化吸收]` `[进化排除]`
 
@@ -65,14 +65,10 @@ description: 进化沉淀：从短期记忆提取高价值信息到长期文件
 
 ### 5. 日记归档
 
-将 3 天前的日记移动到 `memory/diary/archived/`：
+将已分析的日记文件移动到 `memory/diary/archived/`：
 
 ```bash
-cutoff_date=$(date -v-3d '+%Y-%m-%d')
-for f in memory/diary/*.md; do
-  file_date=$(basename "$f" .md)
-  [[ "$file_date" < "$cutoff_date" ]] && mv "$f" memory/diary/archived/
-done
+mv memory/diary/YYYY-MM-DD.md memory/diary/archived/
 ```
 
 ## 价值过滤标准
