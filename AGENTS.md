@@ -103,7 +103,6 @@ bun test
 | `download` | 技能下载缓存 |
 | `firecrawl` | 网页提取和爬取 |
 | `openspec-*` | OpenSpec 工作流系列 |
-| `todo-tracker` | TODO 管理（位置：`memory/TODO.md`）|
 
 ### Wopal 专用命令 (agents/wopal/commands/)
 
@@ -135,6 +134,7 @@ bun test
 | `git-submodule` | Git 子模块管理 |
 | `git-worktrees` | Worktree 工作流管理 |
 | `opencode-config` | OpenCode 配置管理 |
+| `plan-master` | 计划/任务追踪（位置：`memory/PLAN.md`）|
 | `skill-deployer` | 技能部署器 |
 | `skill-master` | 技能生命周期管理（find/download/scan/install） |
 | `skill-security-scanner` | 技能安全扫描 |

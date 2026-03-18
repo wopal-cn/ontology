@@ -1,6 +1,6 @@
 #!/bin/bash
-# TODO Tracker Script
-# Usage: todo.sh <command> [args]
+# Plan Master Script
+# Usage: plan.sh <command> [args]
 #   add <priority> <item>  - Add item (priority: high|medium|low)
 #   done <pattern>         - Mark matching item as done
 #   remove <pattern>       - Remove matching item
@@ -29,14 +29,14 @@ if [[ -z "$ROOT_DIR" ]]; then
   ROOT_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "")"
 fi
 
-TODO_FILE="${TODO_FILE:-${ROOT_DIR:-.}/memory/TODO.md}"
+PLAN_FILE="${PLAN_FILE:-${ROOT_DIR:-.}/memory/PLAN.md}"
 DATE=$(date +%Y-%m-%d)
 
-# Ensure TODO.md exists with proper structure
-init_todo() {
-    if [[ ! -f "$TODO_FILE" ]]; then
-        cat > "$TODO_FILE" << 'EOF'
-# TODO - Nuri Scratch Pad
+# Ensure PLAN.md exists with proper structure
+init_plan() {
+    if [[ ! -f "$PLAN_FILE" ]]; then
+        cat > "$PLAN_FILE" << 'EOF'
+# PLAN - Wopal Scratch Pad
 
 *Last updated: DATE_PLACEHOLDER*
 
@@ -53,15 +53,15 @@ init_todo() {
 ## Notes
 
 EOF
-        sed -i '' "s/DATE_PLACEHOLDER/$DATE/" "$TODO_FILE" 2>/dev/null || \
-        sed -i "s/DATE_PLACEHOLDER/$DATE/" "$TODO_FILE"
+        sed -i '' "s/DATE_PLACEHOLDER/$DATE/" "$PLAN_FILE" 2>/dev/null || \
+        sed -i "s/DATE_PLACEHOLDER/$DATE/" "$PLAN_FILE"
     fi
 }
 
 # Update the "Last updated" date
 update_date() {
-    sed -i '' "s/\*Last updated:.*\*/*Last updated: $DATE*/" "$TODO_FILE" 2>/dev/null || \
-    sed -i "s/\*Last updated:.*\*/*Last updated: $DATE*/" "$TODO_FILE"
+    sed -i '' "s/\*Last updated:.*\*/*Last updated: $DATE*/" "$PLAN_FILE" 2>/dev/null || \
+    sed -i "s/\*Last updated:.*\*/*Last updated: $DATE*/" "$PLAN_FILE"
 }
 
 # Add an item
@@ -69,7 +69,7 @@ add_item() {
     local priority="$1"
     local item="$2"
     
-    init_todo
+    init_plan
     
     local section=""
     case "$priority" in
@@ -86,7 +86,7 @@ add_item() {
     awk -v section="$section" -v entry="$entry" '
         $0 == section { print; print entry; next }
         { print }
-    ' "$TODO_FILE" > "$TODO_FILE.tmp" && mv "$TODO_FILE.tmp" "$TODO_FILE"
+    ' "$PLAN_FILE" > "$PLAN_FILE.tmp" && mv "$PLAN_FILE.tmp" "$PLAN_FILE"
     
     update_date
     echo "✅ Added to $priority priority: $item"
@@ -97,20 +97,20 @@ mark_done() {
     local pattern="$1"
     
     # Find and move the item
-    if grep -q "\- \[ \].*$pattern" "$TODO_FILE"; then
+    if grep -q "\- \[ \].*$pattern" "$PLAN_FILE"; then
         # Extract the item text
-        local item=$(grep -m1 "\- \[ \].*$pattern" "$TODO_FILE" | sed 's/- \[ \] //' | sed 's/ (added:.*//')
+        local item=$(grep -m1 "\- \[ \].*$pattern" "$PLAN_FILE" | sed 's/- \[ \] //' | sed 's/ (added:.*//')
         
         # Remove from current location
-        sed -i '' "/\- \[ \].*$pattern/d" "$TODO_FILE" 2>/dev/null || \
-        sed -i "/\- \[ \].*$pattern/d" "$TODO_FILE"
+        sed -i '' "/\- \[ \].*$pattern/d" "$PLAN_FILE" 2>/dev/null || \
+        sed -i "/\- \[ \].*$pattern/d" "$PLAN_FILE"
         
         # Add to Done section
         local done_entry="- [x] $item (done: $DATE)"
         awk -v section="## ✅ Done" -v entry="$done_entry" '
             $0 == section { print; print entry; next }
             { print }
-        ' "$TODO_FILE" > "$TODO_FILE.tmp" && mv "$TODO_FILE.tmp" "$TODO_FILE"
+        ' "$PLAN_FILE" > "$PLAN_FILE.tmp" && mv "$PLAN_FILE.tmp" "$PLAN_FILE"
         
         update_date
         
@@ -122,12 +122,12 @@ mark_done() {
         while IFS= read -r done_date; do
             if [[ -n "$done_date" && "$done_date" < "$week_ago" ]]; then
                 # Delete the line with this done date
-                sed -i '' "/- \[x\].*(done: $done_date)/d" "$TODO_FILE" 2>/dev/null || \
-                sed -i "/- \[x\].*(done: $done_date)/d" "$TODO_FILE"
+                sed -i '' "/- \[x\].*(done: $done_date)/d" "$PLAN_FILE" 2>/dev/null || \
+                sed -i "/- \[x\].*(done: $done_date)/d" "$PLAN_FILE"
                 ((archived++))
             fi
-        done < <(grep -oP '(?<=done: )[0-9]{4}-[0-9]{2}-[0-9]{2}' "$TODO_FILE" 2>/dev/null || \
-                  grep -oE 'done: [0-9]{4}-[0-9]{2}-[0-9]{2}' "$TODO_FILE" | sed 's/done: //')
+        done < <(grep -oP '(?<=done: )[0-9]{4}-[0-9]{2}-[0-9]{2}' "$PLAN_FILE" 2>/dev/null || \
+                  grep -oE 'done: [0-9]{4}-[0-9]{2}-[0-9]{2}' "$PLAN_FILE" | sed 's/done: //')
         
         if [[ $archived -gt 0 ]]; then
             echo "🧹 Archived $archived old done items"
@@ -144,9 +144,9 @@ mark_done() {
 remove_item() {
     local pattern="$1"
     
-    if grep -q "\- \[.\].*$pattern" "$TODO_FILE"; then
-        sed -i '' "/\- \[.\].*$pattern/d" "$TODO_FILE" 2>/dev/null || \
-        sed -i "/\- \[.\].*$pattern/d" "$TODO_FILE"
+    if grep -q "\- \[.\].*$pattern" "$PLAN_FILE"; then
+        sed -i '' "/\- \[.\].*$pattern/d" "$PLAN_FILE" 2>/dev/null || \
+        sed -i "/\- \[.\].*$pattern/d" "$PLAN_FILE"
         update_date
         echo "🗑️ Removed item matching: $pattern"
     else
@@ -159,10 +159,10 @@ remove_item() {
 list_items() {
     local priority="$1"
     
-    init_todo
+    init_plan
     
     if [[ -z "$priority" ]]; then
-        cat "$TODO_FILE"
+        cat "$PLAN_FILE"
     else
         local section=""
         case "$priority" in
@@ -176,18 +176,18 @@ list_items() {
             $0 ~ section { found=1 }
             found && /^## / && $0 !~ section { found=0 }
             found { print }
-        ' "$TODO_FILE"
+        ' "$PLAN_FILE"
     fi
 }
 
 # Summary for heartbeat
 summary() {
-    init_todo
+    init_plan
     
     # Count by section (ensure numeric values)
-    local high_count=$(awk '/🔴 High/,/^## 🟡/' "$TODO_FILE" | grep -c "^- \[ \]" || true)
-    local med_count=$(awk '/🟡 Medium/,/^## 🟢/' "$TODO_FILE" | grep -c "^- \[ \]" || true)
-    local low_count=$(awk '/🟢 Nice/,/^## ✅/' "$TODO_FILE" | grep -c "^- \[ \]" || true)
+    local high_count=$(awk '/🔴 High/,/^## 🟡/' "$PLAN_FILE" | grep -c "^- \[ \]" || true)
+    local med_count=$(awk '/🟡 Medium/,/^## 🟢/' "$PLAN_FILE" | grep -c "^- \[ \]" || true)
+    local low_count=$(awk '/🟢 Nice/,/^## ✅/' "$PLAN_FILE" | grep -c "^- \[ \]" || true)
     high_count=${high_count:-0}
     med_count=${med_count:-0}
     low_count=${low_count:-0}
@@ -203,15 +203,15 @@ summary() {
                 ((stale++))
             fi
         fi
-    done < <(grep "^- \[ \]" "$TODO_FILE")
+    done < <(grep "^- \[ \]" "$PLAN_FILE")
     
-    echo "📋 TODO: $total items ($high_count high, $med_count medium, $low_count low)"
+    echo "📋 Plan: $total items ($high_count high, $med_count medium, $low_count low)"
     if [[ $stale -gt 0 ]]; then
         echo "⚠️ $stale stale items (>7 days old)"
     fi
     if [[ $high_count -gt 0 ]]; then
         echo "🔴 High priority items:"
-        awk '/🔴 High/,/^## 🟡/' "$TODO_FILE" | grep "^- \[ \]" | head -3 | sed 's/- \[ \] /  • /' | sed 's/ (added:.*//' | sed 's/\*\*//g'
+        awk '/🔴 High/,/^## 🟡/' "$PLAN_FILE" | grep "^- \[ \]" | head -3 | sed 's/- \[ \] /  • /' | sed 's/ (added:.*//' | sed 's/\*\*//g'
     fi
 }
 
@@ -233,7 +233,7 @@ case "$1" in
         summary
         ;;
     *)
-        echo "Usage: todo.sh <command> [args]"
+        echo "Usage: plan.sh <command> [args]"
         echo "  add <priority> <item>  - Add item (priority: high|medium|low)"
         echo "  done <pattern>         - Mark matching item as done"
         echo "  remove <pattern>       - Remove matching item"
