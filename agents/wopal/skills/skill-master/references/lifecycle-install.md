@@ -7,14 +7,14 @@ description: Complete workflow for finding, downloading, scanning, and installin
 
 ## ⚠️ Critical: Shared vs Agent-Specific Skills
 
-**Before installing, determine the skill type:**
+**Before installing, determine the skill type from source path:**
 
-| Type | Source Location | Install Command | Deploy Location |
-|------|-----------------|-----------------|-----------------|
-| **Shared** | `projects/agent-tools/skills/<name>/` | `wopal skills install /path` | `.wopal/skills/` |
-| **Wopal-specific** | `projects/agent-tools/agents/wopal/skills/<name>/` | `wopal skills install /path --agent wopal` | `.wopal/agents/wopal/skills/` |
+| Type | Path Pattern | Install Command | Deploy Location |
+|------|--------------|-----------------|-----------------|
+| **Shared** | Does NOT contain `agents/<agent>/skills/` | `wopal skills install /path` | `.wopal/skills/` |
+| **Agent-specific** | Contains `agents/<agent>/skills/` | `wopal skills install /path --agent <agent>` | `.wopal/agents/<agent>/skills/` |
 
-**Common mistake**: Installing Wopal-specific skills without `--agent wopal` places them in the wrong location.
+**Common mistake**: Installing agent-specific skills without `--agent <agent>` places them in the wrong location.
 
 ## Install Commands
 
@@ -28,8 +28,8 @@ wopal skills install owner/repo@skill-name
 # From local path - SHARED skill
 wopal skills install /path/to/skill
 
-# From local path - WOPAL-SPECIFIC skill (⚠️ must use --agent)
-wopal skills install /path/to/skill --agent wopal
+# From local path - AGENT-SPECIFIC skill (⚠️ must use --agent)
+wopal skills install /path/to/skill --agent <agent>
 
 # Clean INBOX after install
 wopal skills install skill-name --rm-inbox
@@ -87,7 +87,7 @@ wopal skills merge --dry-run # Preview
 
 Merge combines:
 - Shared skills (`.wopal/skills/`)
-- Wopal-specific skills (`.wopal/agents/wopal/skills/`) — overrides shared with same name
+- Agent-specific skills (`.wopal/agents/<agent>/skills/`) — overrides shared with same name
 
 ## Manage INBOX
 
@@ -105,7 +105,7 @@ wopal skills inbox remove skill-name
 | Download for review | `wopal skills download` |
 | Check security | `wopal skills scan` |
 | Install shared skill | `wopal skills install /path` |
-| Install Wopal-specific skill | `wopal skills install /path --agent wopal` |
+| Install agent-specific skill | `wopal skills install /path --agent <agent>` |
 | Repair symlinks | `wopal skills merge` |
 | View INBOX | `wopal skills inbox list` |
 
@@ -114,7 +114,7 @@ wopal skills inbox remove skill-name
 | Scenario | Commands |
 |----------|---------|
 | Find and install remote | `find "api testing"` → `download` → `scan` → `install` |
-| Install local Wopal skill | `install /path --agent wopal` → `merge` → verify |
+| Install local agent skill | `install /path --agent <agent>` → `merge` → verify |
 | Browse and evaluate | `find deploy --limit 20` → `download` → `inbox show --detail` |
 
 ## Browse Online

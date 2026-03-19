@@ -5,14 +5,14 @@ description: ⚠️ MUST LOAD BEFORE any skill operation (install/update/deploy)
 
 # Skill Master
 
-## ⚠️ Critical: Shared vs Wopal-Specific Skills
+## ⚠️ Critical: Shared vs Agent-Specific Skills
 
-| Type | Source Location | Install Command |
-|------|-----------------|-----------------|
-| **Shared** | `projects/agent-tools/skills/<name>/` | `wopal skills install /path` |
-| **Wopal-specific** | `projects/agent-tools/agents/wopal/skills/<name>/` | `wopal skills install /path --agent wopal` |
+| Type | Path Pattern | Install Command |
+|------|--------------|-----------------|
+| **Shared** | Does NOT contain `agents/<agent>/skills/` | `wopal skills install /path` |
+| **Agent-specific** | Contains `agents/<agent>/skills/` | `wopal skills install /path --agent <agent>` |
 
-**Common mistake**: Forgetting `--agent wopal` when installing Wopal-specific skills.
+**Common mistake**: Forgetting `--agent <agent>` when installing agent-specific skills.
 
 ## Core Workflow
 
@@ -47,8 +47,8 @@ wopal skills scan skill-name
 # Install - shared skill
 wopal skills install /path/to/skill --force
 
-# Install - Wopal-specific skill (⚠️ use --agent)
-wopal skills install /path/to/skill --agent wopal --force
+# Install - agent-specific skill (⚠️ use --agent)
+wopal skills install /path/to/skill --agent <agent> --force
 
 # Verify & Repair
 wopal skills list
@@ -91,8 +91,8 @@ find <skill-path> -type f
 
 ## Tips
 
-1. **Determine skill type first** — Check source path for `agents/wopal/skills/`
-2. **Use `--agent wopal` for Wopal-specific skills** — Otherwise deploys to wrong location
+1. **Determine skill type first** — Check if source path contains `agents/<agent>/skills/`
+2. **Use `--agent <agent>` for agent-specific skills** — Otherwise deploys to wrong location
 3. **Verify after install** — `ls .agents/skills/<name>` and `wopal skills merge` if needed
 4. **Never edit `.agents/skills/`** — Modify source and reinstall
 5. **Scan before install** — Remote sources auto-scan; INBOX skills need explicit scan

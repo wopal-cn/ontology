@@ -7,12 +7,12 @@ description: Workflow for developing, optimizing, and deploying skills
 
 ## ⚠️ Critical: Shared vs Agent-Specific Skills
 
-| Type | Source Location | Reinstall Command |
-|------|-----------------|-------------------|
-| **Shared** | `projects/agent-tools/skills/<name>/` | `wopal skills install /path --force` |
-| **Wopal-specific** | `projects/agent-tools/agents/wopal/skills/<name>/` | `wopal skills install /path --agent wopal --force` |
+| Type | Path Pattern | Reinstall Command |
+|------|--------------|-------------------|
+| **Shared** | Does NOT contain `agents/<agent>/skills/` | `wopal skills install /path --force` |
+| **Agent-specific** | Contains `agents/<agent>/skills/` | `wopal skills install /path --agent <agent> --force` |
 
-**Common mistake**: Reinstalling Wopal-specific skills without `--agent wopal` deploys to wrong location.
+**Common mistake**: Reinstalling agent-specific skills without `--agent <agent>` deploys to wrong location.
 
 ## Create New Skill
 
@@ -66,19 +66,17 @@ Optional fields: `license`, `compatibility`, `metadata`
 cat .agents/skills/<name>/.source.json | jq -r '.source'
 
 # 2. Determine skill type from source path:
-#    - Contains "agents/wopal/skills/" → Wopal-specific
+#    - Contains "agents/<agent>/skills/" → Agent-specific
 #    - Otherwise → Shared
 
-# 3. Edit in source directory
-#    - Shared: projects/agent-tools/skills/<name>/
-#    - Wopal-specific: projects/agent-tools/agents/wopal/skills/<name>/
+# 3. Edit in source directory (from step 1)
 
 # 4. Reinstall with correct parameters
 # Shared skill:
-wopal skills install /path/to/shared/skill --force
+wopal skills install <source-path> --force
 
-# Wopal-specific skill (⚠️ must include --agent wopal):
-wopal skills install /path/to/wopal/skill --agent wopal --force
+# Agent-specific skill (⚠️ must include --agent):
+wopal skills install <source-path> --agent <agent> --force
 
 # 5. Verify
 ls .agents/skills/<name>

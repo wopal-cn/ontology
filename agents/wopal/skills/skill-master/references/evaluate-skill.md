@@ -191,19 +191,3 @@ Evaluated {N} skills in `{path}`
 | ⚠️ Backup | Score 3, fixable issues, possible future use |
 | ❌ Delete | Score ≤2, compliance ≤2, empty or redundant |
 | 🔧 Fix first | High value but compliance issues |
-
----
-
-## Post-Evaluation Actions
-
-**INBOX skills:**
-1. Install recommended skills
-2. Fix issues then install
-3. Delete low-value skills
-4. Export report
-
-**Installed skills:**
-1. Test usage in context
-2. Optimize based on analysis
-3. Fix compliance issues
-4. Export analysis report
