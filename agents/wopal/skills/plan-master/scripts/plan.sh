@@ -6,9 +6,9 @@
 #   remove <pattern>       - Remove matching item
 #   list [priority]        - List items, optionally by priority
 #   summary                - Quick summary for heartbeat
-#   craft <name>           - Create structured plan template
-#   delegate <pattern>     - Mark plan as delegated to fae
-#   verify <pattern>       - Verify plan completeness
+#   craft <name> [--deep] [--prd <path>] - Create structured plan template
+#   verify <pattern>       - Verify plan completeness (execution-grade)
+#   execute <pattern> [--fae] - Execute plan after verification
 
 set -e
 
@@ -34,6 +34,75 @@ fi
 
 PLAN_FILE="${PLAN_FILE:-${ROOT_DIR:-.}/memory/PLAN.md}"
 DATE=$(date +%Y-%m-%d)
+
+# ============================================
+# Project Detection & Path Resolution
+# ============================================
+
+detect_project() {
+    local skill_path="$SCRIPT_DIR"
+
+    if [[ "$skill_path" == *"/projects/agent-tools/"* ]]; then
+        echo "agent-tools"
+        return
+    fi
+
+    if [[ "$skill_path" == *"/projects/wopal-cli/"* ]]; then
+        echo "wopal-cli"
+        return
+    fi
+
+    if [[ "$skill_path" =~ /projects/([^/]+)/ ]]; then
+        echo "${BASH_REMATCH[1]}"
+        return
+    fi
+
+    echo ""
+}
+
+resolve_plan_dir() {
+    local project="$(detect_project)"
+    if [[ -n "$project" ]]; then
+        echo "${ROOT_DIR:-.}/docs/products/${project}/plans"
+    else
+        echo "${ROOT_DIR:-.}/docs/products/plans"
+    fi
+}
+
+resolve_plan_file() {
+    local input="$1"
+    local plan_dir
+    plan_dir="$(resolve_plan_dir)"
+
+    if [[ -z "$input" ]]; then
+        echo "❌ Plan name/pattern required" >&2
+        return 1
+    fi
+
+    if [[ -f "$input" ]]; then
+        echo "$input"
+        return 0
+    fi
+
+    local matches=("$plan_dir"/*"$input"*.md)
+
+    if [[ ! -e "${matches[0]}" ]]; then
+        echo "❌ No plan found matching: $input" >&2
+        return 1
+    fi
+
+    if [[ ${#matches[@]} -gt 1 ]]; then
+        echo "❌ Multiple plans matched: $input" >&2
+        printf '  - %s\n' "${matches[@]}" >&2
+        return 1
+    fi
+
+    echo "${matches[0]}"
+}
+
+# ============================================
+# PLAN.md Management (Task Tracking)
+# ============================================
 
 # Ensure PLAN.md exists with proper structure
 init_plan() {
@@ -129,8 +198,7 @@ mark_done() {
                 sed -i "/- \[x\].*(done: $done_date)/d" "$PLAN_FILE"
                 ((archived++))
             fi
-        done < <(grep -oP '(?<=done: )[0-9]{4}-[0-9]{2}-[0-9]{2}' "$PLAN_FILE" 2>/dev/null || \
-                  grep -oE 'done: [0-9]{4}-[0-9]{2}-[0-9]{2}' "$PLAN_FILE" | sed 's/done: //')
+        done < <(grep -oE 'done: [0-9]{4}-[0-9]{2}-[0-9]{2}' "$PLAN_FILE" | sed 's/done: //')
         
         if [[ $archived -gt 0 ]]; then
             echo "🧹 Archived $archived old done items"
@@ -218,197 +286,264 @@ summary() {
     fi
 }
 
-# Create structured plan template
-craft_plan() {
-    local plan_name="$1"
-    
-    if [[ -z "$plan_name" ]]; then
-        echo "❌ Plan name required"
-        echo "Usage: plan.sh craft <plan-name>"
-        exit 1
-    fi
-    
-    local plan_dir="${ROOT_DIR:-.}/docs/products/plans"
-    local plan_file="$plan_dir/${plan_name}.md"
-    
-    mkdir -p "$plan_dir"
-    
-    if [[ -f "$plan_file" ]]; then
-        echo "⚠️ Plan already exists: $plan_file"
-        echo "Use a different name or edit existing plan"
-        exit 1
-    fi
-    
-    cat > "$plan_file" << 'EOF'
-# PLAN_NAME_PLACEHOLDER
+# ============================================
+# Plan Lifecycle Management
+# ============================================
+
+# Create plan template
+create_plan_template() {
+    local plan_file="$1"
+    local plan_name="$2"
+    local prd_path="$3"
+    local deep_mode="$4"
+
+    cat > "$plan_file" << EOF
+# ${plan_name}
+
+## 元数据
+
+- **PRD**: \`${prd_path:-待关联（执行前必填）}\`
+- **Created**: $(date +%Y-%m-%d)
+- **Status**: draft
+- **Mode**: $( [[ "$deep_mode" == true ]] && echo "deep" || echo "lite" )
 
 ## 目标
-<!-- 一句话描述计划目标 -->
 
-## 背景
-<!-- 为什么需要这个计划？解决什么问题？ -->
+<!-- 继承自 PRD Problem Statement，一句话描述 -->
+
+## In Scope
+
+- [ ] 待补充
+
+## Out of Scope
+
+- [ ] 待补充（需与 PRD Non-Goals 对齐）
 
 ## 文件清单
-- `path/to/file1.ts` - 创建/修改
-- `path/to/file2.ts` - 创建/修改
+
+- \`path/to/file1.ts\` - 创建/修改
 
 ## 实施步骤
 
-### Step 1: <步骤名称>
-**文件**: `path/to/file1.ts`
+### Task 1: [任务名称]
 
-**操作**:
-- [ ] 写测试
-- [ ] 跑测试确认失败
-- [ ] 写最小实现
-- [ ] 跑测试确认通过
+**关联 PRD 需求**: REQ-xxx
+**Files**:
+- Modify: \`path/to/file1.ts\`
 
-```typescript
-// 完整可运行代码
-```
+- [ ] Step 1: 具体操作
+- [ ] Step 2: 验证
 
-**验证**: `npm test -- file1.test.ts`
+**验证**: \`npm test -- path/to/test\`
 
-### Step 2: <步骤名称>
-<!-- 继续添加步骤... -->
+## 验收标准
 
-## 完成标准
+- [ ] 对应 PRD Success Criteria 逐项覆盖
 - [ ] 所有测试通过
-- [ ] 无 lint 错误
 - [ ] 功能验证通过
 
 ## 风险与依赖
-<!-- 可选：列出潜在风险和依赖项 -->
+
+- 待补充
 EOF
-    
-    sed -i '' "s/PLAN_NAME_PLACEHOLDER/$plan_name/" "$plan_file" 2>/dev/null || \
-    sed -i "s/PLAN_NAME_PLACEHOLDER/$plan_name/" "$plan_file"
-    
-    echo "✅ Created plan template: $plan_file"
-    echo ""
-    echo "Next steps:"
-    echo "  1. Fill in the template with your plan details"
-    echo "  2. Run: plan.sh verify $plan_name"
-    echo "  3. Run: plan.sh delegate $plan_name (when ready for fae)"
 }
 
-# Mark plan as delegated to fae
-delegate_plan() {
-    local pattern="$1"
-    
-    if [[ -z "$pattern" ]]; then
-        echo "❌ Plan name/pattern required"
-        echo "Usage: plan.sh delegate <plan-name>"
+# Create structured plan template
+craft_plan() {
+    local plan_name="$1"
+    shift
+
+    local deep_mode=false
+    local prd_path=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --deep)
+                deep_mode=true
+                shift
+                ;;
+            --prd)
+                prd_path="$2"
+                shift 2
+                ;;
+            *)
+                echo "❌ Unknown argument: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$plan_name" ]]; then
+        echo "❌ Plan name required"
+        echo "Usage: plan.sh craft <plan-name> [--deep] [--prd <prd-path>]"
         exit 1
     fi
-    
-    local plan_dir="${ROOT_DIR:-.}/docs/products/plans"
-    local plan_file=$(ls "$plan_dir"/*${pattern}*.md 2>/dev/null | head -1)
-    
-    if [[ -z "$plan_file" ]]; then
-        echo "❌ No plan found matching: $pattern"
+
+    local plan_dir
+    plan_dir="$(resolve_plan_dir)"
+    mkdir -p "$plan_dir"
+
+    local plan_file="$plan_dir/${plan_name}.md"
+    if [[ -f "$plan_file" ]]; then
+        echo "⚠️ Plan already exists: $plan_file"
         exit 1
     fi
-    
-    local plan_name=$(basename "$plan_file" .md)
-    
-    # Add delegated marker to plan file
-    if ! grep -q "## 状态" "$plan_file"; then
-        sed -i '' "1s/^/## 状态: 🚀 已委派给 fae\n\n/" "$plan_file" 2>/dev/null || \
-        sed -i "1s/^/## 状态: 🚀 已委派给 fae\n\n/" "$plan_file"
-    else
-        sed -i '' "s/## 状态.*/## 状态: 🚀 已委派给 fae/" "$plan_file" 2>/dev/null || \
-        sed -i "s/## 状态.*/## 状态: 🚀 已委派给 fae/" "$plan_file"
+
+    if [[ -n "$prd_path" && ! -f "${ROOT_DIR:-.}/$prd_path" ]]; then
+        echo "❌ PRD file not found: $prd_path"
+        exit 1
     fi
-    
-    # Add to PLAN.md as delegated item
-    init_plan
-    local entry="- [ ] [委派] $plan_name → fae (delegated: $DATE)"
-    awk -v section="## 🟡 Medium Priority" -v entry="$entry" '
-        $0 == section { print; print entry; next }
-        { print }
-    ' "$PLAN_FILE" > "$PLAN_FILE.tmp" && mv "$PLAN_FILE.tmp" "$PLAN_FILE"
-    update_date
-    
-    echo "✅ Marked as delegated: $plan_file"
-    echo "📋 Added to PLAN.md for tracking"
+
+    create_plan_template "$plan_file" "$plan_name" "$prd_path" "$deep_mode"
+    echo "✅ Created plan: $plan_file"
+
+    if [[ "$deep_mode" == true ]]; then
+        echo "📋 Deep mode: continue filling this file using the analysis checklist in SKILL.md"
+    fi
 }
 
-# Verify plan completeness
+# Verify plan completeness (execution-grade quality gate)
 verify_plan() {
     local pattern="$1"
-    
-    if [[ -z "$pattern" ]]; then
-        echo "❌ Plan name/pattern required"
-        echo "Usage: plan.sh verify <plan-name>"
-        exit 1
-    fi
-    
-    local plan_dir="${ROOT_DIR:-.}/docs/products/plans"
-    local plan_file=$(ls "$plan_dir"/*${pattern}*.md 2>/dev/null | head -1)
-    
-    if [[ -z "$plan_file" ]]; then
-        echo "❌ No plan found matching: $pattern"
-        exit 1
-    fi
-    
+    local plan_file
+    plan_file="$(resolve_plan_file "$pattern")" || exit 1
+
     local issues=0
-    
+    local warnings=0
+
     echo "🔍 Verifying: $plan_file"
     echo ""
-    
-    # Check 1: Completeness - no TODO or placeholders
-    if grep -qi "TODO\|FIXME\|<!--.*-->" "$plan_file" 2>/dev/null; then
-        echo "❌ Found TODO/FIXME/placeholders"
-        grep -n "TODO\|FIXME\|<!--" "$plan_file" | head -5
+
+    # 1. Check for placeholders
+    local placeholder_found=""
+    if grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' "$plan_file" > /dev/null 2>&1; then
+        echo "❌ Found placeholders:"
+        grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' "$plan_file" | head -5
+        ((issues++))
+        placeholder_found="yes"
+    else
+        echo "✅ No placeholders"
+    fi
+
+    # 2. Check for unclosed HTML comments
+    if grep -n '<!--' "$plan_file" | grep -v '<!--.*-->' > /dev/null 2>&1; then
+        echo "❌ Found unclosed HTML comments:"
+        grep -n '<!--' "$plan_file" | grep -v '<!--.*-->' | head -5
+        ((issues++))
+    elif [[ -z "$placeholder_found" ]]; then
+        echo "✅ No HTML comment placeholders"
+    fi
+
+    # 3. PRD must exist and be valid
+    local prd_path
+    prd_path="$(grep -m1 '^\- \*\*PRD\*\*:' "$plan_file" | sed -E 's/^.*`([^`]+)`.*$/\1/')"
+    if [[ -z "$prd_path" || "$prd_path" == *"待关联"* || ! -f "${ROOT_DIR:-.}/$prd_path" ]]; then
+        echo "❌ Missing or invalid PRD reference: ${prd_path:-<none>}"
         ((issues++))
     else
-        echo "✅ No TODO/FIXME/placeholders"
+        echo "✅ PRD linked: $prd_path"
     fi
-    
-    # Check 2: Has file list
-    if grep -q "## 文件清单" "$plan_file"; then
-        if grep -A 3 "## 文件清单" "$plan_file" | grep -q "\- \`"; then
-            echo "✅ Has file list"
+
+    # 4. Required sections
+    local missing_sections=0
+    for section in "## 目标" "## In Scope" "## Out of Scope" "## 文件清单" "## 实施步骤" "## 验收标准"; do
+        if grep -q "$section" "$plan_file"; then
+            echo "✅ $section"
         else
-            echo "⚠️ File list section exists but empty"
+            echo "❌ Missing section: $section"
             ((issues++))
+            ((missing_sections++))
         fi
-    else
-        echo "❌ Missing file list section"
+    done
+
+    # 5. File list must not be empty
+    if ! grep -A 5 '^## 文件清单' "$plan_file" | grep -q '\- `'; then
+        echo "❌ Empty file list"
         ((issues++))
-    fi
-    
-    # Check 3: Has implementation steps
-    if grep -q "### Step" "$plan_file"; then
-        local step_count=$(grep -c "### Step" "$plan_file")
-        echo "✅ Has $step_count implementation steps"
     else
-        echo "❌ Missing implementation steps"
+        echo "✅ File list populated"
+    fi
+
+    # 6. Tasks must exist
+    local task_count
+    task_count="$(grep -c '^### Task ' "$plan_file" || true)"
+    if [[ "${task_count:-0}" -eq 0 ]]; then
+        echo "❌ No tasks found"
         ((issues++))
-    fi
-    
-    # Check 4: Has code blocks
-    if grep -q '```' "$plan_file"; then
-        local code_blocks=$(grep -c '```' "$plan_file")
-        echo "✅ Has $((code_blocks / 2)) code blocks"
     else
-        echo "⚠️ No code blocks found"
+        echo "✅ Task count: $task_count"
     fi
-    
-    # Check 5: Has verification commands
-    if grep -qi "验证\|verify\|test" "$plan_file"; then
-        echo "✅ Has verification commands"
+
+    # 7. Each task must have PRD requirement mapping and verification command
+    local prd_req_count verify_count
+    prd_req_count="$(grep -c '^\*\*关联 PRD 需求\*\*:' "$plan_file" || true)"
+    verify_count="$(grep -c '^\*\*验证\*\*:' "$plan_file" || true)"
+
+    if [[ "${task_count:-0}" -gt 0 ]]; then
+        if [[ "${prd_req_count:-0}" -lt "${task_count:-0}" ]]; then
+            echo "❌ Some tasks are missing PRD requirement mapping ($prd_req_count/$task_count)"
+            ((issues++))
+        else
+            echo "✅ All tasks map to PRD requirements"
+        fi
+
+        if [[ "${verify_count:-0}" -lt "${task_count:-0}" ]]; then
+            echo "❌ Some tasks are missing verification commands ($verify_count/$task_count)"
+            ((issues++))
+        else
+            echo "✅ All tasks have verification commands"
+        fi
+    fi
+
+    # 8. Granularity check (heuristic)
+    local checkbox_count
+    checkbox_count="$(grep -c '^- \[ \] Step ' "$plan_file" || true)"
+    if [[ "${checkbox_count:-0}" -lt "${task_count:-0}" ]]; then
+        echo "⚠️ Task granularity may be too coarse (steps: $checkbox_count, tasks: $task_count)"
+        ((warnings++))
     else
-        echo "⚠️ No verification commands found"
+        echo "✅ Basic step granularity present"
     fi
-    
+
     echo ""
-    if [[ $issues -eq 0 ]]; then
-        echo "✅ Plan verification passed"
-    else
-        echo "❌ Plan has $issues issue(s) to fix"
+    if [[ $issues -gt 0 ]]; then
+        echo "❌ Plan failed verification ($issues issues, $warnings warnings)"
         exit 1
+    fi
+
+    echo "✅ Plan verification passed ($warnings warnings)"
+}
+
+# Execute plan after verification
+execute_plan() {
+    local pattern="$1"
+    local delegate_mode="$2"  # Optional: --fae
+
+    if [[ -z "$pattern" ]]; then
+        echo "❌ Plan name/pattern required"
+        echo "Usage: plan.sh execute <plan-name> [--fae]"
+        exit 1
+    fi
+
+    local plan_file
+    plan_file="$(resolve_plan_file "$pattern")" || exit 1
+
+    # Run verification first
+    verify_plan "$pattern"
+
+    # Update status to executing
+    if grep -q '^\- \*\*Status\*\*:' "$plan_file"; then
+        sed -i '' 's/^\- \*\*Status\*\*: .*/- **Status**: executing/' "$plan_file" 2>/dev/null || \
+        sed -i 's/^\- \*\*Status\*\*: .*/- **Status**: executing/' "$plan_file"
+    fi
+
+    echo ""
+    echo "📋 Plan ready: $plan_file"
+    echo "🚀 Status updated to: executing"
+    echo "🧭 Next: hand this plan file to the execution agent"
+
+    if [[ "$delegate_mode" == "--fae" ]]; then
+        echo "⚠️ --fae mode not implemented yet"
     fi
 }
 
@@ -430,13 +565,14 @@ case "$1" in
         summary
         ;;
     craft)
-        craft_plan "$2"
-        ;;
-    delegate)
-        delegate_plan "$2"
+        shift
+        craft_plan "$@"
         ;;
     verify)
         verify_plan "$2"
+        ;;
+    execute)
+        execute_plan "$2" "$3"
         ;;
     *)
         echo "Usage: plan.sh <command> [args]"
@@ -445,9 +581,9 @@ case "$1" in
         echo "  remove <pattern>       - Remove matching item"
         echo "  list [priority]        - List items"
         echo "  summary                - Quick summary"
-        echo "  craft <name>           - Create structured plan template"
-        echo "  delegate <pattern>     - Mark plan as delegated to fae"
+        echo "  craft <name> [--deep] [--prd <path>] - Create plan template"
         echo "  verify <pattern>       - Verify plan completeness"
+        echo "  execute <pattern> [--fae] - Execute plan after verification"
         exit 1
         ;;
 esac
