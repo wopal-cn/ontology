@@ -331,6 +331,32 @@ create_plan_template() {
 EOF
 }
 
+# Validate plan name convention
+validate_plan_name() {
+    local name="$1"
+
+    if [[ ! "$name" =~ ^([a-z0-9-]+)-(feature|enhance|fix|refactor|docs|test)-([a-z0-9-]+)$ ]]; then
+        echo "❌ Invalid plan name: $name"
+        echo ""
+        echo "Plan naming convention:"
+        echo "  <component>-<type>-<description>.md"
+        echo ""
+        echo "Components: plan-master, fae, wopal-cli, agent-tools, etc."
+        echo "Types: feature, enhance, fix, refactor, docs, test"
+        echo "  - feature: new functionality"
+        echo "  - enhance: improvement/optimization"
+        echo "  - fix: bug fix"
+        echo "  - refactor: code refactoring"
+        echo "Description: short lowercase with hyphens"
+        echo ""
+        echo "Examples:"
+        echo "  fae-fix-task-wait-bug"
+        echo "  wopal-cli-feature-session-messages"
+        echo "  plan-master-enhance-validate-phase"
+        exit 1
+    fi
+}
+
 # Create structured plan template
 craft_plan() {
     local plan_name="$1"
@@ -372,6 +398,9 @@ craft_plan() {
         echo "Usage: plan.sh craft <plan-name> [--project <name> | --global] [--deep] [--prd <prd-path>]"
         exit 1
     fi
+
+    # Validate plan naming convention
+    validate_plan_name "$plan_name"
 
     if [[ "$project_specified" != true ]]; then
         echo "⚠️ No project specified. Use --project <name> or --global"
@@ -676,6 +705,146 @@ execute_plan() {
     fi
 }
 
+# Complete plan execution
+complete_plan() {
+    local pattern="$1"
+    shift
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PLAN_PROJECT="$2"; shift 2 ;;
+            --global) PLAN_PROJECT=""; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    local plan_file
+    plan_file="$(resolve_plan_file "$pattern")" || exit 1
+
+    local current_status
+    current_status=$(grep '^\- \*\*Status\*\*:' "$plan_file" | sed 's/^.*: //')
+
+    if [[ "$current_status" != "executing" ]]; then
+        echo "❌ Plan status must be 'executing' to complete"
+        echo "   Current status: $current_status"
+        exit 1
+    fi
+
+    # Update status to completed
+    sed -i '' 's/^\- \*\*Status\*\*: .*/- **Status**: completed/' "$plan_file" 2>/dev/null || \
+    sed -i 's/^\- \*\*Status\*\*: .*/- **Status**: completed/' "$plan_file"
+
+    echo "✅ Plan execution completed: $plan_file"
+    echo "🧭 Next: validate with real-world scenario, then run 'plan.sh validate \"$pattern\" --confirm'"
+}
+
+# Validate plan with user confirmation
+validate_plan() {
+    local pattern="$1"
+    shift
+    local confirmed=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PLAN_PROJECT="$2"; shift 2 ;;
+            --global) PLAN_PROJECT=""; shift ;;
+            --confirm) confirmed=true; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    local plan_file
+    plan_file="$(resolve_plan_file "$pattern")" || exit 1
+
+    local current_status
+    current_status=$(grep '^\- \*\*Status\*\*:' "$plan_file" | sed 's/^.*: //')
+
+    if [[ "$current_status" != "completed" ]]; then
+        echo "❌ Plan status must be 'completed' to validate"
+        echo "   Current status: $current_status"
+        echo "   Run: plan.sh complete \"$pattern\""
+        exit 1
+    fi
+
+    if [[ "$confirmed" != true ]]; then
+        echo "⚠️  VALIDATION REQUIRED"
+        echo ""
+        echo "The plan execution is complete. Before archiving, you MUST:"
+        echo "  1. Perform real-world scenario validation"
+        echo "  2. Verify the changes work as expected"
+        echo "  3. Confirm with the user (Sam)"
+        echo ""
+        echo "After validation passes, run:"
+        echo "  plan.sh validate \"$pattern\" --confirm"
+        exit 0
+    fi
+
+    # Update status to validated
+    sed -i '' 's/^\- \*\*Status\*\*: .*/- **Status**: validated/' "$plan_file" 2>/dev/null || \
+    sed -i 's/^\- \*\*Status\*\*: .*/- **Status**: validated/' "$plan_file"
+
+    echo "✅ Plan validated: $plan_file"
+    echo "🧭 Next: archive the plan with 'plan.sh archive \"$pattern\"'"
+}
+
+# Archive completed plan
+archive_plan() {
+    local pattern="$1"
+    shift
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PLAN_PROJECT="$2"; shift 2 ;;
+            --global) PLAN_PROJECT=""; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    local plan_file
+    plan_file="$(resolve_plan_file "$pattern")" || exit 1
+
+    local current_status
+    current_status=$(grep '^\- \*\*Status\*\*:' "$plan_file" | sed 's/^.*: //')
+
+    if [[ "$current_status" != "validated" ]]; then
+        echo "❌ Plan must be validated before archiving"
+        echo "   Current status: $current_status"
+        echo "   Run: plan.sh validate \"$pattern\" --confirm"
+        exit 1
+    fi
+
+    # Move to done/ directory
+    local plan_dir
+    plan_dir="$(resolve_plan_dir)"
+    local done_dir="$plan_dir/done"
+    mkdir -p "$done_dir"
+
+    local plan_name=$(basename "$plan_file")
+    mv "$plan_file" "$done_dir/$plan_name"
+
+    echo "✅ Plan archived: $done_dir/$plan_name"
+
+    # Auto-update PLAN.md: find and mark related task as done
+    local search_pattern="${plan_name%.md}"
+    if grep -q "\- \[ \].*$search_pattern" "$PLAN_FILE"; then
+        local item=$(grep -m1 "\- \[ \].*$search_pattern" "$PLAN_FILE" | sed 's/- \[ \] //' | sed 's/ (added:.*//')
+        sed -i '' "/\- \[ \].*$search_pattern/d" "$PLAN_FILE" 2>/dev/null || \
+        sed -i "/\- \[ \].*$search_pattern/d" "$PLAN_FILE"
+        local done_entry="- [x] $item (done: $DATE)"
+        awk -v section="## ✅ Done" -v entry="$done_entry" '
+            $0 == section { print; print entry; next }
+            { print }
+        ' "$PLAN_FILE" > "$PLAN_FILE.tmp" && mv "$PLAN_FILE.tmp" "$PLAN_FILE"
+        update_date
+        echo "✅ PLAN.md task marked done: $item"
+    else
+        echo "⚠️  No matching task found in PLAN.md for: $search_pattern"
+        echo "   You may need to manually update PLAN.md"
+    fi
+
+    echo "🧭 Next: commit the changes"
+}
+
 # Main
 case "$1" in
     add)
@@ -705,6 +874,18 @@ case "$1" in
         shift
         execute_plan "$@"
         ;;
+    complete)
+        shift
+        complete_plan "$@"
+        ;;
+    validate)
+        shift
+        validate_plan "$@"
+        ;;
+    archive)
+        shift
+        archive_plan "$@"
+        ;;
     *)
         echo "Usage: plan.sh <command> [args]"
         echo "  add <priority> <item>  - Add item (priority: high|medium|low)"
@@ -725,6 +906,16 @@ case "$1" in
         echo ""
         echo "  execute <pattern> [--project <name> | --global] [--fae]"
         echo "      Execute plan after verification"
+        echo ""
+        echo "  complete <pattern> [--project <name> | --global]"
+        echo "      Mark plan as completed (after execution)"
+        echo ""
+        echo "  validate <pattern> [--project <name> | --global] [--confirm]"
+        echo "      Validate plan with user confirmation"
+        echo "      --confirm  Confirm validation (required to proceed)"
+        echo ""
+        echo "  archive <pattern> [--project <name> | --global]"
+        echo "      Archive validated plan to done/"
         exit 1
         ;;
 esac

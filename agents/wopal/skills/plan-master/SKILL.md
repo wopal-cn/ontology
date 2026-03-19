@@ -1,6 +1,6 @@
 ---
 name: plan-master
-description: ⚠️ MUST USE for task/plan tracking (never edit PLAN.md directly). Provides persistent task management with priorities and plan lifecycle. Triggers on "add to plan", "what's on the plan", "mark X done", "show plan", "remove from plan", "pending tasks", "craft plan", "create plan", "plan feature", "deep analysis", "verify plan", "execute plan", or plan-related queries.
+description: ⚠️ MUST USE for task/plan tracking (never edit PLAN.md directly). Provides persistent task management with priorities and plan lifecycle. Triggers on "add to plan", "what's on the plan", "mark X done", "show plan", "remove from plan", "pending tasks", "craft plan", "create plan", "plan feature", "deep analysis", "verify plan", "execute plan", "complete plan", "validate plan", "archive plan", or plan-related queries.
 ---
 
 # Plan Master
@@ -24,6 +24,9 @@ description: ⚠️ MUST USE for task/plan tracking (never edit PLAN.md directly
 | `craft` | 创建计划 | "craft plan", "create plan", "制定方案" |
 | `verify` | 验证计划 | "verify plan" |
 | `execute` | 执行计划 | "execute plan", "执行计划" |
+| `complete` | 标记执行完成 | "complete plan", "执行完成" |
+| `validate` | 验证确认 | "validate plan", "验证通过" |
+| `archive` | 归档计划 | "archive plan", "归档计划" |
 
 **注意**：`craft`/`verify`/`execute` 必须指定 `--project <name>` 或 `--global`。
 
@@ -91,8 +94,47 @@ bash skills/plan-master/scripts/plan.sh summary
 ## 计划生命周期
 
 ```
-craft → verify → execute → done
+craft → verify → execute → complete → validate → archive
 ```
+
+### 状态流转
+
+| 状态 | 触发命令 | 说明 |
+|------|----------|------|
+| `draft` | craft | 初始创建 |
+| `verified` | verify | 静态检查通过 |
+| `executing` | execute | 开始执行 |
+| `completed` | complete | 执行完成（Fae 返回结果） |
+| `validated` | validate --confirm | 用户确认验证通过 |
+| 归档 | archive | 移动到 done/，自动标记 PLAN.md 任务完成 |
+
+### 计划命名规范
+
+```
+<component>-<type>-<description>.md
+```
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `<component>` | 所属组件/模块 | plan-master, fae, wopal-cli |
+| `<type>` | 计划类型 | feature, enhance, fix, refactor |
+| `<description>` | 简短描述 | validate-phase, task-wait-bug |
+
+**type 定义**：
+
+| type | 用途 | 示例 |
+|------|------|------|
+| `feature` | 全新功能 | 新增命令、新模块 |
+| `enhance` | 功能增强/优化 | 流程改进、参数扩展 |
+| `fix` | Bug 修复 | 修复已知问题 |
+| `refactor` | 重构 | 不改变功能的代码改进 |
+| `docs` | 文档更新 | 文档改进 |
+| `test` | 测试相关 | 测试用例添加 |
+
+**命名示例**：
+- `plan-master-enhance-validate-phase.md`
+- `fae-fix-task-wait-bug.md`
+- `wopal-cli-feature-session-messages.md`
 
 ### ⚠️ 项目定位规则（重要）
 
