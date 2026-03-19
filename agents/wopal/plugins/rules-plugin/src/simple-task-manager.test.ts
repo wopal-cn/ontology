@@ -68,6 +68,9 @@ describe("SimpleTaskManager", () => {
         body: {
           agent: "general",
           parts: [{ type: "text", text: "Do something" }],
+          tools: {
+            "wopal_task": false,  // only wopal_task is disabled; wopal_output and wopal_cancel are kept for monitoring mode
+          },
         },
       })
 
@@ -295,7 +298,9 @@ describe("SimpleTaskManager", () => {
       expect(manager.getTask(result.taskId)?.status).toBe("cancelled")
     })
 
-    it("returns abort_failed when session.abort rejects", async () => {
+    it("still returns cancelled even when session.abort rejects", async () => {
+      // After the race condition fix, status is set before abort is called
+      // So abort failure doesn't affect the final status
       mockClient.session.abort.mockRejectedValueOnce(new Error("Abort failed"))
 
       const result = await manager.launch({
@@ -311,8 +316,8 @@ describe("SimpleTaskManager", () => {
 
       const cancelled = await manager.cancel(result.taskId, "parent-1")
 
-      expect(cancelled).toBe("abort_failed")
-      expect(manager.getTask(result.taskId)?.status).toBe("running")
+      expect(cancelled).toBe("cancelled")
+      expect(manager.getTask(result.taskId)?.status).toBe("cancelled")
     })
 
     it("rejects cancellation from a different parent session", async () => {
@@ -331,7 +336,9 @@ describe("SimpleTaskManager", () => {
       expect(mockClient.session.abort).not.toHaveBeenCalled()
     })
 
-    it("does not overwrite a task completed during abort race", async () => {
+    it("cancels task immediately, preventing race condition with completion", async () => {
+      // After the race condition fix, status is set to 'cancelled' BEFORE abort is called
+      // So markTaskCompletedBySession will not overwrite the status (it checks for 'running')
       const abortDeferred = createDeferred<void>()
       mockClient.session.abort.mockReturnValueOnce(abortDeferred.promise)
 
@@ -347,14 +354,17 @@ describe("SimpleTaskManager", () => {
       }
 
       const cancelPromise = manager.cancel(result.taskId, "parent-1")
+      // This should be ignored because task is no longer 'running'
       manager.markTaskCompletedBySession("child-session-1")
       abortDeferred.resolve(undefined)
 
-      await expect(cancelPromise).resolves.toBe("not_running")
-      expect(manager.getTask(result.taskId)?.status).toBe("completed")
+      await expect(cancelPromise).resolves.toBe("cancelled")
+      expect(manager.getTask(result.taskId)?.status).toBe("cancelled")
     })
 
-    it("does not overwrite a task errored during abort race", async () => {
+    it("cancels task immediately, preventing race condition with error", async () => {
+      // After the race condition fix, status is set to 'cancelled' BEFORE abort is called
+      // So markTaskErrorBySession will not overwrite the status
       const abortDeferred = createDeferred<void>()
       mockClient.session.abort.mockReturnValueOnce(abortDeferred.promise)
 
@@ -370,17 +380,17 @@ describe("SimpleTaskManager", () => {
       }
 
       const cancelPromise = manager.cancel(result.taskId, "parent-1")
+      // This should be ignored because task is no longer 'running'
       manager.markTaskErrorBySession("child-session-1", "Session failed")
       abortDeferred.resolve(undefined)
 
-      await expect(cancelPromise).resolves.toBe("not_running")
-      expect(manager.getTask(result.taskId)?.status).toBe("error")
-      expect(manager.getTask(result.taskId)?.error).toBe("Session failed")
+      await expect(cancelPromise).resolves.toBe("cancelled")
+      expect(manager.getTask(result.taskId)?.status).toBe("cancelled")
     })
   })
 
   describe("notifyParent", () => {
-    it("sends no-reply notification with updated status wording", async () => {
+    it("sends notification with task status", async () => {
       const result = await manager.launch({
         description: "Test task",
         prompt: "Do something",
@@ -394,14 +404,15 @@ describe("SimpleTaskManager", () => {
 
       await manager.notifyParent(result.taskId)
 
+      // Find the call that was made to the parent session (not the child)
       const call = mockClient.session.promptAsync.mock.calls.find(
-        (entry) => entry[0]?.body?.noReply === true,
+        (entry) => entry[0]?.path?.id === "parent-1",
       )
+      expect(call).toBeDefined()
       const notification = call?.[0]?.body?.parts?.[0]?.text as string
 
       expect(notification).toContain(result.taskId)
-      expect(notification).toContain("Use \`wopal_output")
-      expect(notification).toContain("to retrieve the result")
+      expect(notification).toContain("[WOPAL TASK")
     })
   })
 

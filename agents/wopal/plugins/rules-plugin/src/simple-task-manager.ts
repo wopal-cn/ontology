@@ -12,8 +12,8 @@ import {
   DEFAULT_MESSAGE_STALENESS_TIMEOUT_MS,
   MIN_RUNTIME_BEFORE_STALE_MS,
 } from "./stale-detector.js"
-import { classifyError } from "./error-classifier.js"
 import { ConcurrencyManager } from "./concurrency-manager.js"
+import { registerManagerForCleanup, unregisterManagerForCleanup } from "./process-cleanup.js"
 
 const defaultManagerLog = createDebugLog("[wopal-task]", "task")
 
@@ -23,6 +23,7 @@ const CLEANUP_INTERVAL_MS = 600_000 // 10 minutes
 const CLEANUP_MAX_AGE_MS = 3600_000 // 1 hour
 const TASK_TTL_MS = 1_800_000       // 30 minutes for non-terminal tasks
 const DEFAULT_CONCURRENCY_LIMIT = 3 // Default concurrent tasks
+const MAX_STALE_TIMEOUT_MS = 1_800_000 // 30 minutes
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
@@ -92,6 +93,18 @@ export class SimpleTaskManager {
       })
     }, 30_000)
     this.staleCheckInterval.unref()
+
+    // Register for process exit cleanup
+    registerManagerForCleanup(this)
+  }
+
+  private unregistered = false
+
+  /** Unregister from process cleanup (for disposal) */
+  unregisterFromCleanup(): void {
+    if (this.unregistered) return
+    this.unregistered = true
+    unregisterManagerForCleanup(this)
   }
 
   /** Get the working directory for this manager */
@@ -208,6 +221,9 @@ export class SimpleTaskManager {
         (input.timeout ?? DEFAULT_TIMEOUT_MS / 1000) * 1000,
         MAX_TIMEOUT_MS
       ),
+      staleTimeoutMs: input.staleTimeout
+        ? Math.min(input.staleTimeout * 1000, MAX_STALE_TIMEOUT_MS)
+        : undefined,
       concurrencyKey: this.CONCURRENCY_KEY,
     }
     this.tasks.set(taskId, task)
@@ -251,6 +267,10 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
       body: {
         agent: input.agent,
         parts: [{ type: "text", text: input.prompt }],
+        tools: {
+          "wopal_task": false,  // 禁止嵌套启动新任务
+          // wopal_output 和 wopal_cancel 保留可用，支持监工模式
+        },
       },
     })
 
@@ -337,7 +357,7 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
 
   async cancel(id: string, parentSessionID: string): Promise<CancelResult> {
     this.debugLog(`[cancel] requested: taskId=${id} parentSessionID=${parentSessionID}`)
-    
+
     const task = this.getTaskForParent(id, parentSessionID)
     if (!task) {
       this.debugLog(`[cancel] failed: taskId=${id} not found or ownership mismatch`)
@@ -348,28 +368,25 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
       return 'not_running'
     }
 
-    if (task.sessionID) {
-      if (typeof this.client.session?.abort === "function") {
-        try {
-          await this.client.session.abort({
-            path: { id: task.sessionID },
-          })
-        } catch (err) {
-          this.debugLog(`[cancel] failed: taskId=${id} abort error: ${toErrorMessage(err)}`)
-          return 'abort_failed'
-        }
-      }
-    }
-
-    if (task.status !== 'running') {
-      this.debugLog(`[cancel] failed: taskId=${id} status changed during abort`)
-      return 'not_running'
-    }
-
+    // 先设置状态，防止 abort 触发 session.idle 导致的竞态
     this.clearTimeoutTimer(task.id)
     this.releaseConcurrencySlot(task)
     task.status = 'cancelled'
     task.completedAt = new Date()
+    this.debugLog(`[cancel] status set to cancelled: taskId=${id}`)
+
+    // 然后调用 abort
+    if (task.sessionID && typeof this.client.session?.abort === "function") {
+      try {
+        await this.client.session.abort({
+          path: { id: task.sessionID },
+        })
+      } catch (err) {
+        this.debugLog(`[cancel] abort error (ignored, task already cancelled): ${toErrorMessage(err)}`)
+        // 不返回 abort_failed，因为任务已经被标记为 cancelled
+      }
+    }
+
     this.debugLog(`[cancel] success: taskId=${id}`)
     return 'cancelled'
   }
@@ -396,8 +413,8 @@ Use \`wopal_output(task_id="${task.id}")\` to retrieve the result.
     await this.client.session.promptAsync({
       path: { id: task.parentSessionID },
       body: {
-        noReply: true,
-        parts: [{ type: "text", text: notification }],
+        noReply: false,
+        parts: [{ type: "text", text: notification, synthetic: true }],
       },
     }).catch((err: unknown) => {
       this.debugLog(

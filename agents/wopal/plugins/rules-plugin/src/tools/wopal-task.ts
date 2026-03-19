@@ -22,6 +22,7 @@ export function createWopalTaskTool(manager: SimpleTaskManager): ToolDefinition 
       prompt: tool.schema.string().describe("Detailed instructions for the subagent"),
       agent: tool.schema.string().optional().default("general").describe("Agent type: 'general', 'explore', 'code-quality-reviewer', etc."),
       timeout: tool.schema.number().min(10).max(3600).optional().describe("Timeout in seconds (default: 300, max: 3600)"),
+      staleTimeout: tool.schema.number().min(30).max(1800).optional().describe("Stale timeout in seconds - interrupt if no activity (default: 180, max: 1800)"),
     },
     execute: async (args, context: ToolContext) => {
       if (!context.sessionID) {
@@ -37,6 +38,7 @@ export function createWopalTaskTool(manager: SimpleTaskManager): ToolDefinition 
         agent,
         parentSessionID: context.sessionID,
         ...(args.timeout !== undefined ? { timeout: args.timeout } : {}),
+        ...(args.staleTimeout !== undefined ? { staleTimeout: args.staleTimeout } : {}),
       })
 
       if (!result.ok) {
@@ -44,8 +46,11 @@ export function createWopalTaskTool(manager: SimpleTaskManager): ToolDefinition 
         return `Failed to launch task.\n${taskLine}Reason: ${result.error}`
       }
 
-      const timeoutInfo = args.timeout ? ` (timeout: ${args.timeout}s)` : ""
-      return `Task launched: ${result.taskId}\nStatus: ${result.status}${timeoutInfo}\n\nUse \`wopal_output(task_id="${result.taskId}")\` to check task status and retrieve results.`
+      const timeoutInfo = args.timeout ? ` timeout: ${args.timeout}s` : ""
+      const staleInfo = args.staleTimeout ? ` stale: ${args.staleTimeout}s` : ""
+      const infoParts = [timeoutInfo, staleInfo].filter(Boolean).join(",")
+      const infoStr = infoParts ? ` (${infoParts})` : ""
+      return `Task launched: ${result.taskId}\nStatus: ${result.status}${infoStr}\n\nUse \`wopal_output(task_id="${result.taskId}")\` to check task status and retrieve results.`
     },
   })
 }

@@ -22,11 +22,12 @@ export interface WopalTask {
   completedAt?: Date
   error?: string
   timeoutMs?: number
+  staleTimeoutMs?: number | undefined
   // Phase 3 additions
   startedAt?: Date
   progress?: TaskProgress
   errorCategory?: ErrorCategory
-  concurrencyKey?: string
+  concurrencyKey?: string | undefined
 }
 
 export interface LaunchInput {
@@ -35,6 +36,8 @@ export interface LaunchInput {
   agent: string
   parentSessionID: string
   timeout?: number
+  staleTimeout?: number
+  abortSignal?: AbortSignal
 }
 
 // Session message types for result extraction

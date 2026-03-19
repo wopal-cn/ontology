@@ -41,6 +41,8 @@ export function checkAndInterruptStaleTasks(args: {
       sessionStatus !== undefined && sessionStatus !== "idle"
     const runtime = now - task.startedAt.getTime()
 
+    const staleTimeoutMs = task.staleTimeoutMs ?? config.staleTimeoutMs
+
     // Case 1: No progress update since start (possibly stuck)
     if (!task.progress?.lastUpdate) {
       if (sessionIsRunning) continue
@@ -59,7 +61,7 @@ export function checkAndInterruptStaleTasks(args: {
     if (runtime < config.minRuntimeBeforeStaleMs) continue
 
     const timeSinceLastUpdate = now - task.progress.lastUpdate.getTime()
-    if (timeSinceLastUpdate <= config.staleTimeoutMs) continue
+    if (timeSinceLastUpdate <= staleTimeoutMs) continue
 
     const staleMinutes = Math.round(timeSinceLastUpdate / 60000)
     void onStale(task, `no activity for ${staleMinutes}min`)

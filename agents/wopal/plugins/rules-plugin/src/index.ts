@@ -9,17 +9,20 @@ import type { PluginInput } from "@opencode-ai/plugin";
 import { discoverRuleFiles } from "./utils.js";
 import { OpenCodeRulesRuntime } from "./runtime.js";
 import { createSessionStore, type SessionState } from "./session-store.js";
-import { createDebugLog } from "./debug.js";
+import { createDebugLog, createWarnLog } from "./debug.js";
 import { SimpleTaskManager } from "./simple-task-manager.js";
 import { createWopalTools } from "./tools/index.js";
 
 const sessionStore = createSessionStore();
 
 const debugLog = createDebugLog();
+const warnLog = createWarnLog("[wopal-plugin]");
 
 const openCodeRulesPlugin = async (pluginInput: PluginInput) => {
+  warnLog(`Plugin loaded! directory: ${pluginInput.directory}`);
   const ruleFiles = await discoverRuleFiles(pluginInput.directory);
   debugLog(`Discovered ${ruleFiles.length} rule file(s)`);
+  warnLog(`Tools registered: wopal_task, wopal_output, wopal_cancel`);
 
   const taskManager = new SimpleTaskManager(
     pluginInput.client,
