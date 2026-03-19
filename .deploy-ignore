@@ -27,6 +27,22 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Plugins specific (TypeScript plugins run directly by Bun)
+# - dist/ not needed: Bun natively supports TypeScript
+# - test files: development only
+# - dev configs: not needed in production
+dist/
+.test.ts
+.test.js
+docs/
+eslint.config.js
+vitest.config.ts
+tsconfig.json
+bun.lock
+validate-
+LICENSE
+README.md
+
 # Documentation (optional - uncomment if needed)
 # README.md
 # docs/
