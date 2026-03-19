@@ -6,9 +6,9 @@
 #   remove <pattern>       - Remove matching item
 #   list [priority]        - List items, optionally by priority
 #   summary                - Quick summary for heartbeat
-#   craft <name> [--deep] [--prd <path>] - Create structured plan template
-#   verify <pattern>       - Verify plan completeness (execution-grade)
-#   execute <pattern> [--fae] - Execute plan after verification
+#   craft <name> [--project <name> | --global] [--deep] [--prd <path>] - Create plan
+#   verify <pattern> [--project <name> | --global] - Verify plan completeness
+#   execute <pattern> [--project <name> | --global] [--fae] - Execute plan
 
 set -e
 
@@ -35,33 +35,15 @@ fi
 PLAN_FILE="${PLAN_FILE:-${ROOT_DIR:-.}/memory/PLAN.md}"
 DATE=$(date +%Y-%m-%d)
 
+# Global variable for project context (set by --project or --global)
+PLAN_PROJECT=""
+
 # ============================================
-# Project Detection & Path Resolution
+# Path Resolution
 # ============================================
-
-detect_project() {
-    local skill_path="$SCRIPT_DIR"
-
-    if [[ "$skill_path" == *"/projects/agent-tools/"* ]]; then
-        echo "agent-tools"
-        return
-    fi
-
-    if [[ "$skill_path" == *"/projects/wopal-cli/"* ]]; then
-        echo "wopal-cli"
-        return
-    fi
-
-    if [[ "$skill_path" =~ /projects/([^/]+)/ ]]; then
-        echo "${BASH_REMATCH[1]}"
-        return
-    fi
-
-    echo ""
-}
 
 resolve_plan_dir() {
-    local project="$(detect_project)"
+    local project="${PLAN_PROJECT:-}"
     if [[ -n "$project" ]]; then
         echo "${ROOT_DIR:-.}/docs/products/${project}/plans"
     else
@@ -88,6 +70,7 @@ resolve_plan_file() {
 
     if [[ ! -e "${matches[0]}" ]]; then
         echo "❌ No plan found matching: $input" >&2
+        echo "   Searched in: $plan_dir" >&2
         return 1
     fi
 
@@ -355,6 +338,7 @@ craft_plan() {
 
     local deep_mode=false
     local prd_path=""
+    local project_specified=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -366,6 +350,16 @@ craft_plan() {
                 prd_path="$2"
                 shift 2
                 ;;
+            --project)
+                PLAN_PROJECT="$2"
+                project_specified=true
+                shift 2
+                ;;
+            --global)
+                PLAN_PROJECT=""
+                project_specified=true
+                shift
+                ;;
             *)
                 echo "❌ Unknown argument: $1"
                 exit 1
@@ -375,7 +369,14 @@ craft_plan() {
 
     if [[ -z "$plan_name" ]]; then
         echo "❌ Plan name required"
-        echo "Usage: plan.sh craft <plan-name> [--deep] [--prd <prd-path>]"
+        echo "Usage: plan.sh craft <plan-name> [--project <name> | --global] [--deep] [--prd <prd-path>]"
+        exit 1
+    fi
+
+    if [[ "$project_specified" != true ]]; then
+        echo "⚠️ No project specified. Use --project <name> or --global"
+        echo "   --project <name>  Project-level plan in docs/products/<name>/plans/"
+        echo "   --global          Space-level plan in docs/products/plans/"
         exit 1
     fi
 
@@ -405,6 +406,24 @@ craft_plan() {
 # Verify plan completeness (execution-grade quality gate)
 verify_plan() {
     local pattern="$1"
+    shift
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project)
+                PLAN_PROJECT="$2"
+                shift 2
+                ;;
+            --global)
+                PLAN_PROJECT=""
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
     local plan_file
     plan_file="$(resolve_plan_file "$pattern")" || exit 1
 
@@ -517,11 +536,32 @@ verify_plan() {
 # Execute plan after verification
 execute_plan() {
     local pattern="$1"
-    local delegate_mode="$2"  # Optional: --fae
+    shift
+    local delegate_mode=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project)
+                PLAN_PROJECT="$2"
+                shift 2
+                ;;
+            --global)
+                PLAN_PROJECT=""
+                shift
+                ;;
+            --fae)
+                delegate_mode="--fae"
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
 
     if [[ -z "$pattern" ]]; then
         echo "❌ Plan name/pattern required"
-        echo "Usage: plan.sh execute <plan-name> [--fae]"
+        echo "Usage: plan.sh execute <plan-name> [--project <name> | --global] [--fae]"
         exit 1
     fi
 
@@ -529,7 +569,96 @@ execute_plan() {
     plan_file="$(resolve_plan_file "$pattern")" || exit 1
 
     # Run verification first
-    verify_plan "$pattern"
+    echo "🔍 Running verification..."
+    local verify_issues=0
+    local verify_warnings=0
+
+    # 1. Check for placeholders
+    local placeholder_found=""
+    if grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' "$plan_file" > /dev/null 2>&1; then
+        echo "❌ Found placeholders:"
+        grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' "$plan_file" | head -5
+        ((verify_issues++))
+        placeholder_found="yes"
+    else
+        echo "✅ No placeholders"
+    fi
+
+    # 2. Check for unclosed HTML comments
+    if grep -n '<!--' "$plan_file" | grep -v '<!--.*-->' > /dev/null 2>&1; then
+        echo "❌ Found unclosed HTML comments"
+        ((verify_issues++))
+    elif [[ -z "$placeholder_found" ]]; then
+        echo "✅ No HTML comment placeholders"
+    fi
+
+    # 3. PRD must exist and be valid
+    local prd_path
+    prd_path="$(grep -m1 '^\- \*\*PRD\*\*:' "$plan_file" | sed -E 's/^.*`([^`]+)`.*$/\1/')"
+    if [[ -z "$prd_path" || "$prd_path" == *"待关联"* || ! -f "${ROOT_DIR:-.}/$prd_path" ]]; then
+        echo "❌ Missing or invalid PRD reference: ${prd_path:-<none>}"
+        ((verify_issues++))
+    else
+        echo "✅ PRD linked: $prd_path"
+    fi
+
+    # 4. Required sections
+    for section in "## 目标" "## In Scope" "## Out of Scope" "## 文件清单" "## 实施步骤" "## 验收标准"; do
+        if grep -q "$section" "$plan_file"; then
+            echo "✅ $section"
+        else
+            echo "❌ Missing section: $section"
+            ((verify_issues++))
+        fi
+    done
+
+    # 5. File list must not be empty
+    if ! grep -A 5 '^## 文件清单' "$plan_file" | grep -q '\- `'; then
+        echo "❌ Empty file list"
+        ((verify_issues++))
+    else
+        echo "✅ File list populated"
+    fi
+
+    # 6. Tasks must exist
+    local task_count
+    task_count="$(grep -c '^### Task ' "$plan_file" || true)"
+    if [[ "${task_count:-0}" -eq 0 ]]; then
+        echo "❌ No tasks found"
+        ((verify_issues++))
+    else
+        echo "✅ Task count: $task_count"
+    fi
+
+    # 7. Each task must have PRD requirement mapping and verification command
+    local prd_req_count verify_cmd_count
+    prd_req_count="$(grep -c '^\*\*关联 PRD 需求\*\*:' "$plan_file" || true)"
+    verify_cmd_count="$(grep -c '^\*\*验证\*\*:' "$plan_file" || true)"
+
+    if [[ "${task_count:-0}" -gt 0 ]]; then
+        if [[ "${prd_req_count:-0}" -lt "${task_count:-0}" ]]; then
+            echo "❌ Some tasks are missing PRD requirement mapping ($prd_req_count/$task_count)"
+            ((verify_issues++))
+        else
+            echo "✅ All tasks map to PRD requirements"
+        fi
+
+        if [[ "${verify_cmd_count:-0}" -lt "${task_count:-0}" ]]; then
+            echo "❌ Some tasks are missing verification commands ($verify_cmd_count/$task_count)"
+            ((verify_issues++))
+        else
+            echo "✅ All tasks have verification commands"
+        fi
+    fi
+
+    if [[ $verify_issues -gt 0 ]]; then
+        echo ""
+        echo "❌ Plan failed verification ($verify_issues issues)"
+        exit 1
+    fi
+
+    echo ""
+    echo "✅ Verification passed"
 
     # Update status to executing
     if grep -q '^\- \*\*Status\*\*:' "$plan_file"; then
@@ -569,10 +698,12 @@ case "$1" in
         craft_plan "$@"
         ;;
     verify)
-        verify_plan "$2"
+        shift
+        verify_plan "$@"
         ;;
     execute)
-        execute_plan "$2" "$3"
+        shift
+        execute_plan "$@"
         ;;
     *)
         echo "Usage: plan.sh <command> [args]"
@@ -581,9 +712,19 @@ case "$1" in
         echo "  remove <pattern>       - Remove matching item"
         echo "  list [priority]        - List items"
         echo "  summary                - Quick summary"
-        echo "  craft <name> [--deep] [--prd <path>] - Create plan template"
-        echo "  verify <pattern>       - Verify plan completeness"
-        echo "  execute <pattern> [--fae] - Execute plan after verification"
+        echo ""
+        echo "  craft <name> [--project <name> | --global] [--deep] [--prd <path>]"
+        echo "      Create plan template"
+        echo "      --project <name>  Project-level plan"
+        echo "      --global          Space-level plan"
+        echo "      --deep            Deep analysis mode"
+        echo "      --prd <path>      Link to PRD file"
+        echo ""
+        echo "  verify <pattern> [--project <name> | --global]"
+        echo "      Verify plan completeness"
+        echo ""
+        echo "  execute <pattern> [--project <name> | --global] [--fae]"
+        echo "      Execute plan after verification"
         exit 1
         ;;
 esac

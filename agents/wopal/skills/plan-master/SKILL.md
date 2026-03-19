@@ -25,6 +25,8 @@ description: ⚠️ MUST USE for task/plan tracking (never edit PLAN.md directly
 | `verify` | 验证计划 | "verify plan" |
 | `execute` | 执行计划 | "execute plan", "执行计划" |
 
+**注意**：`craft`/`verify`/`execute` 必须指定 `--project <name>` 或 `--global`。
+
 ---
 
 ## 任务管理
@@ -92,6 +94,22 @@ bash skills/plan-master/scripts/plan.sh summary
 craft → verify → execute → done
 ```
 
+### ⚠️ 项目定位规则（重要）
+
+在创建计划前，**必须先确定目标项目**。
+
+**定位逻辑**：
+
+| 用户指令 | 项目定位 |
+|----------|----------|
+| "给 <project> 创建计划" | 指定的项目 |
+| "空间级计划" / "全局计划" | 空间级（无项目） |
+| 未指定项目 | **必须先询问用户** |
+
+**可用项目**：参考 `.workspace.md` 中的 `projects/` 目录结构。
+
+**禁止行为**：不要猜测项目，用户未指定时必须询问。
+
 ### 创建计划
 
 #### 轻量模式（简单任务）
@@ -99,7 +117,9 @@ craft → verify → execute → done
 当用户说："craft plan", "create plan", "制定方案"
 
 ```bash
-bash skills/plan-master/scripts/plan.sh craft "plan-name"
+bash skills/plan-master/scripts/plan.sh craft "plan-name" --project <project>
+# 或空间级计划
+bash skills/plan-master/scripts/plan.sh craft "plan-name" --global
 ```
 
 #### 深度模式（复杂功能）
@@ -107,7 +127,7 @@ bash skills/plan-master/scripts/plan.sh craft "plan-name"
 当用户说："plan feature", "深度规划", "analyze and plan"
 
 ```bash
-bash skills/plan-master/scripts/plan.sh craft "feature-name" --deep --prd "docs/products/PRD-xxx.md"
+bash skills/plan-master/scripts/plan.sh craft "feature-name" --project <project> --deep --prd "docs/products/PRD-xxx.md"
 ```
 
 **参数说明**：
@@ -115,48 +135,36 @@ bash skills/plan-master/scripts/plan.sh craft "feature-name" --deep --prd "docs/
 | 参数 | 说明 |
 |------|------|
 | `<plan-name>` | 计划名称（必需） |
+| `--project <name>` | 项目级计划，存放在 `docs/products/<name>/plans/` |
+| `--global` | 空间级计划，存放在 `docs/products/plans/` |
 | `--deep` | 深度分析模式，从代码库收集情报 |
 | `--prd <path>` | 关联 PRD 文件，如 `docs/products/PRD-xxx.md` |
-
-**计划文件位置**：根据技能所在项目自动推断
-- `projects/agent-tools/agents/wopal/skills/plan-master/` → `docs/products/agent-tools/plans/`
-- `projects/wopal-cli/skills/xxx/` → `docs/products/wopal-cli/plans/`
-- 空间级技能 → `docs/products/plans/`
 
 ### 验证计划
 
 当用户说："verify plan", "验证计划"
 
 ```bash
-bash skills/plan-master/scripts/plan.sh verify "plan-name"
+bash skills/plan-master/scripts/plan.sh verify "plan-name" --project <project>
+# 或空间级计划
+bash skills/plan-master/scripts/plan.sh verify "plan-name" --global
 ```
-
-**验证项**：
-
-| 检查项 | 通过标准 |
-|--------|----------|
-| 占位符 | 无 TODO/FIXME/待补充/REQ-xxx/path/to/ |
-| PRD 关联 | 必须存在有效 PRD 引用 |
-| 必需章节 | 目标/In Scope/Out of Scope/文件清单/实施步骤/验收标准 |
-| 文件清单 | 非空，包含具体文件路径 |
-| 任务定义 | 至少包含一个 Task |
-| PRD 需求映射 | 每个 Task 都有关联 PRD 需求 |
-| 验证命令 | 每个 Task 都有验证命令 |
-| 粒度检查 | Step 数量 ≥ Task 数量（启发式） |
 
 ### 执行计划
 
 当用户说："execute plan", "执行计划"
 
 ```bash
-bash skills/plan-master/scripts/plan.sh execute "plan-name"
+bash skills/plan-master/scripts/plan.sh execute "plan-name" --project <project>
+# 或空间级计划
+bash skills/plan-master/scripts/plan.sh execute "plan-name" --global
 ```
 
 先执行 `verify`，通过后将状态更新为 `executing`。
 
 **未来扩展**：
 ```bash
-bash skills/plan-master/scripts/plan.sh execute "plan-name" --fae  # 委派给 fae
+bash skills/plan-master/scripts/plan.sh execute "plan-name" --project <project> --fae  # 委派给 fae
 ```
 
 ---
