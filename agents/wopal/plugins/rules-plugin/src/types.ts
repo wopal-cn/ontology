@@ -1,4 +1,14 @@
-export type WopalTaskStatus = 'pending' | 'running' | 'completed' | 'error' | 'cancelled'
+export type WopalTaskStatus = 'pending' | 'running' | 'completed' | 'error' | 'cancelled' | 'interrupt'
+
+export type ErrorCategory = 'timeout' | 'crash' | 'network' | 'cancelled' | 'unknown'
+
+export interface TaskProgress {
+  toolCalls: number
+  lastTool?: string
+  lastUpdate: Date
+  lastMessage?: string
+  lastMessageAt?: Date
+}
 
 export interface WopalTask {
   id: string
@@ -12,6 +22,11 @@ export interface WopalTask {
   completedAt?: Date
   error?: string
   timeoutMs?: number
+  // Phase 3 additions
+  startedAt?: Date
+  progress?: TaskProgress
+  errorCategory?: ErrorCategory
+  concurrencyKey?: string
 }
 
 export interface LaunchInput {

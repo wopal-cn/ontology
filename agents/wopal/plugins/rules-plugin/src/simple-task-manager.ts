@@ -6,6 +6,14 @@ import type {
 } from "./types.js"
 import type { DebugLog } from "./debug.js"
 import { createDebugLog } from "./debug.js"
+import {
+  checkAndInterruptStaleTasks,
+  DEFAULT_STALE_TIMEOUT_MS,
+  DEFAULT_MESSAGE_STALENESS_TIMEOUT_MS,
+  MIN_RUNTIME_BEFORE_STALE_MS,
+} from "./stale-detector.js"
+import { classifyError } from "./error-classifier.js"
+import { ConcurrencyManager } from "./concurrency-manager.js"
 
 const defaultManagerLog = createDebugLog("[wopal-task]", "task")
 
@@ -13,6 +21,8 @@ const DEFAULT_TIMEOUT_MS = 300_000  // 5 minutes
 const MAX_TIMEOUT_MS = 3_600_000    // 1 hour
 const CLEANUP_INTERVAL_MS = 600_000 // 10 minutes
 const CLEANUP_MAX_AGE_MS = 3600_000 // 1 hour
+const TASK_TTL_MS = 1_800_000       // 30 minutes for non-terminal tasks
+const DEFAULT_CONCURRENCY_LIMIT = 3 // Default concurrent tasks
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
@@ -48,6 +58,10 @@ export class SimpleTaskManager {
   private debugLog: DebugLog
   private timeoutTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private cleanupInterval: ReturnType<typeof setInterval> | undefined = undefined
+  private staleCheckInterval: ReturnType<typeof setInterval> | undefined = undefined
+  private concurrency = new ConcurrencyManager()
+  private readonly CONCURRENCY_KEY = 'default'
+  private isShuttingDown = false
 
   constructor(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,6 +78,20 @@ export class SimpleTaskManager {
       this.cleanup(CLEANUP_MAX_AGE_MS)
     }, CLEANUP_INTERVAL_MS)
     this.cleanupInterval.unref()
+
+    // Setup stale task detection (every 30 seconds)
+    this.staleCheckInterval = setInterval(() => {
+      checkAndInterruptStaleTasks({
+        tasks: this.tasks.values(),
+        config: {
+          staleTimeoutMs: DEFAULT_STALE_TIMEOUT_MS,
+          messageStalenessMs: DEFAULT_MESSAGE_STALENESS_TIMEOUT_MS,
+          minRuntimeBeforeStaleMs: MIN_RUNTIME_BEFORE_STALE_MS,
+        },
+        onStale: (task, reason) => this.interruptStaleTask(task, reason),
+      })
+    }, 30_000)
+    this.staleCheckInterval.unref()
   }
 
   /** Get the working directory for this manager */
@@ -83,14 +111,70 @@ export class SimpleTaskManager {
       clearInterval(this.cleanupInterval)
     }
     this.cleanupInterval = undefined
+    if (this.staleCheckInterval) {
+      clearInterval(this.staleCheckInterval)
+    }
+    this.staleCheckInterval = undefined
     for (const timer of this.timeoutTimers.values()) {
       clearTimeout(timer)
     }
     this.timeoutTimers.clear()
   }
 
+  /** Graceful shutdown: stop all tasks and cleanup */
+  async shutdown(): Promise<void> {
+    if (this.isShuttingDown) return
+    this.isShuttingDown = true
+
+    this.debugLog('[shutdown] initiating graceful shutdown')
+
+    // 1. Stop all timers
+    this.dispose()
+
+    // 2. Cancel all waiting tasks in concurrency queue
+    this.concurrency.clear()
+
+    // 3. Abort all running tasks
+    const runningTasks = Array.from(this.tasks.values()).filter(
+      (t) => t.status === 'running'
+    )
+
+    for (const task of runningTasks) {
+      this.debugLog(`[shutdown] aborting task: ${task.id}`)
+      this.releaseConcurrencySlot(task)
+      await this.abortSession(task.sessionID)
+      task.status = 'interrupt'
+      task.error = 'Shutdown: task interrupted'
+      task.completedAt = new Date()
+    }
+
+    // 4. Wait for all tasks to reach terminal state (max 5 seconds)
+    await this.waitForTerminalState(5000)
+
+    this.debugLog('[shutdown] completed')
+  }
+
+  private async waitForTerminalState(timeoutMs: number): Promise<void> {
+    const start = Date.now()
+    while (Date.now() - start < timeoutMs) {
+      const hasRunning = Array.from(this.tasks.values()).some(
+        (t) => t.status === 'running'
+      )
+      if (!hasRunning) break
+      await new Promise((r) => setTimeout(r, 100))
+    }
+  }
+
   async launch(input: LaunchInput): Promise<LaunchOutput> {
     this.debugLog(`[launch] starting: description="${input.description}" agent="${input.agent}" timeout=${input.timeout ?? 300}s parentSessionID=${input.parentSessionID}`)
+
+    // Acquire concurrency slot first
+    try {
+      await this.concurrency.acquire(this.CONCURRENCY_KEY, DEFAULT_CONCURRENCY_LIMIT)
+    } catch (err) {
+      this.debugLog(`[launch] concurrency acquire failed: ${err}`)
+      return { ok: false, status: 'error', error: 'Concurrency queue cancelled' }
+    }
 
     if (!input.parentSessionID) {
       this.debugLog(`[launch] failed: parent session ID is required`)
@@ -124,6 +208,7 @@ export class SimpleTaskManager {
         (input.timeout ?? DEFAULT_TIMEOUT_MS / 1000) * 1000,
         MAX_TIMEOUT_MS
       ),
+      concurrencyKey: this.CONCURRENCY_KEY,
     }
     this.tasks.set(taskId, task)
 
@@ -179,6 +264,8 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
     }
 
     task.status = 'running'
+    task.startedAt = new Date()
+    task.progress = { toolCalls: 0, lastUpdate: new Date() }
     this.scheduleTimeoutCheck(task.id, task.timeoutMs ?? DEFAULT_TIMEOUT_MS)
 
     void Promise.resolve(promptResult).catch(async (err: unknown) => {
@@ -224,6 +311,7 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
     }
 
     this.clearTimeoutTimer(task.id)
+    this.releaseConcurrencySlot(task)
     task.status = 'completed'
     task.completedAt = new Date()
     this.debugLog(`[markCompleted] taskId=${task.id} sessionID=${sessionID}`)
@@ -279,6 +367,7 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
     }
 
     this.clearTimeoutTimer(task.id)
+    this.releaseConcurrencySlot(task)
     task.status = 'cancelled'
     task.completedAt = new Date()
     this.debugLog(`[cancel] success: taskId=${id}`)
@@ -322,26 +411,48 @@ Use \`wopal_output(task_id="${task.id}")\` to retrieve the result.
   cleanup(maxAgeMs = 3600_000): void {
     const now = Date.now()
     let cleanedCount = 0
+
     for (const [id, task] of this.tasks) {
-      if (task.completedAt && now - task.completedAt.getTime() > maxAgeMs) {
+      // Terminal tasks: remove after maxAgeMs
+      if (['completed', 'error', 'cancelled', 'interrupt'].includes(task.status)) {
+        if (task.completedAt && now - task.completedAt.getTime() > maxAgeMs) {
+          this.tasks.delete(id)
+          if (task.sessionID) {
+            this.sessionToTask.delete(task.sessionID)
+          }
+          cleanedCount++
+        }
+        continue
+      }
+
+      // Non-terminal tasks: check for TTL timeout
+      const timestamp = task.status === 'pending'
+        ? task.createdAt?.getTime()
+        : task.startedAt?.getTime()
+
+      if (timestamp && now - timestamp > TASK_TTL_MS) {
+        this.releaseConcurrencySlot(task)
         this.tasks.delete(id)
         if (task.sessionID) {
           this.sessionToTask.delete(task.sessionID)
         }
         cleanedCount++
+        this.debugLog(`[cleanup] pruned stale ${task.status} task: ${id}`)
       }
     }
+
     if (cleanedCount > 0) {
       this.debugLog(`[cleanup] removed ${cleanedCount} old task(s)`)
     }
   }
 
   private failTask(task: WopalTask, error: string): boolean {
-    if (task.status === 'completed' || task.status === 'cancelled' || task.status === 'error') {
+    if (['completed', 'cancelled', 'error', 'interrupt'].includes(task.status)) {
       this.debugLog(`[failTask] skipped: taskId=${task.id} status=${task.status} (already terminal)`)
       return false
     }
 
+    this.releaseConcurrencySlot(task)
     task.status = 'error'
     task.error = error
     task.completedAt = task.completedAt ?? new Date()
@@ -375,8 +486,10 @@ Use \`wopal_output(task_id="${task.id}")\` to retrieve the result.
       this.timeoutTimers.delete(taskId)
 
       // Set status BEFORE abort to prevent race with promptAsync.catch and session.error
+      this.releaseConcurrencySlot(task)
       task.status = 'error'
       task.error = `Task timed out after ${timeoutMs / 1000} seconds`
+      task.errorCategory = 'timeout'
       task.completedAt = new Date()
 
       this.debugLog(`[timeout] triggered: taskId=${taskId} after ${timeoutMs / 1000}s`)
@@ -395,5 +508,26 @@ Use \`wopal_output(task_id="${task.id}")\` to retrieve the result.
       this.timeoutTimers.delete(taskId)
       this.debugLog(`[timeout] cleared: taskId=${taskId}`)
     }
+  }
+
+  private releaseConcurrencySlot(task: WopalTask): void {
+    if (task.concurrencyKey) {
+      this.concurrency.release(task.concurrencyKey)
+      task.concurrencyKey = undefined
+    }
+  }
+
+  private async interruptStaleTask(task: WopalTask, reason: string): Promise<void> {
+    this.debugLog(`[stale] interrupting taskId=${task.id}: ${reason}`)
+
+    this.clearTimeoutTimer(task.id)
+    this.releaseConcurrencySlot(task)
+    task.status = 'error'
+    task.error = `Stale timeout (${reason})`
+    task.errorCategory = 'timeout'
+    task.completedAt = new Date()
+
+    await this.abortSession(task.sessionID)
+    await this.notifyParent(task.id)
   }
 }
