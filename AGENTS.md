@@ -97,6 +97,13 @@ wopal skills install /absolute/path/to/skill
 | 更新技能 | 修改源码 → 加载 skill-master → 重新安装 |
 | 部署技能 | 加载 skill-master → 选择正确参数 |
 
+### 技能安装归属
+
+| 源码路径 | 安装命令 |
+|----------|----------|
+| `skills/<name>/` | `wopal skills install <path>` |
+| `agents/<agent>/skills/<name>/` | `wopal skills install --agent <agent> <path>` |
+
 ### 代码风格
 
 - Markdown：LF 换行
