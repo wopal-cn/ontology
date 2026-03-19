@@ -1,4 +1,0 @@
-[submodule "skills/download/openclaw/openclaw-security-monitor"]
-	path = skills/download/openclaw/openclaw-security-monitor
-	url = https://github.com/adibirzu/openclaw-security-monitor.git
-	branch = main
