@@ -116,6 +116,28 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
         }
       } else if (task.status === 'error') {
         result += `\nError: ${task.error}`
+
+        // 获取消息内容以便诊断失败原因
+        if (task.sessionID) {
+          const client = manager.getClient()
+          if (typeof client.session?.messages === "function") {
+            try {
+              const messagesResult = await client.session.messages({
+                path: { id: task.sessionID },
+              })
+              const error = getErrorMessage(messagesResult)
+              if (!error) {
+                const messages = extractMessages(messagesResult)
+                const content = extractAssistantContent(messages)
+                if (content) {
+                  result += `\n\n---\n**Last output:**\n${content}`
+                }
+              }
+            } catch {
+              // 忽略错误，保留基本信息
+            }
+          }
+        }
       } else if (task.status === 'running' && task.sessionID) {
         // Enhanced: fetch messages and analyze progress
         const client = manager.getClient()

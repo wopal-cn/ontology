@@ -88,6 +88,38 @@ cd agents/wopal/plugins/rules-plugin
 bun install && bun run build && bun test
 ```
 
+## 插件
+
+### rules-plugin
+
+OpenCode 规则注入 + 非阻塞任务委派。
+
+**功能**：
+- 自动发现 `.md` 规则文件并注入系统提示词
+- `wopal_task` — 启动后台任务
+- `wopal_output` — 查询任务状态和结果
+- `wopal_cancel` — 取消运行中任务
+
+**使用示例**：
+```typescript
+wopal_task({
+  description: "实现登录功能",
+  prompt: "在 /project/src/auth.ts 中...",
+  agent: "general"
+})
+```
+
+**参数**：
+| 参数 | 说明 |
+|------|------|
+| `timeout` | 超时秒数（默认 300，最大 3600） |
+| `staleTimeout` | 无活动超时秒数（默认 180，最大 1800） |
+
+**注意事项**：
+- 启动后等待 `[WOPAL TASK COMPLETED]` 通知，不要轮询
+- 长测试任务设置 `staleTimeout: 600` 避免误杀
+- 详细文档见 `docs/ai-references/fae/wopal-task-tools.md`
+
 ## 文档
 
 - [AGENTS.md](AGENTS.md) — 完整开发规范与架构说明

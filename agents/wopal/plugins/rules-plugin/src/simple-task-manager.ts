@@ -24,6 +24,9 @@ const CLEANUP_MAX_AGE_MS = 3600_000 // 1 hour
 const TASK_TTL_MS = 1_800_000       // 30 minutes for non-terminal tasks
 const DEFAULT_CONCURRENCY_LIMIT = 3 // Default concurrent tasks
 const MAX_STALE_TIMEOUT_MS = 1_800_000 // 30 minutes
+// Progress notification thresholds
+const PROGRESS_NOTIFY_MESSAGE_THRESHOLD = 20  // Notify after 20 new messages
+const PROGRESS_NOTIFY_TIME_THRESHOLD_MS = 180_000  // 3 minutes
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
@@ -91,6 +94,8 @@ export class SimpleTaskManager {
         },
         onStale: (task, reason) => this.interruptStaleTask(task, reason),
       })
+      // Also check for progress notifications
+      this.checkProgressNotifications()
     }, 30_000)
     this.staleCheckInterval.unref()
 
@@ -423,6 +428,67 @@ Use \`wopal_output(task_id="${task.id}")\` to retrieve the result.
     })
 
     this.debugLog(`[notifyParent] success: taskId=${taskId}`)
+  }
+
+  private async checkProgressNotifications(): Promise<void> {
+    const runningTasks = Array.from(this.tasks.values()).filter(t => t.status === 'running')
+    
+    for (const task of runningTasks) {
+      if (!task.sessionID) continue
+      
+      try {
+        const messagesResult = await this.client.session?.messages?.({
+          path: { id: task.sessionID },
+        })
+        
+        if (!messagesResult?.data) continue
+        
+        const messageCount = messagesResult.data.length
+        const now = new Date()
+        const lastNotifyCount = task.lastNotifyMessageCount ?? 0
+        
+        // 用 startedAt 作为第一次通知的时间基准
+        const referenceTime = lastNotifyCount > 0 
+          ? (task.lastNotifyTime?.getTime() ?? 0)
+          : (task.startedAt?.getTime() ?? 0)
+        const messageDelta = messageCount - lastNotifyCount
+        const timeDelta = now.getTime() - referenceTime
+        
+        if (messageDelta >= PROGRESS_NOTIFY_MESSAGE_THRESHOLD || 
+            (referenceTime > 0 && timeDelta >= PROGRESS_NOTIFY_TIME_THRESHOLD_MS)) {
+          await this.sendProgressNotification(task, messageCount)
+          task.lastNotifyMessageCount = messageCount
+          task.lastNotifyTime = now
+        }
+      } catch (err) {
+        this.debugLog(`[progressNotify] error for ${task.id}: ${toErrorMessage(err)}`)
+      }
+    }
+  }
+
+  private async sendProgressNotification(task: WopalTask, messageCount: number): Promise<void> {
+    if (typeof this.client.session?.promptAsync !== "function") return
+
+    const notification = `<system-reminder>
+[WOPAL TASK PROGRESS]
+**ID:** \`${task.id}\`
+**Description:** ${task.description}
+**Progress:** ${messageCount} messages
+
+Task is still running. Use \`wopal_output(task_id="${task.id}")\` for details.
+</system-reminder>`
+
+    await this.client.session.promptAsync({
+      path: { id: task.parentSessionID },
+      body: {
+        noReply: true,
+        parts: [{ type: "text", text: notification, synthetic: true }],
+      },
+    }).catch((err: unknown) => {
+      this.debugLog(`[progressNotify] send error: ${toErrorMessage(err)}`)
+    })
+
+    this.debugLog(`[progressNotify] sent: taskId=${task.id} messages=${messageCount}`)
   }
 
   cleanup(maxAgeMs = 3600_000): void {

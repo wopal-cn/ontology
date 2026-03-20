@@ -28,6 +28,9 @@ export interface WopalTask {
   progress?: TaskProgress
   errorCategory?: ErrorCategory
   concurrencyKey?: string | undefined
+  // Progress notification tracking
+  lastNotifyMessageCount?: number
+  lastNotifyTime?: Date
 }
 
 export interface LaunchInput {
