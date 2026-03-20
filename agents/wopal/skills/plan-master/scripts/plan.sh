@@ -6,9 +6,10 @@
 #   remove <pattern>       - Remove matching item
 #   list [priority]        - List items, optionally by priority
 #   summary                - Quick summary for heartbeat
-#   craft <name> [--project <name> | --global] [--deep] [--prd <path>] - Create plan
-#   verify <pattern> [--project <name> | --global] - Verify plan completeness
-#   execute <pattern> [--project <name> | --global] [--fae] - Execute plan
+#   craft <name> [--project <name> | --global] [--issue <N>] - Create plan draft
+#   refine <pattern> [--project <name> | --global] - Research and refine plan
+#   review <pattern> [--project <name> | --global] - Review and confirm plan
+#   execute <pattern> [--project <name> | --global] [--fae] [--worktree] - Execute plan
 
 set -e
 
@@ -107,6 +108,53 @@ update_plan_status() {
         update_date
         echo "📋 PLAN.md status updated: $new_status"
     fi
+}
+
+# Sync Issue Label based on plan status
+# Usage: sync_issue_label <plan_file> <status>
+# status: executing -> status/in-progress
+#         completed -> status/in-review
+#         validated -> status/done
+sync_issue_label() {
+    local plan_file="$1"
+    local new_status="$2"
+
+    # Extract Issue number from plan metadata
+    local issue_number=""
+    local issue_line
+    issue_line="$(grep -m1 '^\- \*\*Issue\*\*:' "$plan_file")"
+    if [[ "$issue_line" =~ \#([0-9]+) ]]; then
+        issue_number="${BASH_REMATCH[1]}"
+    fi
+
+    if [[ -z "$issue_number" ]]; then
+        return 0  # No Issue linked, skip
+    fi
+
+    # Map plan status to Issue label
+    local label=""
+    case "$new_status" in
+        executing) label="status/in-progress" ;;
+        completed) label="status/in-review" ;;
+        validated) label="status/done" ;;
+        *) return 0 ;;
+    esac
+
+    # Check if gh CLI is available
+    if ! command -v gh &> /dev/null; then
+        echo "⚠️ gh CLI not available, skipping Issue label sync"
+        return 0
+    fi
+
+    # Remove old status labels and add new one
+    local old_labels="status/planning status/in-progress status/in-review status/blocked"
+    for old_label in $old_labels; do
+        gh issue edit "$issue_number" --remove-label "$old_label" 2>/dev/null || true
+    done
+
+    gh issue edit "$issue_number" --add-label "$label" 2>/dev/null && \
+        echo "🏷️ Issue #$issue_number label updated: $label" || \
+        echo "⚠️ Failed to update Issue #$issue_number label"
 }
 
 # ============================================
@@ -305,6 +353,20 @@ create_plan_template() {
     local plan_name="$2"
     local prd_path="$3"
     local deep_mode="$4"
+    local issue_number="$5"
+    local target_project="$6"
+
+    # Build Issue line
+    local issue_line=""
+    if [[ -n "$issue_number" ]]; then
+        issue_line="- **Issue**: #${issue_number}"
+    fi
+
+    # Build Target Project line
+    local project_line=""
+    if [[ -n "$target_project" ]]; then
+        project_line="- **Target Project**: ${target_project}"
+    fi
 
     cat > "$plan_file" << EOF
 # ${plan_name}
@@ -312,7 +374,7 @@ create_plan_template() {
 ## 元数据
 
 - **PRD**: \`${prd_path:-待关联（执行前必填）}\`
-- **Created**: $(date +%Y-%m-%d)
+${issue_line}${project_line}- **Created**: $(date +%Y-%m-%d)
 - **Status**: draft
 - **Mode**: $( [[ "$deep_mode" == true ]] && echo "deep" || echo "lite" )
 
@@ -393,6 +455,7 @@ craft_plan() {
     local project_specified=false
     local priority="medium"
     local no_track=false
+    local issue_number=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -422,6 +485,10 @@ craft_plan() {
                 no_track=true
                 shift
                 ;;
+            --issue)
+                issue_number="$2"
+                shift 2
+                ;;
             *)
                 echo "❌ Unknown argument: $1"
                 exit 1
@@ -431,7 +498,7 @@ craft_plan() {
 
     if [[ -z "$plan_name" ]]; then
         echo "❌ Plan name required"
-        echo "Usage: plan.sh craft <plan-name> [--project <name> | --global] [--deep] [--prd <prd-path>]"
+        echo "Usage: plan.sh craft <plan-name> [--project <name> | --global] [--deep] [--prd <prd-path>] [--issue <N>]"
         exit 1
     fi
 
@@ -460,8 +527,15 @@ craft_plan() {
         exit 1
     fi
 
-    create_plan_template "$plan_file" "$plan_name" "$prd_path" "$deep_mode"
+    # Target project is the same as PLAN_PROJECT for project-level plans
+    local target_project="$PLAN_PROJECT"
+
+    create_plan_template "$plan_file" "$plan_name" "$prd_path" "$deep_mode" "$issue_number" "$target_project"
     echo "✅ Created plan: $plan_file"
+
+    if [[ -n "$issue_number" ]]; then
+        echo "🔗 Linked to Issue: #${issue_number}"
+    fi
 
     if [[ "$deep_mode" == true ]]; then
         echo "📋 Deep mode: continue filling this file using the analysis checklist in SKILL.md"
@@ -474,8 +548,8 @@ craft_plan() {
     fi
 }
 
-# Verify plan completeness (execution-grade quality gate)
-verify_plan() {
+# Check plan document completeness (execution-grade quality gate)
+check_doc_plan() {
     local pattern="$1"
     shift
 
@@ -652,6 +726,7 @@ execute_plan() {
     local pattern="$1"
     shift
     local delegate_mode=""
+    local use_worktree=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -667,6 +742,10 @@ execute_plan() {
                 delegate_mode="--fae"
                 shift
                 ;;
+            --worktree)
+                use_worktree=true
+                shift
+                ;;
             *)
                 shift
                 ;;
@@ -675,147 +754,24 @@ execute_plan() {
 
     if [[ -z "$pattern" ]]; then
         echo "❌ Plan name/pattern required"
-        echo "Usage: plan.sh execute <plan-name> [--project <name> | --global] [--fae]"
+        echo "Usage: plan.sh execute <plan-name> [--project <name> | --global] [--fae] [--worktree]"
         exit 1
     fi
 
     local plan_file
     plan_file="$(resolve_plan_file "$pattern")" || exit 1
 
-    # Run verification first
-    echo "🔍 Running verification..."
-    local verify_issues=0
-    local verify_warnings=0
+    local current_status
+    current_status=$(grep '^\- \*\*Status\*\*:' "$plan_file" | sed 's/^.*: //')
 
-    # 1. Check for placeholders
-    local placeholder_found=""
-    if grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' "$plan_file" > /dev/null 2>&1; then
-        echo "❌ Found placeholders:"
-        grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' "$plan_file" | head -5
-        ((verify_issues++))
-        placeholder_found="yes"
-    else
-        echo "✅ No placeholders"
-    fi
-
-    # 2. Check for unclosed HTML comments
-    if grep -n '<!--' "$plan_file" | grep -v '<!--.*-->' > /dev/null 2>&1; then
-        echo "❌ Found unclosed HTML comments"
-        ((verify_issues++))
-    elif [[ -z "$placeholder_found" ]]; then
-        echo "✅ No HTML comment placeholders"
-    fi
-
-    # 3. PRD validation with type-based requirements
-    # Extract plan type from filename by matching known types
-    local plan_type=""
-    local plan_basename=$(basename "$plan_file" .md)
-    # Known plan types in order
-    local known_types="feature enhance fix refactor docs test"
-    for t in $known_types; do
-        if [[ "$plan_basename" =~ -$t- ]] || [[ "$plan_basename" =~ -$t$ ]]; then
-            plan_type="$t"
-            break
-        fi
-    done
-
-    local prd_line prd_path
-
-    local prd_line prd_path
-    prd_line="$(grep -m1 '^\- \*\*PRD\*\*:' "$plan_file")"
-    # Extract path from backticks, or empty if none
-    if [[ "$prd_line" =~ \`([^\`]+)\` ]]; then
-        prd_path="${BASH_REMATCH[1]}"
-    else
-        prd_path=""
-    fi
-
-    if [[ "$plan_type" == "feature" ]]; then
-        # feature type MUST have PRD
-        if [[ -z "$prd_path" || "$prd_path" == *"待关联"* || ! -f "${ROOT_DIR:-.}/$prd_path" ]]; then
-            echo "❌ feature type plan MUST have PRD: ${prd_path:-<none>}"
-            ((verify_issues++))
-        else
-            echo "✅ PRD linked: $prd_path"
-        fi
-    else
-        # Other types: PRD optional
-        if [[ -n "$prd_path" && "$prd_path" != *"待关联"* ]]; then
-            if [[ ! -f "${ROOT_DIR:-.}/$prd_path" ]]; then
-                echo "⚠️ PRD file not found: $prd_path"
-                ((verify_warnings++))
-            else
-                echo "✅ PRD linked: $prd_path (optional for $plan_type)"
-            fi
-        else
-            echo "✅ No PRD (optional for $plan_type)"
-        fi
-    fi
-
-    # 4. Required sections
-    for section in "## 目标" "## In Scope" "## Out of Scope" "## 文件清单" "## 实施步骤" "## 验收标准"; do
-        if grep -q "$section" "$plan_file"; then
-            echo "✅ $section"
-        else
-            echo "❌ Missing section: $section"
-            ((verify_issues++))
-        fi
-    done
-
-    # 5. File list must not be empty (support list and table formats)
-    local file_section
-    file_section=$(grep -A 10 '^## 文件清单' "$plan_file")
-    if echo "$file_section" | grep -qE '(\- `|^\| .*\.|^\| `)' 2>/dev/null; then
-        echo "✅ File list populated"
-    else
-        echo "❌ Empty file list"
-        ((verify_issues++))
-    fi
-
-    # 6. Tasks must exist
-    local task_count
-    task_count="$(grep -c '^### Task ' "$plan_file" || true)"
-    if [[ "${task_count:-0}" -eq 0 ]]; then
-        echo "❌ No tasks found"
-        ((verify_issues++))
-    else
-        echo "✅ Task count: $task_count"
-    fi
-
-    # 7. Each task must have PRD requirement mapping (feature only) and verification command
-    local prd_req_count verify_cmd_count
-    prd_req_count="$(grep -c '^\*\*关联 PRD 需求\*\*:' "$plan_file" || true)"
-    verify_cmd_count="$(grep -c '^\*\*验证\*\*:' "$plan_file" || true)"
-
-    if [[ "${task_count:-0}" -gt 0 ]]; then
-        # PRD requirement mapping only required for feature type
-        if [[ "$plan_type" == "feature" ]]; then
-            if [[ "${prd_req_count:-0}" -lt "${task_count:-0}" ]]; then
-                echo "❌ Some tasks are missing PRD requirement mapping ($prd_req_count/$task_count)"
-                ((verify_issues++))
-            else
-                echo "✅ All tasks map to PRD requirements"
-            fi
-        else
-            echo "✅ PRD mapping not required for $plan_type type"
-        fi
-
-        if [[ "${verify_cmd_count:-0}" -lt "${task_count:-0}" ]]; then
-            echo "❌ Some tasks are missing verification commands ($verify_cmd_count/$task_count)"
-            ((verify_issues++))
-        else
-            echo "✅ All tasks have verification commands"
-        fi
-    fi
-
-    if [[ $verify_issues -gt 0 ]]; then
-        echo ""
-        echo "❌ Plan failed verification ($verify_issues issues)"
+    if [[ "$current_status" != "reviewed" ]]; then
+        echo "❌ Plan status must be 'reviewed' to execute"
+        echo "   Current status: $current_status"
+        echo "   Run: plan.sh review \"$pattern\" first"
         exit 1
     fi
 
-    echo ""
-    echo "✅ Verification passed"
+    echo "✅ Status check passed: reviewed"
 
     # Update status to executing
     if grep -q '^\- \*\*Status\*\*:' "$plan_file"; then
@@ -831,11 +787,156 @@ execute_plan() {
     local plan_name=$(basename "$plan_file" .md)
     update_plan_status "$plan_name" "executing"
 
-    echo "🧭 Next: hand this plan file to the execution agent"
+    # Sync Issue label
+    sync_issue_label "$plan_file" "executing"
+
+    # Create worktree if requested
+    if [[ "$use_worktree" == true ]]; then
+        if [[ -z "$PLAN_PROJECT" ]]; then
+            echo "❌ --worktree requires --project <name> (cannot use with --global)"
+            exit 1
+        fi
+
+        # Extract Issue number from plan metadata for branch naming
+        local issue_number=""
+        local issue_line
+        issue_line="$(grep -m1 '^\- \*\*Issue\*\*:' "$plan_file")"
+        if [[ "$issue_line" =~ \#([0-9]+) ]]; then
+            issue_number="${BASH_REMATCH[1]}"
+        fi
+
+        # Determine branch name: issue-{N}-{slug} or {plan-name}
+        local branch_name
+        if [[ -n "$issue_number" ]]; then
+            # Extract slug from plan name (last segment after type)
+            local slug
+            slug=$(echo "$plan_name" | sed -E 's/.*-[a-z]+-([a-z0-9-]+)$/\1/')
+            branch_name="issue-${issue_number}-${slug}"
+        else
+            branch_name="$plan_name"
+        fi
+
+        # Call git-worktrees skill to create worktree
+        local worktree_script
+        worktree_script="$SCRIPT_DIR/../git-worktrees/scripts/worktree.sh"
+
+        if [[ ! -f "$worktree_script" ]]; then
+            echo "❌ git-worktrees skill not found: $worktree_script"
+            exit 1
+        fi
+
+        echo ""
+        echo "🌳 Creating worktree for isolated execution..."
+        echo "   Project: $PLAN_PROJECT"
+        echo "   Branch: $branch_name"
+
+        bash "$worktree_script" create "$PLAN_PROJECT" "$branch_name" --no-install --no-test
+
+        echo ""
+        echo "✅ Worktree created. Switch to it to execute the plan."
+    else
+        echo "🧭 Next: hand this plan file to the execution agent"
+    fi
 
     if [[ "$delegate_mode" == "--fae" ]]; then
         echo "⚠️ --fae mode not implemented yet"
     fi
+}
+
+# Refine plan - research and iterate until ready for review
+refine_plan() {
+    local pattern="$1"
+    shift
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PLAN_PROJECT="$2"; shift 2 ;;
+            --global) PLAN_PROJECT=""; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    local plan_file
+    plan_file="$(resolve_plan_file "$pattern")" || exit 1
+
+    local current_status
+    current_status=$(grep '^\- \*\*Status\*\*:' "$plan_file" | sed 's/^.*: //')
+
+    if [[ "$current_status" != "draft" && "$current_status" != "refining" ]]; then
+        echo "❌ Plan status must be 'draft' or 'refining' to refine"
+        echo "   Current status: $current_status"
+        exit 1
+    fi
+
+    # Update status to refining
+    sed -i '' 's/^\- \*\*Status\*\*: .*/- **Status**: refining/' "$plan_file" 2>/dev/null || \
+    sed -i 's/^\- \*\*Status\*\*: .*/- **Status**: refining/' "$plan_file"
+
+    # Sync status to PLAN.md
+    local plan_name=$(basename "$plan_file" .md)
+    update_plan_status "$plan_name" "refining"
+
+    echo "✅ Plan status: refining"
+    echo ""
+    echo "📋 Plan file: $plan_file"
+    echo ""
+    echo "🧭 Refine workflow:"
+    echo "   1. Research codebase, understand context"
+    echo "   2. Fill in all sections (Goal, Scope, Files, Tasks)"
+    echo "   3. Run: plan.sh check-doc \"$pattern\""
+    echo "   4. Iterate until check-doc passes"
+    echo "   5. Run: plan.sh review \"$pattern\" when ready"
+}
+
+# Review plan - mark as ready for user confirmation
+review_plan() {
+    local pattern="$1"
+    shift
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PLAN_PROJECT="$2"; shift 2 ;;
+            --global) PLAN_PROJECT=""; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    local plan_file
+    plan_file="$(resolve_plan_file "$pattern")" || exit 1
+
+    local current_status
+    current_status=$(grep '^\- \*\*Status\*\*:' "$plan_file" | sed 's/^.*: //')
+
+    if [[ "$current_status" != "refining" ]]; then
+        echo "❌ Plan status must be 'refining' to review"
+        echo "   Current status: $current_status"
+        echo "   Run: plan.sh refine \"$pattern\" first"
+        exit 1
+    fi
+
+    # Run check-doc first
+    echo "🔍 Running check-doc..."
+    if ! bash "$SCRIPT_DIR/plan.sh" check-doc "$pattern" ${PLAN_PROJECT:+--project "$PLAN_PROJECT"} ${PLAN_PROJECT:-${GLOBAL_FLAG:-}}; then
+        echo ""
+        echo "❌ Plan failed check-doc. Continue refining."
+        exit 1
+    fi
+
+    # Update status to reviewed
+    sed -i '' 's/^\- \*\*Status\*\*: .*/- **Status**: reviewed/' "$plan_file" 2>/dev/null || \
+    sed -i 's/^\- \*\*Status\*\*: .*/- **Status**: reviewed/' "$plan_file"
+
+    # Sync status to PLAN.md
+    local plan_name=$(basename "$plan_file" .md)
+    update_plan_status "$plan_name" "reviewed"
+
+    echo ""
+    echo "✅ Plan status: reviewed"
+    echo ""
+    echo "📋 Plan ready for user confirmation: $plan_file"
+    echo ""
+    echo "🧭 Next: User reviews and approves, then run:"
+    echo "   plan.sh execute \"$pattern\""
 }
 
 # Complete plan execution
@@ -870,6 +971,9 @@ complete_plan() {
     # Sync status to PLAN.md
     local plan_name=$(basename "$plan_file" .md)
     update_plan_status "$plan_name" "completed"
+
+    # Sync Issue label
+    sync_issue_label "$plan_file" "completed"
 
     echo "✅ Plan execution completed: $plan_file"
     echo "🧭 Next: validate with real-world scenario, then run 'plan.sh validate \"$pattern\" --confirm'"
@@ -923,6 +1027,9 @@ validate_plan() {
     # Sync status to PLAN.md
     local plan_name=$(basename "$plan_file" .md)
     update_plan_status "$plan_name" "validated"
+
+    # Sync Issue label
+    sync_issue_label "$plan_file" "validated"
 
     echo "✅ Plan validated: $plan_file"
     echo "🧭 Next: archive the plan with 'plan.sh archive \"$pattern\"'"
@@ -1007,9 +1114,17 @@ case "$1" in
         shift
         craft_plan "$@"
         ;;
-    verify)
+    check-doc)
         shift
-        verify_plan "$@"
+        check_doc_plan "$@"
+        ;;
+    refine)
+        shift
+        refine_plan "$@"
+        ;;
+    review)
+        shift
+        review_plan "$@"
         ;;
     execute)
         shift
@@ -1044,8 +1159,14 @@ case "$1" in
         echo "      --priority <lvl>  Priority for PLAN.md tracking (high|medium|low)"
         echo "      --no-track        Skip auto-tracking in PLAN.md"
         echo ""
-        echo "  verify <pattern> [--project <name> | --global]"
-        echo "      Verify plan completeness"
+        echo "  check-doc <pattern> [--project <name> | --global]"
+        echo "      Check plan document completeness"
+        echo ""
+        echo "  refine <pattern> [--project <name> | --global]"
+        echo "      Research and refine plan (draft → refining)"
+        echo ""
+        echo "  review <pattern> [--project <name> | --global]"
+        echo "      Mark plan ready for user review (refining → reviewed)"
         echo ""
         echo "  execute <pattern> [--project <name> | --global] [--fae]"
         echo "      Execute plan after verification"

@@ -1,6 +1,6 @@
 ---
 name: plan-master
-description: ⚠️ MUST USE for task/plan tracking (never edit PLAN.md directly). Provides persistent task management with priorities and plan lifecycle. Triggers on "add to plan", "what's on the plan", "mark X done", "show plan", "remove from plan", "pending tasks", "craft plan", "create plan", "plan feature", "deep analysis", "verify plan", "execute plan", "complete plan", "validate plan", "archive plan", or plan-related queries.
+description: ⚠️ MUST USE for task/plan tracking (never edit PLAN.md directly). Provides persistent task management with priorities and plan lifecycle. Triggers on "add to plan", "what's on the plan", "mark X done", "show plan", "remove from plan", "pending tasks", "craft plan", "create plan", "plan feature", "refine plan", "review plan", "execute plan", "complete plan", "validate plan", "archive plan", or plan-related queries.
 ---
 
 # Plan Master
@@ -21,14 +21,16 @@ description: ⚠️ MUST USE for task/plan tracking (never edit PLAN.md directly
 | `remove` | 移除任务 | "remove X from plan" |
 | `list` | 列出任务 | "show plan", "pending tasks" |
 | `summary` | 快速摘要 | 心跳检查 |
-| `craft` | 创建计划 | "craft plan", "create plan", "制定方案" |
-| `verify` | 验证计划 | "verify plan" |
+| `craft` | 创建计划草案 | "craft plan", "create plan", "制定方案" |
+| `refine` | 研究细化方案 | "refine plan", "细化方案", "研究方案" |
+| `review` | 用户评审确认 | "review plan", "评审方案" |
+| `status` | 查看状态 | "plan status" |
 | `execute` | 执行计划 | "execute plan", "执行计划" |
 | `complete` | 标记执行完成 | "complete plan", "执行完成" |
 | `validate` | 验证确认 | "validate plan", "验证通过" |
 | `archive` | 归档计划 | "archive plan", "归档计划" |
 
-**注意**：`craft`/`verify`/`execute` 必须指定 `--project <name>` 或 `--global`。
+**注意**：`craft`/`refine`/`review`/`execute` 必须指定 `--project <name>` 或 `--global`。
 
 ---
 
@@ -94,19 +96,29 @@ bash skills/plan-master/scripts/plan.sh summary
 ## 计划生命周期
 
 ```
-craft → verify → execute → complete → validate → archive
+craft → refine (循环) → review → execute → complete → validate → archive
+         ↓
+      自动 check-doc
 ```
 
 ### 状态流转
 
 | 状态 | 触发命令 | 说明 |
 |------|----------|------|
-| `draft` | craft | 初始创建 |
-| `verified` | verify | 静态检查通过 |
+| `draft` | craft | 初始草案 |
+| `refining` | refine | 正在研究细化 |
+| `reviewed` | review | 用户确认方案可行 |
 | `executing` | execute | 开始执行 |
 | `completed` | complete | 执行完成（Fae 返回结果） |
 | `validated` | validate --confirm | 用户确认验证通过 |
 | 归档 | archive | 移动到 done/，自动标记 PLAN.md 任务完成 |
+
+### 核心原则
+
+**方案质量是执行的前提**。refine 阶段必须确保：
+1. 技术方案可行（有代码调研支撑）
+2. 文件清单明确（具体到每个文件）
+3. 实施步骤可执行（fae 能理解并执行）
 
 ### PRD 要求
 
@@ -125,11 +137,12 @@ PLAN.md 任务项会自动显示计划状态：
 
 ```markdown
 - [ ] plan-name [draft] (added: 2026-03-20)
+- [ ] plan-name [refining] (added: 2026-03-20)
+- [ ] plan-name [reviewed] (added: 2026-03-20)
 - [ ] plan-name [executing] (added: 2026-03-20)
-- [ ] plan-name [completed] (added: 2026-03-20)
 ```
 
-状态随 `execute` → `complete` → `validate` → `archive` 自动同步。
+状态随 `refine` → `review` → `execute` → `complete` → `validate` → `archive` 自动同步。
 
 ### 计划命名规范
 
@@ -155,7 +168,7 @@ PLAN.md 任务项会自动显示计划状态：
 | `test` | 测试相关 | 测试用例添加 |
 
 **命名示例**：
-- `plan-master-enhance-validate-phase.md`
+- `plan-master-enhance-refine-workflow.md`
 - `fae-fix-task-wait-bug.md`
 - `wopal-cli-feature-session-messages.md`
 
@@ -175,9 +188,9 @@ PLAN.md 任务项会自动显示计划状态：
 
 **禁止行为**：不要猜测项目，用户未指定时必须询问。
 
-### 创建计划
+---
 
-#### 轻量模式（简单任务）
+## 创建计划草案
 
 当用户说："craft plan", "create plan", "制定方案"
 
@@ -187,27 +200,6 @@ bash skills/plan-master/scripts/plan.sh craft "plan-name" --project <project>
 bash skills/plan-master/scripts/plan.sh craft "plan-name" --global
 ```
 
-#### 深度模式（复杂功能）
-
-当用户说："plan feature", "深度规划", "analyze and plan"
-
-```bash
-bash skills/plan-master/scripts/plan.sh craft "feature-name" --project <project> --deep --prd "docs/products/PRD-xxx.md"
-```
-
-#### 自动追踪与优先级
-
-```bash
-# 创建计划（自动追踪，默认 medium 优先级）
-bash skills/plan-master/scripts/plan.sh craft "plan-name" --project <project>
-
-# 指定优先级
-bash skills/plan-master/scripts/plan.sh craft "plan-name" --project <project> --priority high
-
-# 跳过自动追踪
-bash skills/plan-master/scripts/plan.sh craft "plan-name" --project <project> --no-track
-```
-
 **参数说明**：
 
 | 参数 | 说明 |
@@ -215,22 +207,86 @@ bash skills/plan-master/scripts/plan.sh craft "plan-name" --project <project> --
 | `<plan-name>` | 计划名称（必需） |
 | `--project <name>` | 项目级计划，存放在 `docs/products/<name>/plans/` |
 | `--global` | 空间级计划，存放在 `docs/products/plans/` |
-| `--deep` | 深度分析模式，从代码库收集情报 |
-| `--prd <path>` | 关联 PRD 文件，如 `docs/products/PRD-xxx.md` |
+| `--issue <N>` | 关联 GitHub Issue 编号，写入元数据 |
 | `--priority <lvl>` | PLAN.md 追踪优先级（high/medium/low，默认 medium） |
 | `--no-track` | 跳过自动添加到 PLAN.md |
 
-### 验证计划
+**craft 后状态**：`draft`
 
-当用户说："verify plan", "验证计划"
+**下一步**：必须执行 `refine` 进行方案细化。
+
+---
+
+## 方案细化（refine）
+
+**这是方案质量的核心环节**。craft 创建的草案只有骨架，refine 负责填充技术细节。
+
+当用户说："refine plan", "细化方案", "研究方案"
 
 ```bash
-bash skills/plan-master/scripts/plan.sh verify "plan-name" --project <project>
+bash skills/plan-master/scripts/plan.sh refine "plan-name" --project <project>
 # 或空间级计划
-bash skills/plan-master/scripts/plan.sh verify "plan-name" --global
+bash skills/plan-master/scripts/plan.sh refine "plan-name" --global
 ```
 
-### 执行计划
+### refine 流程
+
+1. **读取现有草案**
+2. **代码库研究**（按深度分析流程）
+   - 定位相关文件
+   - 分析现有实现
+   - 识别需要修改的代码
+3. **更新方案文档**
+   - 补充技术调研结果
+   - 细化文件清单
+   - 完善实施步骤
+4. **自动执行 check-doc**（内置，无需单独调用）
+5. **状态更新为 `refining`**
+
+### refine 循环
+
+refine 可以多次执行，直到方案足够详细：
+
+```
+refine → 更新文档 → check-doc → 
+  ↓ 如果还有"待补充"或不明确的地方
+refine → 更新文档 → check-doc →
+  ↓ 直到方案完整
+提交 review
+```
+
+### 方案完整性标准
+
+refine 完成后，方案必须满足：
+
+| 检查项 | 要求 |
+|--------|------|
+| 技术调研 | 有实际代码/API 分析支撑 |
+| 文件清单 | 列出所有需要修改/创建的文件 |
+| 实施步骤 | 每个步骤可执行，有验证方式 |
+| 风险分析 | 识别潜在问题和依赖 |
+
+---
+
+## 方案评审（review）
+
+当用户说："review plan", "评审方案"
+
+```bash
+bash skills/plan-master/scripts/plan.sh review "plan-name" --project <project>
+```
+
+**review 流程**：
+
+1. 展示方案摘要（目标、文件清单、关键步骤）
+2. 用户确认方案可行
+3. 状态更新为 `reviewed`
+
+**review 通过后**：才能进入 execute 阶段。
+
+---
+
+## 执行计划
 
 当用户说："execute plan", "执行计划"
 
@@ -240,7 +296,21 @@ bash skills/plan-master/scripts/plan.sh execute "plan-name" --project <project>
 bash skills/plan-master/scripts/plan.sh execute "plan-name" --global
 ```
 
-先执行 `verify`，通过后将状态更新为 `executing`。
+**前置条件**：状态必须为 `reviewed`。
+
+**execute 后状态**：`executing`
+
+#### 使用 Worktree 隔离执行
+
+当需要在独立工作树中执行时：
+
+```bash
+bash skills/plan-master/scripts/plan.sh execute "plan-name" --project <project> --worktree
+```
+
+**工作树命名规则**：若计划关联 Issue，分支名为 `issue-{N}-{slug}`；否则为 `{plan-name}`。
+
+**内部调用**：`bash ../git-worktrees/scripts/worktree.sh create <project> <branch> --no-install --no-test`
 
 **未来扩展**：
 ```bash
@@ -249,22 +319,37 @@ bash skills/plan-master/scripts/plan.sh execute "plan-name" --project <project> 
 
 ---
 
-## 深度分析流程（--deep 模式）
+## 深度分析流程（refine 内部使用）
 
-当使用 `--deep` 参数创建计划时，按以下流程收集情报：
+refine 命令执行时，按以下流程收集情报：
 
 ### Phase 0: 前置上下文检查
 
 - 检测当前工作目录所在项目
 - 读取目标项目 `AGENTS.md`
 
-### Phase 1: 需求理解
+### Phase 1: 需求理解（Shape Up Pitch 框架）
 
+**Problem（问题陈述）**
 - 提取要解决的核心问题
+- 描述当前痛点及其影响
+
+**Appetite（时间预算）**
+- 评估复杂度：低 / 中 / 高
+- 确定合理的时间投入（2天 / 1周 / 2周 / 6周）
+
+**Solution（方案方向）**
 - 识别用户价值和业务影响
 - 确定功能类型：新功能 / 增强 / 重构 / Bug修复
-- 评估复杂度：低 / 中 / 高
 - 梳理受影响的系统和组件
+
+**Rabbit Holes（兔子洞）**
+- 识别可能陷入的技术陷阱
+- 标注需要避免的过度设计
+
+**No-Gos（不做的事）**
+- 明确本次计划不涉及的范围
+- 与 Out of Scope 对齐
 
 ### Phase 2: 代码库情报收集
 
@@ -311,6 +396,8 @@ bash skills/plan-master/scripts/plan.sh execute "plan-name" --project <project> 
 ## 元数据
 
 - **PRD**: `<PRD 路径或待关联>`
+- **Issue**: #N（如有）
+- **Target Project**: agent-tools | wopal-cli | <other>
 - **Created**: YYYY-MM-DD
 - **Status**: draft
 - **Mode**: deep | lite
@@ -318,6 +405,26 @@ bash skills/plan-master/scripts/plan.sh execute "plan-name" --project <project> 
 ## 目标
 
 <!-- 继承自 PRD Problem Statement，一句话描述 -->
+
+## Problem（问题陈述）
+
+<!-- 描述要解决的核心问题及其影响 -->
+
+## Appetite（时间预算）
+
+<!-- 评估复杂度和时间投入：2天 / 1周 / 2周 / 6周 -->
+
+## 技术调研
+
+<!-- refine 阶段补充：代码分析、API 格式、现有实现 -->
+
+## Rabbit Holes（兔子洞）
+
+<!-- 可能陷入的技术陷阱，需要避免的过度设计 -->
+
+## No-Gos（不做的事）
+
+<!-- 本次计划不涉及的范围 -->
 
 ## In Scope
 
@@ -330,15 +437,19 @@ bash skills/plan-master/scripts/plan.sh execute "plan-name" --project <project> 
 
 ## 文件清单
 
-- `path/to/file1.ts` - 创建/修改
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `path/to/file1.ts` | 创建 | xxx |
+| `path/to/file2.ts` | 修改 | xxx |
 
 ## 实施步骤
 
 ### Task 1: [任务名称]
 
-**关联 PRD 需求**: REQ-xxx
+**Appetite**: X 天
+
 **Files**:
-- Modify: `path/to/file1.ts`
+- Create/Modify: `path/to/file1.ts`
 
 - [ ] Step 1: 具体操作
 - [ ] Step 2: 验证
@@ -353,8 +464,9 @@ bash skills/plan-master/scripts/plan.sh execute "plan-name" --project <project> 
 
 ## 风险与依赖
 
-- 风险点1
-- 依赖项1
+| 风险 | 缓解措施 |
+|------|----------|
+| 风险点1 | xxx |
 ```
 
 ---
