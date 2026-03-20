@@ -107,10 +107,10 @@ craft → refine (循环) → review → execute → complete → validate → a
 |------|----------|------|
 | `draft` | craft | 初始草案 |
 | `refining` | refine | 正在研究细化 |
-| `reviewed` | review | 用户确认方案可行 |
+| `reviewed` | review --confirm | **人类确认**方案可行后标记 |
 | `executing` | execute | 开始执行 |
 | `completed` | complete | 执行完成（Fae 返回结果） |
-| `validated` | validate --confirm | 用户确认验证通过 |
+| `validated` | validate --confirm | **人类确认**验证通过 |
 | 归档 | archive | 移动到 done/，自动标记 PLAN.md 任务完成 |
 
 ### 核心原则
@@ -207,7 +207,7 @@ bash skills/plan-master/scripts/plan.sh craft "plan-name" --global
 | `<plan-name>` | 计划名称（必需） |
 | `--project <name>` | 项目级计划，存放在 `docs/products/<name>/plans/` |
 | `--global` | 空间级计划，存放在 `docs/products/plans/` |
-| `--issue <N>` | 关联 GitHub Issue 编号，写入元数据 |
+| `--issue <N>` | 关联 GitHub Issue 编号（可多次指定，如 `--issue 12 --issue 13`） |
 | `--priority <lvl>` | PLAN.md 追踪优先级（high/medium/low，默认 medium） |
 | `--no-track` | 跳过自动添加到 PLAN.md |
 
@@ -273,14 +273,19 @@ refine 完成后，方案必须满足：
 当用户说："review plan", "评审方案"
 
 ```bash
+# 第一步：运行 check-doc 验证方案完整性
 bash skills/plan-master/scripts/plan.sh review "plan-name" --project <project>
+
+# 第二步：用户确认后，正式标记为 reviewed
+bash skills/plan-master/scripts/plan.sh review "plan-name" --project <project> --confirm
 ```
 
 **review 流程**：
 
-1. 展示方案摘要（目标、文件清单、关键步骤）
-2. 用户确认方案可行
-3. 状态更新为 `reviewed`
+1. 运行 check-doc 验证方案完整性
+2. 展示方案摘要（目标、文件清单、关键步骤）
+3. **用户确认方案可行**（人工环节）
+4. 用户确认后，运行 `--confirm` 标记为 `reviewed`
 
 **review 通过后**：才能进入 execute 阶段。
 

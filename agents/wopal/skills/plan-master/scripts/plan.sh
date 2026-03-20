@@ -6,9 +6,9 @@
 #   remove <pattern>       - Remove matching item
 #   list [priority]        - List items, optionally by priority
 #   summary                - Quick summary for heartbeat
-#   craft <name> [--project <name> | --global] [--issue <N>] - Create plan draft
+#   craft <name> [--project <name> | --global] [--issue <N>]... - Create plan draft (supports multiple --issue)
 #   refine <pattern> [--project <name> | --global] - Research and refine plan
-#   review <pattern> [--project <name> | --global] - Review and confirm plan
+#   review <pattern> [--project <name> | --global] [--confirm] - Review and confirm plan
 #   execute <pattern> [--project <name> | --global] [--fae] [--worktree] - Execute plan
 
 set -e
@@ -119,15 +119,16 @@ sync_issue_label() {
     local plan_file="$1"
     local new_status="$2"
 
-    # Extract Issue number from plan metadata
-    local issue_number=""
+    # Extract all Issue numbers from plan metadata (e.g., "#9, #10, #11")
     local issue_line
     issue_line="$(grep -m1 '^\- \*\*Issue\*\*:' "$plan_file")"
-    if [[ "$issue_line" =~ \#([0-9]+) ]]; then
-        issue_number="${BASH_REMATCH[1]}"
-    fi
+    local issue_numbers=()
+    while [[ "$issue_line" =~ \#([0-9]+) ]]; do
+        issue_numbers+=("${BASH_REMATCH[1]}")
+        issue_line="${issue_line#*#${BASH_REMATCH[1]}}"
+    done
 
-    if [[ -z "$issue_number" ]]; then
+    if [[ ${#issue_numbers[@]} -eq 0 ]]; then
         return 0  # No Issue linked, skip
     fi
 
@@ -146,15 +147,16 @@ sync_issue_label() {
         return 0
     fi
 
-    # Remove old status labels and add new one
+    # Update all linked Issues
     local old_labels="status/planning status/in-progress status/in-review status/blocked"
-    for old_label in $old_labels; do
-        gh issue edit "$issue_number" --remove-label "$old_label" 2>/dev/null || true
+    for issue_number in "${issue_numbers[@]}"; do
+        for old_label in $old_labels; do
+            gh issue edit "$issue_number" --remove-label "$old_label" 2>/dev/null || true
+        done
+        gh issue edit "$issue_number" --add-label "$label" 2>/dev/null && \
+            echo "🏷️ Issue #$issue_number label updated: $label" || \
+            echo "⚠️ Failed to update Issue #$issue_number label"
     done
-
-    gh issue edit "$issue_number" --add-label "$label" 2>/dev/null && \
-        echo "🏷️ Issue #$issue_number label updated: $label" || \
-        echo "⚠️ Failed to update Issue #$issue_number label"
 }
 
 # ============================================
@@ -353,13 +355,22 @@ create_plan_template() {
     local plan_name="$2"
     local prd_path="$3"
     local deep_mode="$4"
-    local issue_number="$5"
+    local issue_list="$5"  # Comma-separated issue numbers (e.g., "12,13")
     local target_project="$6"
 
-    # Build Issue line
+    # Build Issue line (support multiple issues: #12, #13)
     local issue_line=""
-    if [[ -n "$issue_number" ]]; then
-        issue_line="- **Issue**: #${issue_number}"
+    if [[ -n "$issue_list" ]]; then
+        local formatted_issues=""
+        IFS=',' read -ra issues <<< "$issue_list"
+        for issue in "${issues[@]}"; do
+            if [[ -n "$formatted_issues" ]]; then
+                formatted_issues+=", #${issue}"
+            else
+                formatted_issues="#${issue}"
+            fi
+        done
+        issue_line="- **Issue**: ${formatted_issues}"
     fi
 
     # Build Target Project line
@@ -455,7 +466,7 @@ craft_plan() {
     local project_specified=false
     local priority="medium"
     local no_track=false
-    local issue_number=""
+    local issue_numbers=()
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -486,7 +497,7 @@ craft_plan() {
                 shift
                 ;;
             --issue)
-                issue_number="$2"
+                issue_numbers+=("$2")
                 shift 2
                 ;;
             *)
@@ -498,7 +509,7 @@ craft_plan() {
 
     if [[ -z "$plan_name" ]]; then
         echo "❌ Plan name required"
-        echo "Usage: plan.sh craft <plan-name> [--project <name> | --global] [--deep] [--prd <prd-path>] [--issue <N>]"
+        echo "Usage: plan.sh craft <plan-name> [--project <name> | --global] [--deep] [--prd <prd-path>] [--issue <N>] [--issue <N>...]"
         exit 1
     fi
 
@@ -530,11 +541,25 @@ craft_plan() {
     # Target project is the same as PLAN_PROJECT for project-level plans
     local target_project="$PLAN_PROJECT"
 
-    create_plan_template "$plan_file" "$plan_name" "$prd_path" "$deep_mode" "$issue_number" "$target_project"
+    # Convert issue_numbers array to comma-separated string
+    local issue_list=""
+    if [[ ${#issue_numbers[@]} -gt 0 ]]; then
+        issue_list=$(IFS=,; echo "${issue_numbers[*]}")
+    fi
+
+    create_plan_template "$plan_file" "$plan_name" "$prd_path" "$deep_mode" "$issue_list" "$target_project"
     echo "✅ Created plan: $plan_file"
 
-    if [[ -n "$issue_number" ]]; then
-        echo "🔗 Linked to Issue: #${issue_number}"
+    if [[ ${#issue_numbers[@]} -gt 0 ]]; then
+        local linked_issues=""
+        for issue in "${issue_numbers[@]}"; do
+            if [[ -n "$linked_issues" ]]; then
+                linked_issues+=", #${issue}"
+            else
+                linked_issues="#${issue}"
+            fi
+        done
+        echo "🔗 Linked to Issue: ${linked_issues}"
     fi
 
     if [[ "$deep_mode" == true ]]; then
@@ -892,11 +917,13 @@ refine_plan() {
 review_plan() {
     local pattern="$1"
     shift
+    local confirm=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --project) PLAN_PROJECT="$2"; shift 2 ;;
-            --global) PLAN_PROJECT=""; shift ;;
+            --global) PLAN_PROJECT="" ; shift ;;
+            --confirm) confirm=true ; shift ;;
             *) shift ;;
         esac
     done
@@ -922,6 +949,15 @@ review_plan() {
         exit 1
     fi
 
+    if [[ "$confirm" != true ]]; then
+        echo ""
+        echo "📋 Plan ready for user review: $plan_file"
+        echo ""
+        echo "🧭 After reviewing, confirm with:"
+        echo "   plan.sh review \"$pattern\" --confirm"
+        exit 0
+    fi
+
     # Update status to reviewed
     sed -i '' 's/^\- \*\*Status\*\*: .*/- **Status**: reviewed/' "$plan_file" 2>/dev/null || \
     sed -i 's/^\- \*\*Status\*\*: .*/- **Status**: reviewed/' "$plan_file"
@@ -933,10 +969,7 @@ review_plan() {
     echo ""
     echo "✅ Plan status: reviewed"
     echo ""
-    echo "📋 Plan ready for user confirmation: $plan_file"
-    echo ""
-    echo "🧭 Next: User reviews and approves, then run:"
-    echo "   plan.sh execute \"$pattern\""
+    echo "🧭 Next: Run plan.sh execute \"$pattern\" to start execution"
 }
 
 # Complete plan execution
@@ -1068,9 +1101,27 @@ archive_plan() {
     mkdir -p "$done_dir"
 
     local plan_name=$(basename "$plan_file")
-    mv "$plan_file" "$done_dir/$plan_name"
+    local archived_file="$done_dir/$plan_name"
+    mv "$plan_file" "$archived_file"
 
-    echo "✅ Plan archived: $done_dir/$plan_name"
+    echo "✅ Plan archived: $archived_file"
+
+    # Close all linked Issues
+    local issue_line
+    issue_line="$(grep -m1 '^\- \*\*Issue\*\*:' "$archived_file")"
+    local issue_numbers=()
+    while [[ "$issue_line" =~ \#([0-9]+) ]]; do
+        issue_numbers+=("${BASH_REMATCH[1]}")
+        issue_line="${issue_line#*#${BASH_REMATCH[1]}}"
+    done
+
+    if [[ ${#issue_numbers[@]} -gt 0 ]] && command -v gh &> /dev/null; then
+        for issue_number in "${issue_numbers[@]}"; do
+            gh issue close "$issue_number" --comment "✅ Plan archived, closing issue." 2>/dev/null && \
+                echo "🔒 Issue #$issue_number closed" || \
+                echo "⚠️ Failed to close Issue #$issue_number"
+        done
+    fi
 
     # Auto-update PLAN.md: find and mark related task as done
     local search_pattern="${plan_name%.md}"
