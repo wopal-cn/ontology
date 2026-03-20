@@ -108,6 +108,29 @@ craft → verify → execute → complete → validate → archive
 | `validated` | validate --confirm | 用户确认验证通过 |
 | 归档 | archive | 移动到 done/，自动标记 PLAN.md 任务完成 |
 
+### PRD 要求
+
+| 计划类型 | PRD 要求 | 说明 |
+|----------|----------|------|
+| `feature` | **必需** | 新功能必须有 PRD |
+| `enhance` | 可选 | 功能增强 |
+| `fix` | 可选 | Bug 修复 |
+| `refactor` | 可选 | 重构 |
+| `docs` | 可选 | 文档更新 |
+| `test` | 可选 | 测试相关 |
+
+### 状态同步
+
+PLAN.md 任务项会自动显示计划状态：
+
+```markdown
+- [ ] plan-name [draft] (added: 2026-03-20)
+- [ ] plan-name [executing] (added: 2026-03-20)
+- [ ] plan-name [completed] (added: 2026-03-20)
+```
+
+状态随 `execute` → `complete` → `validate` → `archive` 自动同步。
+
 ### 计划命名规范
 
 ```
@@ -172,6 +195,19 @@ bash skills/plan-master/scripts/plan.sh craft "plan-name" --global
 bash skills/plan-master/scripts/plan.sh craft "feature-name" --project <project> --deep --prd "docs/products/PRD-xxx.md"
 ```
 
+#### 自动追踪与优先级
+
+```bash
+# 创建计划（自动追踪，默认 medium 优先级）
+bash skills/plan-master/scripts/plan.sh craft "plan-name" --project <project>
+
+# 指定优先级
+bash skills/plan-master/scripts/plan.sh craft "plan-name" --project <project> --priority high
+
+# 跳过自动追踪
+bash skills/plan-master/scripts/plan.sh craft "plan-name" --project <project> --no-track
+```
+
 **参数说明**：
 
 | 参数 | 说明 |
@@ -181,6 +217,8 @@ bash skills/plan-master/scripts/plan.sh craft "feature-name" --project <project>
 | `--global` | 空间级计划，存放在 `docs/products/plans/` |
 | `--deep` | 深度分析模式，从代码库收集情报 |
 | `--prd <path>` | 关联 PRD 文件，如 `docs/products/PRD-xxx.md` |
+| `--priority <lvl>` | PLAN.md 追踪优先级（high/medium/low，默认 medium） |
+| `--no-track` | 跳过自动添加到 PLAN.md |
 
 ### 验证计划
 

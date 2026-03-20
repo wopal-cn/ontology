@@ -84,6 +84,32 @@ resolve_plan_file() {
 }
 
 # ============================================
+# PLAN.md Status Sync
+# ============================================
+
+# Update status marker in PLAN.md task item
+update_plan_status() {
+    local plan_name="$1"
+    local new_status="$2"
+
+    # Match format: - [ ] plan-name [status] (added: ...)
+    if grep -q "\- \[ \].*${plan_name}" "$PLAN_FILE"; then
+        # Check if status marker exists
+        if grep -q "\- \[ \].*${plan_name}.*\[" "$PLAN_FILE"; then
+            # Update existing status
+            sed -i '' "s|\(\- \[ \].*${plan_name}.*\[\)[a-z]*\]|\1${new_status}]|" "$PLAN_FILE" 2>/dev/null || \
+            sed -i "s|\(\- \[ \].*${plan_name}.*\[\)[a-z]*\]|\1${new_status}]|" "$PLAN_FILE"
+        else
+            # Add status marker after plan name
+            sed -i '' "s|\(\- \[ \] \)${plan_name}\(.*\)|\1${plan_name} [${new_status}]\2|" "$PLAN_FILE" 2>/dev/null || \
+            sed -i "s|\(\- \[ \] \)${plan_name}\(.*\)|\1${plan_name} [${new_status}]\2|" "$PLAN_FILE"
+        fi
+        update_date
+        echo "📋 PLAN.md status updated: $new_status"
+    fi
+}
+
+# ============================================
 # PLAN.md Management (Task Tracking)
 # ============================================
 
@@ -365,6 +391,8 @@ craft_plan() {
     local deep_mode=false
     local prd_path=""
     local project_specified=false
+    local priority="medium"
+    local no_track=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -384,6 +412,14 @@ craft_plan() {
             --global)
                 PLAN_PROJECT=""
                 project_specified=true
+                shift
+                ;;
+            --priority)
+                priority="$2"
+                shift 2
+                ;;
+            --no-track)
+                no_track=true
                 shift
                 ;;
             *)
@@ -429,6 +465,12 @@ craft_plan() {
 
     if [[ "$deep_mode" == true ]]; then
         echo "📋 Deep mode: continue filling this file using the analysis checklist in SKILL.md"
+    fi
+
+    # Auto-add to PLAN.md tracking (with status marker)
+    if [[ "$no_track" != true ]]; then
+        local task_desc="$plan_name [draft]"
+        bash "$SCRIPT_DIR/plan.sh" add "$priority" "$task_desc"
     fi
 }
 
@@ -482,14 +524,50 @@ verify_plan() {
         echo "✅ No HTML comment placeholders"
     fi
 
-    # 3. PRD must exist and be valid
-    local prd_path
-    prd_path="$(grep -m1 '^\- \*\*PRD\*\*:' "$plan_file" | sed -E 's/^.*`([^`]+)`.*$/\1/')"
-    if [[ -z "$prd_path" || "$prd_path" == *"待关联"* || ! -f "${ROOT_DIR:-.}/$prd_path" ]]; then
-        echo "❌ Missing or invalid PRD reference: ${prd_path:-<none>}"
-        ((issues++))
+    # 3. PRD validation with type-based requirements
+    # Extract plan type from filename by matching known types
+    local plan_type=""
+    local plan_basename=$(basename "$plan_file" .md)
+    # Known plan types in order
+    local known_types="feature enhance fix refactor docs test"
+    for t in $known_types; do
+        if [[ "$plan_basename" =~ -$t- ]] || [[ "$plan_basename" =~ -$t$ ]]; then
+            plan_type="$t"
+            break
+        fi
+    done
+
+    local prd_line prd_path
+
+    local prd_line prd_path
+    prd_line="$(grep -m1 '^\- \*\*PRD\*\*:' "$plan_file")"
+    # Extract path from backticks, or empty if none
+    if [[ "$prd_line" =~ \`([^\`]+)\` ]]; then
+        prd_path="${BASH_REMATCH[1]}"
     else
-        echo "✅ PRD linked: $prd_path"
+        prd_path=""
+    fi
+
+    if [[ "$plan_type" == "feature" ]]; then
+        # feature type MUST have PRD
+        if [[ -z "$prd_path" || "$prd_path" == *"待关联"* || ! -f "${ROOT_DIR:-.}/$prd_path" ]]; then
+            echo "❌ feature type plan MUST have PRD: ${prd_path:-<none>}"
+            ((issues++))
+        else
+            echo "✅ PRD linked: $prd_path"
+        fi
+    else
+        # Other types: PRD optional
+        if [[ -n "$prd_path" && "$prd_path" != *"待关联"* ]]; then
+            if [[ ! -f "${ROOT_DIR:-.}/$prd_path" ]]; then
+                echo "⚠️ PRD file not found: $prd_path"
+                ((warnings++))
+            else
+                echo "✅ PRD linked: $prd_path (optional for $plan_type)"
+            fi
+        else
+            echo "✅ No PRD (optional for $plan_type)"
+        fi
     fi
 
     # 4. Required sections
@@ -504,12 +582,14 @@ verify_plan() {
         fi
     done
 
-    # 5. File list must not be empty
-    if ! grep -A 5 '^## 文件清单' "$plan_file" | grep -q '\- `'; then
+    # 5. File list must not be empty (support list and table formats)
+    local file_section
+    file_section=$(grep -A 10 '^## 文件清单' "$plan_file")
+    if echo "$file_section" | grep -qE '(\- `|^\| .*\.|^\| `)' 2>/dev/null; then
+        echo "✅ File list populated"
+    else
         echo "❌ Empty file list"
         ((issues++))
-    else
-        echo "✅ File list populated"
     fi
 
     # 6. Tasks must exist
@@ -522,17 +602,22 @@ verify_plan() {
         echo "✅ Task count: $task_count"
     fi
 
-    # 7. Each task must have PRD requirement mapping and verification command
+    # 7. Each task must have PRD requirement mapping (feature only) and verification command
     local prd_req_count verify_count
     prd_req_count="$(grep -c '^\*\*关联 PRD 需求\*\*:' "$plan_file" || true)"
     verify_count="$(grep -c '^\*\*验证\*\*:' "$plan_file" || true)"
 
     if [[ "${task_count:-0}" -gt 0 ]]; then
-        if [[ "${prd_req_count:-0}" -lt "${task_count:-0}" ]]; then
-            echo "❌ Some tasks are missing PRD requirement mapping ($prd_req_count/$task_count)"
-            ((issues++))
+        # PRD requirement mapping only required for feature type
+        if [[ "$plan_type" == "feature" ]]; then
+            if [[ "${prd_req_count:-0}" -lt "${task_count:-0}" ]]; then
+                echo "❌ Some tasks are missing PRD requirement mapping ($prd_req_count/$task_count)"
+                ((issues++))
+            else
+                echo "✅ All tasks map to PRD requirements"
+            fi
         else
-            echo "✅ All tasks map to PRD requirements"
+            echo "✅ PRD mapping not required for $plan_type type"
         fi
 
         if [[ "${verify_count:-0}" -lt "${task_count:-0}" ]]; then
@@ -621,14 +706,50 @@ execute_plan() {
         echo "✅ No HTML comment placeholders"
     fi
 
-    # 3. PRD must exist and be valid
-    local prd_path
-    prd_path="$(grep -m1 '^\- \*\*PRD\*\*:' "$plan_file" | sed -E 's/^.*`([^`]+)`.*$/\1/')"
-    if [[ -z "$prd_path" || "$prd_path" == *"待关联"* || ! -f "${ROOT_DIR:-.}/$prd_path" ]]; then
-        echo "❌ Missing or invalid PRD reference: ${prd_path:-<none>}"
-        ((verify_issues++))
+    # 3. PRD validation with type-based requirements
+    # Extract plan type from filename by matching known types
+    local plan_type=""
+    local plan_basename=$(basename "$plan_file" .md)
+    # Known plan types in order
+    local known_types="feature enhance fix refactor docs test"
+    for t in $known_types; do
+        if [[ "$plan_basename" =~ -$t- ]] || [[ "$plan_basename" =~ -$t$ ]]; then
+            plan_type="$t"
+            break
+        fi
+    done
+
+    local prd_line prd_path
+
+    local prd_line prd_path
+    prd_line="$(grep -m1 '^\- \*\*PRD\*\*:' "$plan_file")"
+    # Extract path from backticks, or empty if none
+    if [[ "$prd_line" =~ \`([^\`]+)\` ]]; then
+        prd_path="${BASH_REMATCH[1]}"
     else
-        echo "✅ PRD linked: $prd_path"
+        prd_path=""
+    fi
+
+    if [[ "$plan_type" == "feature" ]]; then
+        # feature type MUST have PRD
+        if [[ -z "$prd_path" || "$prd_path" == *"待关联"* || ! -f "${ROOT_DIR:-.}/$prd_path" ]]; then
+            echo "❌ feature type plan MUST have PRD: ${prd_path:-<none>}"
+            ((verify_issues++))
+        else
+            echo "✅ PRD linked: $prd_path"
+        fi
+    else
+        # Other types: PRD optional
+        if [[ -n "$prd_path" && "$prd_path" != *"待关联"* ]]; then
+            if [[ ! -f "${ROOT_DIR:-.}/$prd_path" ]]; then
+                echo "⚠️ PRD file not found: $prd_path"
+                ((verify_warnings++))
+            else
+                echo "✅ PRD linked: $prd_path (optional for $plan_type)"
+            fi
+        else
+            echo "✅ No PRD (optional for $plan_type)"
+        fi
     fi
 
     # 4. Required sections
@@ -641,12 +762,14 @@ execute_plan() {
         fi
     done
 
-    # 5. File list must not be empty
-    if ! grep -A 5 '^## 文件清单' "$plan_file" | grep -q '\- `'; then
+    # 5. File list must not be empty (support list and table formats)
+    local file_section
+    file_section=$(grep -A 10 '^## 文件清单' "$plan_file")
+    if echo "$file_section" | grep -qE '(\- `|^\| .*\.|^\| `)' 2>/dev/null; then
+        echo "✅ File list populated"
+    else
         echo "❌ Empty file list"
         ((verify_issues++))
-    else
-        echo "✅ File list populated"
     fi
 
     # 6. Tasks must exist
@@ -659,17 +782,22 @@ execute_plan() {
         echo "✅ Task count: $task_count"
     fi
 
-    # 7. Each task must have PRD requirement mapping and verification command
+    # 7. Each task must have PRD requirement mapping (feature only) and verification command
     local prd_req_count verify_cmd_count
     prd_req_count="$(grep -c '^\*\*关联 PRD 需求\*\*:' "$plan_file" || true)"
     verify_cmd_count="$(grep -c '^\*\*验证\*\*:' "$plan_file" || true)"
 
     if [[ "${task_count:-0}" -gt 0 ]]; then
-        if [[ "${prd_req_count:-0}" -lt "${task_count:-0}" ]]; then
-            echo "❌ Some tasks are missing PRD requirement mapping ($prd_req_count/$task_count)"
-            ((verify_issues++))
+        # PRD requirement mapping only required for feature type
+        if [[ "$plan_type" == "feature" ]]; then
+            if [[ "${prd_req_count:-0}" -lt "${task_count:-0}" ]]; then
+                echo "❌ Some tasks are missing PRD requirement mapping ($prd_req_count/$task_count)"
+                ((verify_issues++))
+            else
+                echo "✅ All tasks map to PRD requirements"
+            fi
         else
-            echo "✅ All tasks map to PRD requirements"
+            echo "✅ PRD mapping not required for $plan_type type"
         fi
 
         if [[ "${verify_cmd_count:-0}" -lt "${task_count:-0}" ]]; then
@@ -698,6 +826,11 @@ execute_plan() {
     echo ""
     echo "📋 Plan ready: $plan_file"
     echo "🚀 Status updated to: executing"
+
+    # Sync status to PLAN.md
+    local plan_name=$(basename "$plan_file" .md)
+    update_plan_status "$plan_name" "executing"
+
     echo "🧭 Next: hand this plan file to the execution agent"
 
     if [[ "$delegate_mode" == "--fae" ]]; then
@@ -733,6 +866,10 @@ complete_plan() {
     # Update status to completed
     sed -i '' 's/^\- \*\*Status\*\*: .*/- **Status**: completed/' "$plan_file" 2>/dev/null || \
     sed -i 's/^\- \*\*Status\*\*: .*/- **Status**: completed/' "$plan_file"
+
+    # Sync status to PLAN.md
+    local plan_name=$(basename "$plan_file" .md)
+    update_plan_status "$plan_name" "completed"
 
     echo "✅ Plan execution completed: $plan_file"
     echo "🧭 Next: validate with real-world scenario, then run 'plan.sh validate \"$pattern\" --confirm'"
@@ -782,6 +919,10 @@ validate_plan() {
     # Update status to validated
     sed -i '' 's/^\- \*\*Status\*\*: .*/- **Status**: validated/' "$plan_file" 2>/dev/null || \
     sed -i 's/^\- \*\*Status\*\*: .*/- **Status**: validated/' "$plan_file"
+
+    # Sync status to PLAN.md
+    local plan_name=$(basename "$plan_file" .md)
+    update_plan_status "$plan_name" "validated"
 
     echo "✅ Plan validated: $plan_file"
     echo "🧭 Next: archive the plan with 'plan.sh archive \"$pattern\"'"
@@ -900,6 +1041,8 @@ case "$1" in
         echo "      --global          Space-level plan"
         echo "      --deep            Deep analysis mode"
         echo "      --prd <path>      Link to PRD file"
+        echo "      --priority <lvl>  Priority for PLAN.md tracking (high|medium|low)"
+        echo "      --no-track        Skip auto-tracking in PLAN.md"
         echo ""
         echo "  verify <pattern> [--project <name> | --global]"
         echo "      Verify plan completeness"
