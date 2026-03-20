@@ -5,6 +5,28 @@ description: ⚠️ MUST LOAD BEFORE any skill operation (install/update/deploy)
 
 # Skill Master
 
+## Architecture
+
+技能遵循三层部署架构：**源码层 → 部署层 → 适配层**
+
+| 层级 | 共享技能 | Agent 专用技能 |
+|------|----------|----------------|
+| 源码层 | `projects/agent-tools/skills/<name>/` | `projects/agent-tools/agents/<agent>/skills/<name>/` |
+| 部署层 | `.wopal/skills/<name>/` | `.wopal/agents/<agent>/skills/<name>/` |
+| 适配层 | `.agents/skills/<name>/` → symlink | `.agents/skills/<name>/` → symlink |
+
+**红线**：禁止编辑 `.wopal/` 或 `.agents/`，所有修改在源码层进行。
+
+## Post-Install Verification
+
+```bash
+# 检查 symlink
+ls -la .agents/skills/<skill-name>/
+
+# 缺失时修复
+wopal skills merge
+```
+
 ## ⚠️ Critical: Shared vs Agent-Specific Skills
 
 | Type | Path Pattern | Install Command |
