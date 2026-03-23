@@ -45,6 +45,56 @@ _check_find_root() {
 }
 
 # ============================================
+# Helper Functions
+# ============================================
+
+# Extract plan type from metadata (priority) or filename (fallback)
+# Usage: _extract_plan_type <plan_file>
+# Output: plan type (feature/fix/enhance/refactor/docs/test) or empty string
+_extract_plan_type() {
+    local plan_file="$1"
+    
+    # Priority 1: Read from metadata "- **Type**:"
+    local type_line
+    type_line="$(grep -m1 '^\- \*\*Type\*\*:' "$plan_file" 2>/dev/null || true)"
+    if [[ -n "$type_line" ]]; then
+        # Extract type value
+        local type_value
+        type_value=$(echo "$type_line" | sed 's/^\- \*\*Type\*\*: *//' | tr '[:upper:]' '[:lower:]')
+        # Validate against known types
+        case "$type_value" in
+            feature|fix|enhance|refactor|docs|test)
+                echo "$type_value"
+                return 0
+                ;;
+        esac
+    fi
+    
+    # Priority 2: Extract from filename
+    local plan_basename
+    plan_basename=$(basename "$plan_file" .md)
+    local known_types="feature enhance fix refactor docs test"
+    for t in $known_types; do
+        if [[ "$plan_basename" =~ ^$t- ]] || [[ "$plan_basename" =~ -$t- ]] || [[ "$plan_basename" =~ -$t$ ]]; then
+            echo "$t"
+            return 0
+        fi
+    done
+    
+    # Unknown type
+    echo ""
+}
+
+# Remove code blocks from content for placeholder detection
+# Usage: _remove_code_blocks <content>
+# Output: content without code blocks
+_remove_code_blocks() {
+    local content="$1"
+    # Remove fenced code blocks (```...```)
+    echo "$content" | sed '/^```/,/^```/d'
+}
+
+# ============================================
 # Check Functions
 # ============================================
 
@@ -71,12 +121,16 @@ check_doc_plan() {
     root_dir=$(_check_find_root)
 
     # ============================================
-    # 1. Check for placeholders
+    # 1. Check for placeholders (exclude code blocks)
     # ============================================
     local placeholder_found=""
-    if grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' "$plan_file" > /dev/null 2>&1; then
+    # Remove code blocks before checking for placeholders
+    local plan_content_no_codeblocks
+    plan_content_no_codeblocks=$(_remove_code_blocks "$(cat "$plan_file")")
+    
+    if echo "$plan_content_no_codeblocks" | grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' > /dev/null 2>&1; then
         echo "Found placeholders:"
-        grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' "$plan_file" | head -5
+        echo "$plan_content_no_codeblocks" | grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' | head -5
         ((issues++))
         placeholder_found="yes"
     else
@@ -95,57 +149,45 @@ check_doc_plan() {
     fi
 
     # ============================================
-    # 3. Extract plan type from filename
+    # 3. Extract plan type (metadata priority, filename fallback)
     # ============================================
-    local plan_type=""
-    local plan_basename
-    plan_basename=$(basename "$plan_file" .md)
-    local known_types="feature enhance fix refactor docs test"
-    for t in $known_types; do
-        if [[ "$plan_basename" =~ -$t- ]] || [[ "$plan_basename" =~ -$t$ ]]; then
-            plan_type="$t"
-            break
-        fi
-    done
+    local plan_type
+    plan_type=$(_extract_plan_type "$plan_file")
+    
+    if [[ -n "$plan_type" ]]; then
+        _check_success "Plan type: $plan_type"
+    else
+        _check_warn "Plan type not detected (no Type metadata or filename pattern)"
+    fi
 
     # ============================================
-    # 4. PRD validation with type-based requirements
+    # 4. PRD validation (optional for all types)
     # ============================================
     local prd_line prd_path
-    prd_line="$(grep -m1 '^\- \*\*PRD\*\*:' "$plan_file")"
+    prd_line="$(grep -m1 '^\- \*\*PRD\*\*:' "$plan_file" || true)"
     if [[ "$prd_line" =~ \`([^\`]+)\` ]]; then
         prd_path="${BASH_REMATCH[1]}"
     else
         prd_path=""
     fi
 
-    if [[ "$plan_type" == "feature" ]]; then
-        # feature type MUST have PRD
-        if [[ -z "$prd_path" || "$prd_path" == *"待关联"* || ! -f "${root_dir}/$prd_path" ]]; then
-            echo "feature type plan MUST have PRD: ${prd_path:-<none>}"
-            ((issues++))
+    # PRD is optional for all plan types (changed from mandatory for feature)
+    if [[ -n "$prd_path" && "$prd_path" != *"待关联"* ]]; then
+        if [[ ! -f "${root_dir}/$prd_path" ]]; then
+            _check_warn "PRD file not found: $prd_path"
+            ((warnings++))
         else
             _check_success "PRD linked: $prd_path"
         fi
     else
-        # Other types: PRD optional
-        if [[ -n "$prd_path" && "$prd_path" != *"待关联"* ]]; then
-            if [[ ! -f "${root_dir}/$prd_path" ]]; then
-                _check_warn "PRD file not found: $prd_path"
-                ((warnings++))
-            else
-                _check_success "PRD linked: $prd_path (optional for $plan_type)"
-            fi
-        else
-            _check_success "No PRD (optional for ${plan_type:-unknown} type)"
-        fi
+        _check_success "No PRD (optional)"
     fi
 
     # ============================================
-    # 5. Required sections
+    # 5. Required sections (all English titles)
     # ============================================
     local missing_sections=0
-    for section in "## 目标" "## In Scope" "## Out of Scope" "## 文件清单" "## 实施步骤" "## 验收标准"; do
+    for section in "## Goal" "## In Scope" "## Out of Scope" "## Files" "## Implementation" "## Acceptance Criteria"; do
         if grep -q "$section" "$plan_file"; then
             _check_success "$section"
         else
@@ -156,10 +198,40 @@ check_doc_plan() {
     done
 
     # ============================================
-    # 6. File list must not be empty
+    # 5.1 Spike investigation sections (recommended)
+    # ============================================
+    local spike_sections="## Technical Context## Affected Components## Code References"
+    for section in "## Technical Context" "## Affected Components" "## Code References"; do
+        if grep -q "$section" "$plan_file"; then
+            _check_success "$section (spike investigation)"
+        else
+            _check_warn "Missing $section (recommended for spike investigation)"
+            ((warnings++))
+        fi
+    done
+
+    # ============================================
+    # 6. Check Scope Assessment section
+    # ============================================
+    if grep -q '^## Scope Assessment' "$plan_file"; then
+        # Check for Complexity and Confidence
+        if grep -q '^\- \*\*Complexity\*\*:' "$plan_file" && \
+           grep -q '^\- \*\*Confidence\*\*:' "$plan_file"; then
+            _check_success "## Scope Assessment"
+        else
+            echo "Scope Assessment missing Complexity or Confidence"
+            ((issues++))
+        fi
+    else
+        echo "Missing section: ## Scope Assessment"
+        ((issues++))
+    fi
+
+    # ============================================
+    # 7. File list must not be empty
     # ============================================
     local file_section
-    file_section=$(grep -A 10 '^## 文件清单' "$plan_file")
+    file_section=$(grep -A 10 '^## Files' "$plan_file" || true)
     if echo "$file_section" | grep -qE '(\- `|^\| .*\.|^\| `)' 2>/dev/null; then
         _check_success "File list populated"
     else
@@ -168,7 +240,7 @@ check_doc_plan() {
     fi
 
     # ============================================
-    # 7. Tasks must exist
+    # 8. Tasks must exist
     # ============================================
     local task_count
     task_count="$(grep -c '^### Task ' "$plan_file" || true)"
@@ -180,25 +252,12 @@ check_doc_plan() {
     fi
 
     # ============================================
-    # 8. Each task must have PRD requirement mapping and verification command
+    # 9. Each task must have verification command
     # ============================================
-    local prd_req_count verify_count
-    prd_req_count="$(grep -c '^\*\*关联 PRD 需求\*\*:' "$plan_file" || true)"
-    verify_count="$(grep -c '^\*\*验证\*\*:' "$plan_file" || true)"
+    local verify_count
+    verify_count="$(grep -c '^\*\*Verification\*\*:' "$plan_file" || true)"
 
     if [[ "${task_count:-0}" -gt 0 ]]; then
-        # PRD requirement mapping only required for feature type
-        if [[ "$plan_type" == "feature" ]]; then
-            if [[ "${prd_req_count:-0}" -lt "${task_count:-0}" ]]; then
-                echo "Some tasks are missing PRD requirement mapping ($prd_req_count/$task_count)"
-                ((issues++))
-            else
-                _check_success "All tasks map to PRD requirements"
-            fi
-        else
-            _check_success "PRD mapping not required for ${plan_type:-unknown} type"
-        fi
-
         if [[ "${verify_count:-0}" -lt "${task_count:-0}" ]]; then
             echo "Some tasks are missing verification commands ($verify_count/$task_count)"
             ((issues++))
@@ -208,7 +267,7 @@ check_doc_plan() {
     fi
 
     # ============================================
-    # 9. Granularity check (heuristic)
+    # 10. Granularity check (heuristic)
     # ============================================
     local checkbox_count
     checkbox_count="$(grep -c '^- \[ \] Step ' "$plan_file" || true)"
@@ -217,6 +276,16 @@ check_doc_plan() {
         ((warnings++))
     else
         _check_success "Basic step granularity present"
+    fi
+
+    # ============================================
+    # 11. Test Plan section (recommended)
+    # ============================================
+    if grep -q '^## Test Plan' "$plan_file"; then
+        _check_success "## Test Plan"
+    else
+        _check_warn "Missing ## Test Plan (recommended)"
+        ((warnings++))
     fi
 
     # ============================================
@@ -255,7 +324,7 @@ check_doc_plan_quick() {
     fi
 
     # Check required sections exist
-    for section in "## 目标" "## In Scope" "## 文件清单"; do
+    for section in "## Goal" "## In Scope" "## Files"; do
         if grep -q "$section" "$plan_file"; then
             echo "  Has $section"
         else

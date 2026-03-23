@@ -3,6 +3,7 @@
 ## 元数据
 
 - **Issue**: #{issue_number}
+- **Type**: {type}
 - **Target Project**: {project}
 - **Created**: {date}
 - **Status**: draft
@@ -10,49 +11,56 @@
 
 ## 目标
 
-<!-- 继承自 Issue 或 PRD Problem Statement -->
+一句话描述本计划要达成的目标。
 
 ## Problem
 
-<!-- 问题陈述 -->
+描述当前存在的问题或需要改进的地方。
 
 ## Appetite
 
-<!-- 时间预算 -->
+时间预算（如：0.5 天、1 天、2-3 天）
 
 ## In Scope
 
-- [ ] 待补充
+列出本次要完成的具体内容：
+
+- [ ] 功能点 1
+- [ ] 功能点 2
 
 ## Out of Scope
 
-- [ ] 待补充
+列出本次不做的内容：
+
+- [ ] 功能点（原因或后续版本规划）
 
 ## 文件清单
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `path/to/file` | 创建/修改 | 说明 |
+| `relative/path/to/file` | 修改或创建 | 简要说明 |
 
 ## 实施步骤
 
-### Task 1: [任务名称]
+### Task 1: 任务标题
 
-**关联 PRD 需求**: REQ-xxx
 **Files**:
-- Modify: `path/to/file`
+- Modify: `relative/path/to/file`
+
+**改动**:
+1. 具体改动点 1
+2. 具体改动点 2
+
+**验证**: 验证命令或验证方法
 
 - [ ] Step 1: 具体操作
-- [ ] Step 2: 验证
-
-**验证**: `npm test -- path/to/test`
+- [ ] Step 2: 验证通过
 
 ## 验收标准
 
-- [ ] 对应 Issue/PRD 成功标准逐项覆盖
-- [ ] 所有测试通过
-- [ ] 功能验证通过
+- [ ] 验收条件 1
+- [ ] 验收条件 2
 
 ## 风险与依赖
 
-- 待补充
+列出可能的风险和依赖项。

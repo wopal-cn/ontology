@@ -200,6 +200,7 @@ validate_plan_name() {
 #   --global            Space-level plan
 #   --prd <path>        Link to PRD file
 #   --issue <N>         Link to Issue number (can be used multiple times)
+#   --type <type>       Plan type (fix/feature/enhance/refactor/docs/test)
 #   --deep              Deep analysis mode
 create_plan() {
     local plan_name="$1"
@@ -207,6 +208,7 @@ create_plan() {
 
     local project=""
     local prd_path=""
+    local plan_type=""
     local deep_mode=false
     local issue_numbers=()
 
@@ -226,6 +228,10 @@ create_plan() {
                 ;;
             --issue)
                 issue_numbers+=("$2")
+                shift 2
+                ;;
+            --type)
+                plan_type="$2"
                 shift 2
                 ;;
             --deep)
@@ -293,65 +299,113 @@ create_plan() {
         project_line="- **Target Project**: ${project}"
     fi
 
+    # Build Type line (extract from plan_name if not provided)
+    if [[ -z "$plan_type" ]]; then
+        # Extract type from plan name prefix (e.g., "fix-xxx" -> "fix")
+        plan_type=$(echo "$plan_name" | sed -E 's/^([a-z]+)-.*/\1/')
+        case "$plan_type" in
+            fix|feature|enhance|refactor|docs|test)
+                ;;
+            *)
+                plan_type="feature"  # Default
+                ;;
+        esac
+    fi
+    local type_line="- **Type**: ${plan_type}"
+
     # Create plan file from template
     cat > "$plan_file" << EOF
 # ${plan_name}
 
-## 元数据
+## Metadata
 
-- **PRD**: \`${prd_path:-待关联（执行前必填）}\`
-${issue_line}${project_line}- **Created**: $(date +%Y-%m-%d)
-- **Status**: draft
-- **Mode**: $( [[ "$deep_mode" == true ]] && echo "deep" || echo "lite" )
+${issue_line}
+${type_line}
+${project_line}
+- **Created**: $(date +%Y-%m-%d)
+- **Status**: investigating
 
-## 目标
+## Scope Assessment
 
-<!-- 继承自 Issue 或 PRD Problem Statement，一句话描述 -->
+- **Complexity**: Low|Medium|High
+- **Confidence**: High|Medium|Low
 
-## Problem
+## Goal
 
-<!-- 问题陈述 -->
+一句话描述本计划要达成的目标。
 
-## Appetite
+## Technical Context
 
-<!-- 时间预算 -->
+<当前架构描述，为什么需要变更>
+
+## Affected Components
+
+| Component | Key Files | Role |
+|-----------|-----------|------|
+| <component> | \`file1\`, \`file2\` | <在此变更中的作用> |
 
 ## In Scope
 
-- [ ] 待补充
+列出本次要完成的具体内容：
+
+- [ ] 功能点 1
+- [ ] 功能点 2
 
 ## Out of Scope
 
-- [ ] 待补充（需与 PRD Non-Goals 对齐）
+列出本次不做的内容：
 
-## 文件清单
+- <本次不做的内容及原因>
+
+## Code References
+
+| Location | Description |
+|----------|-------------|
+| \`file:line\` | <代码做什么，为什么相关> |
+
+## Files
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| \`path/to/file\` | 创建/修改 | 说明 |
+| \`relative/path/to/file\` | 修改或创建 | 简要说明 |
 
-## 实施步骤
+## Implementation
 
-### Task 1: [任务名称]
+### Task 1: 任务标题
 
-**关联 PRD 需求**: REQ-xxx
-**Files**:
-- Modify: \`path/to/file\`
+**Files**: \`path/to/file\`
+
+**Changes**:
+1. 具体改动点 1
+2. 具体改动点 2
+
+**Verification**: 验证命令或验证方法
 
 - [ ] Step 1: 具体操作
-- [ ] Step 2: 验证
+- [ ] Step 2: 验证通过
 
-**验证**: \`npm test -- path/to/test\`
+## Test Plan
 
-## 验收标准
+- **Unit**: <测试内容或 N/A>
+- **Integration**: <测试内容或 N/A>
+- **E2E**: <测试内容或 N/A>
 
-- [ ] 对应 Issue/PRD 成功标准逐项覆盖
-- [ ] 所有测试通过
-- [ ] 功能验证通过
+## Risks & Open Questions
 
-## 风险与依赖
+- <风险或待确认问题>
 
-- 待补充
+## Documentation Impact
+
+- <需要更新的文档或 None>
+
+## Acceptance Criteria
+
+<!-- 
+  ⚠️ 强制要求：complete 前必须全部打勾
+  AI 必须执行验证工作，不能跳过
+-->
+- [ ] 验收条件 1
+- [ ] 验收条件 2
 EOF
 
     _plan_success "Created plan: $plan_file"
@@ -449,6 +503,7 @@ link_prd() {
 
 # Archive Plan (move to done/)
 # Usage: archive_plan <plan_file>
+# Note: In 5-state model, archive is called after validation (executing -> done)
 archive_plan() {
     local plan_file="$1"
 
@@ -460,8 +515,10 @@ archive_plan() {
     local current_status
     current_status=$(get_plan_status "$plan_file")
 
-    if [[ "$current_status" != "validated" ]]; then
-        _plan_error "Plan must be validated before archiving"
+    # In 5-state model, we archive from executing state after validation
+    # The status transition to "done" happens before archive
+    if [[ "$current_status" != "executing" && "$current_status" != "done" ]]; then
+        _plan_error "Plan must be in executing state (after validation) before archiving"
         echo "   Current status: $current_status" >&2
         return 1
     fi
@@ -528,6 +585,83 @@ get_plan_metadata() {
     echo "issue=${issue:-}"
     echo "created=${created:-}"
     echo "mode=${mode:-lite}"
+}
+
+# ============================================
+# Acceptance Criteria Validation
+# ============================================
+
+# Check if all Acceptance Criteria are completed
+# Usage: check_acceptance_criteria <plan_file>
+# Returns: 0 if all completed or no criteria found, 1 if incomplete
+# Output: incomplete items (if any)
+check_acceptance_criteria() {
+    local plan_file="$1"
+    
+    if [[ ! -f "$plan_file" ]]; then
+        _plan_error "Plan file not found: $plan_file"
+        return 1
+    fi
+    
+    # Extract Acceptance Criteria section
+    local ac_section
+    ac_section=$(sed -n '/^## Acceptance Criteria/,/^##[^#]/{ /^## Acceptance Criteria/d; /^##[^#]/d; p; }' "$plan_file")
+    
+    # If no section or empty, pass
+    if [[ -z "$ac_section" ]] || ! echo "$ac_section" | grep -q '\-'; then
+        _plan_info "No Acceptance Criteria found in plan"
+        return 0
+    fi
+    
+    # Check for unchecked items: - [ ]
+    local unchecked
+    unchecked=$(echo "$ac_section" | grep -E '^\s*-\s+\[\s*\]' || true)
+    
+    if [[ -n "$unchecked" ]]; then
+        _plan_error "Acceptance Criteria not completed:"
+        echo ""
+        echo "$unchecked" | while read -r line; do
+            echo "  $line"
+        done
+        echo ""
+        return 1
+    fi
+    
+    # Check if there are any checked items
+    local checked
+    checked=$(echo "$ac_section" | grep -E '^\s*-\s+\[x\]' || true)
+    
+    if [[ -z "$checked" ]]; then
+        _plan_warn "No Acceptance Criteria items found (checked or unchecked)"
+        return 0
+    fi
+    
+    local checked_count
+    checked_count=$(echo "$checked" | wc -l | tr -d ' ')
+    _plan_success "All $checked_count Acceptance Criteria completed"
+    return 0
+}
+
+# Get incomplete Acceptance Criteria count
+# Usage: get_incomplete_ac_count <plan_file>
+# Output: number of incomplete items
+get_incomplete_ac_count() {
+    local plan_file="$1"
+    
+    if [[ ! -f "$plan_file" ]]; then
+        echo "0"
+        return
+    fi
+    
+    local ac_section
+    ac_section=$(sed -n '/^## Acceptance Criteria/,/^##[^#]/{ /^## Acceptance Criteria/d; /^##[^#]/d; p; }' "$plan_file")
+    
+    if [[ -z "$ac_section" ]]; then
+        echo "0"
+        return
+    fi
+    
+    echo "$ac_section" | grep -cE '^\s*-\s+\[\s*\]' || echo "0"
 }
 
 # Export functions for use in other scripts

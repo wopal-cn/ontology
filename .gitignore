@@ -50,8 +50,6 @@ yarn.lock
 
 # tmp
 skills/download/
-tools/opencode-sdk/.openapi-generator
-tools/opencode-sdk/docs
 # ai
 .opencode
 

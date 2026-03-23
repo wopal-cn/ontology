@@ -1,257 +1,399 @@
 ---
 name: dev-flow
 description: |
-  统一开发工作流技能。提供**协议驱动、状态机强制、单一入口**的功能开发流程。
+  **统一开发工作流 — 所有 Issue 驱动的开发任务必须使用此技能。**
   
-  触发条件：
-  - 用户提到 "dev-flow"、"开发流程"、"Issue 工作流"、"Plan 管理"
-  - 用户要求创建/管理 Plan 或 Issue
-  - 用户说 "开始开发"、"执行计划"、"归档计划"
-  - 用户要求 "decompose PRD" 或从 PRD 创建 Issue
+  提供协议驱动、状态机强制的 Issue → Plan → 执行 → 验证 完整流程。
   
-  **协议依赖**: 此技能依赖 git-worktrees 技能创建隔离开发环境。
+  **必须使用本技能的场景**（即使未明确提及）：
+  - 任何涉及 GitHub Issue 的开发任务（#N、Issue N、"这个 issue"、"那个任务"）
+  - 用户说"做/开发/处理/搞定/完成"某个功能或 bug
+  - 用户要求"开始开发"、"继续开发"、"执行计划"、"归档计划"
+  - 用户要求创建、修改、管理 Plan 文件
+  - 用户说"写个方案"、"出个计划"、"怎么实现"
+  - 从 PRD 分解任务、创建 Issue
+  - 用户提到 "dev-flow"、"开发流程"、"Plan 管理"
+  
+  **协议依赖**: git-worktrees 技能（可选，用于隔离开发）
 compatibility:
-  - bash
+  - bash 3.x+
   - gh CLI (GitHub CLI)
   - jq
 ---
 
-# dev-flow — 统一开发工作流
+# dev-flow
 
-## 概述
+## Critical: `--confirm` Flag Is Human-Only
 
-`dev-flow` 整合 Issue 管理和 Plan 生命周期，解决双技能导致的入口分散、状态不同步问题。
+The `--confirm` flag is a **human gate**. Under **no circumstances** should the agent:
 
-**核心特性**：
-- 单一入口点：`flow.sh <command> <issue>`
-- 7 状态强制转换：跳步报错
-- Issue Label 自动同步
-- 协议依赖 git-worktrees
+- Execute `flow.sh approve <issue> --confirm` on behalf of the user
+- Execute `flow.sh validate <issue> --confirm` on behalf of the user
+- Ask the user to let the agent run these commands
+- Bypass the check by proceeding without confirmation
 
-## 状态机
+If the user has not explicitly confirmed (by saying "approved", "validation passed", etc.), the agent **must stop and wait**.
+
+This is a non-negotiable safety control — it ensures a human explicitly authorizes every transition from planning to execution and from execution to archive.
+
+## 状态机 (5-State Model)
 
 ```
-draft → refining → reviewed → executing → completed → validated → done
-  │                                          │
-  │                                          └── 可能需要 --pr 创建 PR
-  └─── 任意状态可跳回 draft（重置）
+investigating → planning → approved → executing → done
+                            ↑              ↑
+                       用户确认审批    验证/PR merged
 ```
 
-| 状态 | 含义 | Issue Label |
-|------|------|-------------|
-| `draft` | 初始创建 | `status/planning` |
-| `refining` | 研究和填充中 | `status/planning` |
-| `reviewed` | 用户确认，可执行 | `status/planning` |
-| `executing` | 开发中 | `status/in-progress` |
-| `completed` | 代码完成，待验证 | `status/in-review` |
-| `validated` | 用户验证通过 | `status/done` |
-| `done` | 已归档 | Issue 已关闭 |
+| 状态 | 含义 | Label |
+|------|------|-------|
+| `investigating` | 调查研究 | `status/planning` |
+| `planning` | 计划编写 | `status/planning` |
+| `approved` | 计划通过 | `status/approved` |
+| `executing` | 执行中 | `status/in-progress` |
+| `done` | 已归档 | `status/done` |
 
-**强制转换规则**：
-- 只能按顺序前进，禁止跳步
-- `reviewed` 必须通过 `check-doc` 验证
-- `validated` 需要 `--confirm` 确认
+### Label 子状态机制
+
+| 类别 | Label | 含义 |
+|------|-------|------|
+| 验证 | `validation/awaiting` | 等待用户验证（无 PR） |
+| 验证 | `validation/passed` | 验证通过（无 PR） |
+| PR | `pr/opened` | PR 已创建 |
 
 ## 命令
 
-### 生命周期命令
+```bash
+# 创建 Issue（推荐方式）
+flow.sh create --title "<title>" --project <name> --type <type> [--body "<body>"]
+
+# 生命周期
+flow.sh start <issue> [--project <name>]   # 创建 Plan
+flow.sh spike <issue>                      # 调查阶段
+flow.sh plan <issue> [--check]             # 计划阶段
+flow.sh approve <issue> [--confirm]        # 提交审批
+flow.sh dev <issue> [--worktree]           # 开始执行
+flow.sh complete <issue> [--pr]            # 完成
+flow.sh validate <issue> --confirm         # 验证（无 PR 路径）
+flow.sh archive <issue>                    # 归档
+
+# 查询
+flow.sh status <issue>                     # 查看状态
+flow.sh list                               # 列出任务
+flow.sh decompose-prd <prd> [--dry-run]    # 从 PRD 创建 Issue
+```
+
+## 创建 Issue
+
+**必须使用 `flow.sh create`**，禁止直接用 `gh issue create`。
+
+### 参数
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `--title` | ✅ | Issue 标题，格式：`<type>(<scope>): <description>` |
+| `--project` | ✅ | 目标项目：`agent-tools`、`wopal-cli`、`space` |
+| `--type` | ✅ | 类型：`feature`、`fix`、`refactor`、`docs`、`chore` |
+| `--body` | ❌ | Issue 内容（可选，有默认模板） |
+
+### 自动添加的 Labels
+
+- `status/planning` — 初始状态
+- `type/*` — 根据 `--type` 参数
+- `project/*` — 根据 `--project` 参数
+
+### 示例
 
 ```bash
-# 创建 Plan 并关联 Issue
-flow.sh start <issue> [--project <name>] [--prd <path>]
+flow.sh create \
+  --title "feat(wopal-cli): add skills remove command" \
+  --project wopal-cli \
+  --type feature \
+  --body "## 概述
 
-# 进入研究阶段
-flow.sh refine <issue>
-
-# 提交评审（自动运行 check-doc）
-flow.sh review <issue> [--confirm]
-
-# 开始执行（可选 worktree 隔离）
-flow.sh dev <issue> [--worktree]
-
-# 标记完成（可选创建 PR）
-flow.sh complete <issue> [--pr]
-
-# 用户验证确认
-flow.sh validate <issue> --confirm
-
-# 归档并清理
-flow.sh archive <issue>
+为 wopal skills 添加 remove 子命令..."
 ```
 
-### 查询命令
-
-```bash
-# 查看任务状态
-flow.sh status <issue>
-
-# 列出进行中任务
-flow.sh list
-
-# 从 PRD 创建 Issue
-flow.sh decompose-prd <prd-path> [--dry-run]
-```
-
-### 重置命令
-
-```bash
-# 重置到 draft 状态（谨慎使用）
-flow.sh reset <issue>
-```
-
-## 使用流程
-
-### 功能开发流程
+## 验证路径
 
 ```
-1. 用户创建 Issue（GitHub Web 或 gh CLI）
-   
-2. AI: dev-flow start 14 --project agent-tools
-   → 创建 Plan 文件，关联 Issue
-
-3. AI: dev-flow refine 14
-   → 状态变为 refining
-   → AI 研究代码库，填充 Plan 内容
-
-4. AI: dev-flow review 14
-   → 运行 check-doc
-   → 等待用户确认
-
-5. 用户确认后: dev-flow review 14 --confirm
-   → 状态变为 reviewed
-
-6. AI: dev-flow dev 14 --worktree
-   → 调用 git-worktrees 创建隔离环境
-   → 状态变为 executing
-
-7. AI 执行实施...
-
-8. AI: dev-flow complete 14
-   → 状态变为 completed
-
-9. 用户验证通过后: dev-flow validate 14 --confirm
-   → 状态变为 validated
-
-10. AI: dev-flow archive 14
-    → 移动 Plan 到 done/
-    → 关闭 Issue
-    → 清理 worktree（可选）
+executing
+    │
+    ├── complete --pr ──→ pr/opened ──→ PR merged ──→ archive
+    │
+    └── complete ──→ validation/awaiting
+                              │
+                              └── validate --confirm ──→ validation/passed ──→ archive
 ```
 
-### Bug 修复流程
+| 场景 | 命令 | 验证方式 | 归档条件 |
+|------|------|----------|----------|
+| 有 PR | `complete --pr` | PR review | PR merged |
+| 无 PR | `complete` | `validate --confirm` | `validation/passed` |
+
+## Issue 与 PR 仓库分离
+
+**设计决策**：Issue 在空间仓库统一管理，PR 在项目仓库创建。
+
+| 资源 | 仓库 | 原因 |
+|------|------|------|
+| **Issue** | `sampx/wopal-space` | 跨项目任务统一追踪 |
+| **PR** | 项目仓库（如 `wopal-cn/wopal-cli`） | 代码提交在项目 |
+
+### 关键流程
+
+1. **Plan 必须有 `Target Project`** → 指定代码变更在哪个项目
+2. **创建 PR 时**：
+   - 从 Plan 读取 `Target Project`
+   - 获取项目目录的 git remote
+   - 在项目仓库创建 PR
+3. **更新 Issue 时**：
+   - PR URL 写入 Issue body（空间仓库）
+   - Label 更新在空间仓库
+
+### PR 状态检测（archive）
+
+`archive` 命令从 Issue body 解析 PR URL：
+- 格式：`| PR | https://github.com/owner/repo/pull/123 |`
+- 从 URL 提取 owner/repo 和 PR 号
+- 用 `gh pr view --json mergedAt` 检测是否 merged
+
+## Labels 管理
+
+**设计**：`start` 命令自动补全缺失的 labels，无需 AI 手动添加。
+
+### Label 体系
+
+| 类别 | Labels | 用途 |
+|------|--------|------|
+| **status** | `status/planning` → `status/approved` → `status/in-progress` → `status/done` | 流程状态 |
+| **type** | `type/feature`, `type/bug`, `type/refactor`, `type/docs`, `type/chore` | 任务类型 |
+| **project** | `project/agent-tools`, `project/wopal-cli`, `project/space` | 目标项目 |
+| **validation** | `validation/awaiting`, `validation/passed` | 用户验证（无 PR 路径） |
+| **pr** | `pr/opened` | PR 已创建 |
+
+### 自动补全时机
+
+`start` 命令执行时：
+1. 从 Issue title 解析 type（`feat:` → `type/feature`）
+2. 从 Issue body 或 `--project` 参数获取 project
+3. 自动添加 `status/planning` + `type/*` + `project/*`
+
+## 标准工作流程
 
 ```
-1. dev-flow start 15 --project agent-tools
-2. dev-flow refine 15
-3. dev-flow review 15 --confirm
-4. dev-flow dev 15           # 通常不需要 worktree
-5. dev-flow complete 15
-6. dev-flow validate 15 --confirm
-7. dev-flow archive 15
+1. start <issue>     → AI 创建 Plan (status: investigating)
+2. spike <issue>     → AI 调查研究（可选，保持 investigating）
+3. plan <issue>      → AI 进入计划阶段 (status: planning)
+4. approve <issue>   → AI 提交审批，暂停等待
+   用户确认后 → approve <issue> --confirm
+5. dev <issue>       → AI 执行实施 (status: executing)
+6. complete <issue>  → AI 完成，添加验证 Label
+   无 PR → 用户验证后执行 validate --confirm
+   有 PR → 等待 PR merge
+7. archive <issue>   → AI 归档 (status: done)
 ```
 
-## 协议依赖
+## AI 使用要点
 
-### git-worktrees
+### 两个暂停点
 
-`dev-flow dev <issue> --worktree` 会调用 git-worktrees 技能：
+| 命令 | 触发者 | AI 行为 |
+|------|--------|---------|
+| `approve --confirm` | 用户 | 执行 `approve` 后**暂停**，等用户确认 |
+| `validate --confirm` | 用户 | 执行 `complete` 后**暂停**，等用户验证 |
 
-```bash
-# dev-flow 内部调用
-bash /path/to/git-worktrees/scripts/worktree.sh create <project> <branch> --no-install --no-test
-```
+### Acceptance Criteria（强制）
 
-**分支命名规则**: `issue-{N}-{slug}`
-- N: Issue 编号
-- slug: 从标题生成的 kebab-case
-
-## 文件结构
+**`complete` 前必须完成**：Plan 中的 `## Acceptance Criteria` 所有条目必须打勾。
 
 ```
-dev-flow/
-├── SKILL.md              # 本文档
-├── scripts/
-│   └── flow.sh           # 主入口脚本
-├── lib/
-│   ├── state-machine.sh  # 状态机核心
-│   ├── issue.sh          # Issue 封装
-│   ├── plan.sh           # Plan 操作
-│   └── check-doc.sh      # 方案检查
-└── templates/
-    └── plan.md           # Plan 模板
+## Acceptance Criteria
+
+- [x] 验收条件 1  ← 必须打勾
+- [x] 验收条件 2  ← 必须打勾
+```
+
+验证规则：
+- `complete` 命令会检查是否有 `- [ ]`（未完成）
+- 如有未完成项，拒绝 complete 并提示
+- AI 必须执行验证并打勾，不能跳过
+
+### 最佳实践
+
+- **plan 阶段**：随时用 `--check` 验证格式
+- **Issue 标题**：使用类型前缀（`fix:`, `feat:`, `docs:`）
+- **worktree**：复杂功能用 `--worktree` 隔离
+
+## Spike 阶段：深度代码调查
+
+Spike 是探索性调查阶段，目标是深入理解问题空间，为后续计划提供坚实的技术基础。
+
+### 调查步骤（10 步）
+
+1. **识别组件** - 确定涉及的模块/子系统，不要从名称猜测，必须阅读代码确认
+2. **彻底阅读源文件** - 不只是 grep 关键词，理解逻辑，跟踪调用链
+3. **映射当前架构** - 组件如何交互？数据流是什么？边界在哪里？
+4. **识别精确代码路径** - 提供文件路径**和行号**，命名函数、结构体、模块
+5. **评估复杂度**：
+   - Low: 隔离变更，<3 文件，路径清晰
+   - Medium: 多文件，需要设计决策，范围明确
+   - High: 跨切面变更，架构决策，有未知项
+6. **识别风险与边界情况** - 什么可能出错？有哪些权衡？哪些决策需要人类输入？
+7. **检查现有模式** - 类似功能如何实现？实现应保持一致
+8. **查看测试** - 有哪些测试模式？期望什么覆盖率？
+9. **检查架构文档** - 审阅 `docs/` 中相关文档
+10. **确定 Issue 类型** - feat / fix / refactor / chore / perf / docs
+
+### Plan 文档填充要求
+
+调查完成后，在 Plan 中填充以下章节：
+
+```markdown
+## Scope Assessment
+- **Complexity**: Low|Medium|High
+- **Confidence**: High|Medium|Low
+
+## Technical Context
+<当前架构描述，为什么需要变更>
+
+## Affected Components
+| Component | Key Files | Role |
+|-----------|-----------|------|
+| <component> | `file1`, `file2` | <在此变更中的作用> |
+
+## Code References
+| Location | Description |
+|----------|-------------|
+| `file:line` | <代码做什么，为什么相关> |
+
+## Risks & Open Questions
+- <需要人类判断的风险或未知项>
+- <可能有两种方向的设计决策>
+
+## Test Considerations
+- <测试策略>
+- <需要的测试级别：unit, integration, e2e>
+```
+
+### 设计原则
+
+1. **一切进入 Plan 文档** - 调查发现必须记录在 Plan 中，不要分散
+2. **不做实施计划** - Spike 识别问题空间和方向，实施计划是 `plan` 阶段的职责
+3. **节省后续工作** - 调查应足够详细，后续执行时可直接使用
+
+### Issue 同步机制
+
+执行 `flow.sh approve <issue> --confirm` 时，系统会将**最终确认的需求/方案**同步到 Issue body：
+
+1. **同步时机** - 用户审批通过后一次性同步，确保 Issue 反映最终确认的内容
+
+2. **同步内容** - 以下 Plan 章节会被同步（跳过占位符）：
+   - Goal
+   - Scope Assessment
+   - Technical Context
+   - Affected Components
+   - In Scope
+   - Out of Scope
+   - Risks
+
+3. **Label 自动设置** - 根据 Plan 元数据自动设置：
+   - **status label**: `status/planning` | `status/approved` | `status/in-progress` | `status/done`
+   - **type label**: `type/feature` | `type/bug` | `type/refactor` | `type/docs` | `type/chore`
+   - **project label**: `project/agent-tools` | `project/wopal-cli` | `project/space`
+
+## Plan 模板格式
+
+```markdown
+# {project}-{type}-{slug}
+
+## Metadata
+- **Issue**: #N
+- **Type**: feature|enhance|fix|refactor|docs|test
+- **Created**: YYYY-MM-DD
+- **Status**: investigating
+
+## Scope Assessment
+- **Complexity**: Low|Medium|High
+- **Confidence**: High|Medium|Low
+
+## Goal
+<一句话目标>
+
+## Technical Context
+<当前架构描述，为什么需要变更>
+
+## Affected Components
+| Component | Key Files | Role |
+|-----------|-----------|------|
+
+## In Scope
+- [ ] 功能点 1
+
+## Out of Scope
+- <不做的内容>
+
+## Code References
+| Location | Description |
+|----------|-------------|
+| `file:line` | <代码做什么，为什么相关> |
+
+## Files
+| 文件 | 操作 | 说明 |
+|------|------|------|
+
+## Implementation
+### Task N: 标题
+**Files**: `path/to/file`
+**Changes**: ...
+**Verification**: ...
+
+## Test Plan
+- **Unit**: ...
+- **Integration**: ...
+
+## Risks & Open Questions
+- ...
+
+## Documentation Impact
+- ...
+
+## Acceptance Criteria
+- [ ] ...
 ```
 
 ## 错误处理
 
-| 错误 | 原因 | 解决 |
-|------|------|------|
-| `Invalid transition` | 尝试跳步 | 按顺序执行 |
-| `Plan not found` | Plan 文件不存在 | 先运行 `start` |
-| `Issue not linked` | Plan 未关联 Issue | `start` 时指定 `--issue` |
-| `check-doc failed` | Plan 内容不完整 | 修复后重新 `review` |
-| `gh CLI not available` | 未安装 gh | 安装 GitHub CLI |
+| 错误 | 解决 |
+|------|------|
+| `Invalid transition` | 按顺序执行命令 |
+| `Plan not found` | 先运行 `start` |
+| `check-doc failed` | 修复 Plan 后重新 `plan --check` |
 
-## AI 使用指南
-
-### 何时使用此技能
-
-1. **用户请求创建 Plan** → `start` 命令
-2. **用户说"开始开发"** → `dev` 命令
-3. **用户要求"执行计划"** → 先 `review --confirm`，再 `dev`
-4. **用户说"计划完成了"** → `complete` 命令
-5. **用户确认验证通过** → `validate --confirm`
-6. **用户要求归档** → `archive` 命令
-
-### 关键提示
-
-- **不要跳步**：状态机强制顺序执行
-- **等待确认**：`review` 和 `validate` 需要用户明确确认
-- **check-doc 失败**：先修复 Plan 内容，再重新 review
-- **worktree 可选**：简单修改通常不需要隔离环境
-
-### 示例对话
+## 示例
 
 ```
 用户: 帮我开发 Issue #14
 
 AI: 
-1. 首先创建 Plan：
-   bash .agents/skills/dev-flow/scripts/flow.sh start 14 --project agent-tools
+  flow.sh start 14 --project agent-tools
+  flow.sh spike 14
+  [调查研究...]
+  flow.sh plan 14
+  [填充 Plan...]
+  flow.sh plan 14 --check
+  flow.sh approve 14
+  ⚠️ 暂停，等待审批确认
 
-2. 进入研究阶段：
-   bash .agents/skills/dev-flow/scripts/flow.sh refine 14
+用户: 审批通过
 
-[AI 研究代码库，填充 Plan...]
-
-3. 提交评审：
-   bash .agents/skills/dev-flow/scripts/flow.sh review 14
-
-用户: Plan 看起来没问题，继续
-
-AI: 确认评审：
-   bash .agents/skills/dev-flow/scripts/flow.sh review 14 --confirm
-
-4. 开始开发（使用 worktree 隔离）：
-   bash .agents/skills/dev-flow/scripts/flow.sh dev 14 --worktree
-
-[AI 执行实施...]
-
-5. 标记完成：
-   bash .agents/skills/dev-flow/scripts/flow.sh complete 14
+AI: flow.sh approve 14 --confirm
+    flow.sh dev 14 --worktree
+    [执行实施...]
+    flow.sh complete 14
+    ⚠️ 暂停，等待验证
 
 用户: 验证通过
 
-AI: 确认验证：
-   bash .agents/skills/dev-flow/scripts/flow.sh validate 14 --confirm
-
-6. 归档：
-   bash .agents/skills/dev-flow/scripts/flow.sh archive 14
+AI: flow.sh validate 14 --confirm
+    flow.sh archive 14
 ```
-
-## 迁移说明
-
-此技能替代：
-- `plan-master` — 所有功能已迁移
-- `issue-workflow` — Issue 封装已迁移
-
-迁移后删除旧技能目录。
