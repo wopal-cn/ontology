@@ -27,6 +27,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Load shared utilities first
+source "$SKILL_DIR/lib/common.sh"
+
 # Load libraries
 source "$SKILL_DIR/lib/state-machine.sh"
 source "$SKILL_DIR/lib/issue.sh"
@@ -40,49 +43,7 @@ source "$SKILL_DIR/lib/check-doc.sh"
 PLAN_PROJECT=""
 DATE=$(date +%Y-%m-%d)
 
-# Find workspace root
-FLOW_ROOT=""
-_find_flow_root() {
-    if [[ -n "$FLOW_ROOT" ]]; then
-        echo "$FLOW_ROOT"
-        return
-    fi
-    local search_dir="${1:-$(pwd)}"
-    while [[ "$search_dir" != "/" ]]; do
-        if [[ -d "$search_dir/.wopal" ]]; then
-            FLOW_ROOT="$search_dir"
-            echo "$FLOW_ROOT"
-            return
-        fi
-        if [[ "$(basename "$search_dir")" == ".wopal" ]]; then
-            FLOW_ROOT="$(dirname "$search_dir")"
-            echo "$FLOW_ROOT"
-            return
-        fi
-        search_dir="$(dirname "$search_dir")"
-    done
-    FLOW_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo ".")"
-    echo "$FLOW_ROOT"
-}
-
-ROOT_DIR="$(_find_flow_root)"
-
-# ============================================
-# Color Output
-# ============================================
-
-readonly FLOW_RED='\033[0;31m'
-readonly FLOW_GREEN='\033[0;32m'
-readonly FLOW_YELLOW='\033[0;33m'
-readonly FLOW_BLUE='\033[0;34m'
-readonly FLOW_CYAN='\033[0;36m'
-readonly FLOW_NC='\033[0m'
-
-_flow_info() { echo -e "${FLOW_BLUE}[INFO]${FLOW_NC} $1"; }
-_flow_success() { echo -e "${FLOW_GREEN}[OK]${FLOW_NC} $1"; }
-_flow_warn() { echo -e "${FLOW_YELLOW}[WARN]${FLOW_NC} $1"; }
-_flow_error() { echo -e "${FLOW_RED}[ERROR]${FLOW_NC} $1" >&2; }
-_flow_step() { echo -e "${FLOW_CYAN}[STEP]${FLOW_NC} $1"; }
+ROOT_DIR="$(find_workspace_root)"
 
 # ============================================
 # Helper Functions
@@ -109,7 +70,7 @@ _extract_type_from_title() {
 # Find Plan file by Issue number
 find_plan_by_issue() {
     local issue_number="$1"
-    local root_dir="$(_find_flow_root)"
+    local root_dir="$(find_workspace_root)"
 
     local search_dirs=(
         "$root_dir/docs/products/plans"
@@ -179,7 +140,7 @@ cmd_start() {
                 shift
                 ;;
             -*)
-                _flow_error "Unknown option: $1"
+                log_error "Unknown option: $1"
                 cmd_help
                 exit 1
                 ;;
@@ -193,25 +154,25 @@ cmd_start() {
     done
 
     if [[ -z "$issue_number" ]]; then
-        _flow_error "Issue number required"
+        log_error "Issue number required"
         echo "Usage: flow.sh start <issue> [--project <name>] [--prd <path>]"
         exit 1
     fi
 
-    _flow_info "Starting workflow for Issue #$issue_number"
+    log_info "Starting workflow for Issue #$issue_number"
 
     # 1. Get Issue information
     local repo
     repo=$(get_space_repo)
 
-    _flow_step "Fetching Issue #$issue_number info..."
+    log_step "Fetching Issue #$issue_number info..."
     local issue_info
     issue_info=$(get_issue_info "$issue_number" "$repo")
 
     local title
     title=$(echo "$issue_info" | jq -r '.title')
 
-    _flow_info "Issue title: $title"
+    log_info "Issue title: $title"
 
     # 2. Determine project from Issue if not specified
     if [[ -z "$project" ]]; then
@@ -220,13 +181,13 @@ cmd_start() {
         project=$(extract_project "$body")
 
         if [[ -z "$project" ]]; then
-            _flow_warn "Could not determine project from Issue. Using 'space' as default."
+            log_warn "Could not determine project from Issue. Using 'space' as default."
             project="space"
         fi
     fi
 
     PLAN_PROJECT="$project"
-    _flow_info "Target project: $project"
+    log_info "Target project: $project"
 
     # 3. Extract plan type from Issue title or labels
     local plan_type
@@ -257,7 +218,7 @@ cmd_start() {
     
     local plan_name="${project}-${plan_type}-${slug}"
 
-    _flow_info "Generated plan name: $plan_name"
+    log_info "Generated plan name: $plan_name"
 
     # 5. Create Plan file
     local plan_dir
@@ -267,11 +228,11 @@ cmd_start() {
     local plan_file="$plan_dir/${plan_name}.md"
 
     if [[ -f "$plan_file" ]]; then
-        _flow_error "Plan already exists: $plan_file"
+        log_error "Plan already exists: $plan_file"
         exit 1
     fi
 
-    _flow_step "Creating plan file..."
+    log_step "Creating plan file..."
 
     local deep_flag=""
     if [[ "$deep_mode" == true ]]; then
@@ -281,12 +242,12 @@ cmd_start() {
     create_plan "$plan_name" --project "$project" --issue "$issue_number" --type "$plan_type" ${prd_path:+--prd "$prd_path"} ${deep_flag}
 
     # 6. Update Issue link
-    _flow_step "Linking Plan to Issue..."
+    log_step "Linking Plan to Issue..."
     local plan_rel_path="docs/products/${project}/plans/${plan_name}.md"
     update_issue_link "$issue_number" "$repo" "plan" "[${plan_name}](../${plan_rel_path})"
 
     # 7. Ensure Issue has correct labels
-    _flow_step "Ensuring Issue labels..."
+    log_step "Ensuring Issue labels..."
     ensure_flow_labels_exist "$repo"
     
     # Get current labels
@@ -296,7 +257,7 @@ cmd_start() {
     # Add status/planning if missing
     if ! echo "$current_labels" | grep -qF "status/planning"; then
         gh issue edit "$issue_number" --repo "$repo" --add-label "status/planning" 2>/dev/null && \
-            _flow_info "Added label: status/planning"
+            log_info "Added label: status/planning"
     fi
     
     # Add type label if missing
@@ -304,7 +265,7 @@ cmd_start() {
     if ! echo "$current_labels" | grep -qF "$type_label"; then
         ensure_label_exists "$type_label" "$repo"
         gh issue edit "$issue_number" --repo "$repo" --add-label "$type_label" 2>/dev/null && \
-            _flow_info "Added label: $type_label"
+            log_info "Added label: $type_label"
     fi
     
     # Add project label if missing
@@ -312,11 +273,11 @@ cmd_start() {
     if ! echo "$current_labels" | grep -qF "$project_label"; then
         ensure_label_exists "$project_label" "$repo"
         gh issue edit "$issue_number" --repo "$repo" --add-label "$project_label" 2>/dev/null && \
-            _flow_info "Added label: $project_label"
+            log_info "Added label: $project_label"
     fi
 
     echo ""
-    _flow_success "Plan created: $plan_file"
+    log_success "Plan created: $plan_file"
     echo "  Issue: #$issue_number"
     echo "  Project: $project"
     echo "  Status: investigating"
@@ -331,7 +292,7 @@ cmd_spike() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -*)
-                _flow_error "Unknown option: $1"
+                log_error "Unknown option: $1"
                 echo "Usage: flow.sh spike <issue>"
                 exit 1
                 ;;
@@ -345,29 +306,29 @@ cmd_spike() {
     done
 
     if [[ -z "$issue_number" ]]; then
-        _flow_error "Issue number required"
+        log_error "Issue number required"
         exit 1
     fi
 
     local plan_file
     plan_file=$(find_plan_by_issue "$issue_number") || {
-        _flow_error "No plan found for Issue #$issue_number"
+        log_error "No plan found for Issue #$issue_number"
         exit 1
     }
 
     local plan_name
     plan_name=$(get_plan_name "$plan_file")
 
-    _flow_info "Found plan: $plan_name"
+    log_info "Found plan: $plan_name"
 
     local current_status
     current_status=$(get_current_status "$plan_file")
 
-    _flow_info "Current status: $current_status"
+    log_info "Current status: $current_status"
 
     # Allow spike from investigating or planning
     if [[ "$current_status" != "investigating" && "$current_status" != "planning" ]]; then
-        _flow_error "Spike phase only valid in investigating or planning state"
+        log_error "Spike phase only valid in investigating or planning state"
         echo "Current status: $current_status"
         exit 1
     fi
@@ -470,7 +431,7 @@ cmd_plan() {
                 shift
                 ;;
             -*)
-                _flow_error "Unknown option: $1"
+                log_error "Unknown option: $1"
                 echo "Usage: flow.sh plan <issue> [--check]"
                 exit 1
                 ;;
@@ -484,33 +445,33 @@ cmd_plan() {
     done
 
     if [[ -z "$issue_number" ]]; then
-        _flow_error "Issue number required"
+        log_error "Issue number required"
         exit 1
     fi
 
     local plan_file
     plan_file=$(find_plan_by_issue "$issue_number") || {
-        _flow_error "No plan found for Issue #$issue_number"
+        log_error "No plan found for Issue #$issue_number"
         exit 1
     }
 
     local plan_name
     plan_name=$(get_plan_name "$plan_file")
 
-    _flow_info "Found plan: $plan_name"
+    log_info "Found plan: $plan_name"
 
     # --check mode: just run check-doc
     if [[ "$check_only" == true ]]; then
-        _flow_step "Running document quality check..."
+        log_step "Running document quality check..."
         echo ""
         if check_doc_plan "$plan_file"; then
             echo ""
-            _flow_success "Plan passes validation!"
+            log_success "Plan passes validation!"
             echo ""
             echo "Ready for approval: flow.sh approve $issue_number"
         else
             echo ""
-            _flow_error "Plan has issues. Fix and run: flow.sh plan $issue_number --check"
+            log_error "Plan has issues. Fix and run: flow.sh plan $issue_number --check"
         fi
         exit 0
     fi
@@ -518,7 +479,7 @@ cmd_plan() {
     local current_status
     current_status=$(get_current_status "$plan_file")
 
-    _flow_info "Current status: $current_status"
+    log_info "Current status: $current_status"
 
     # Validate transition
     if ! validate_transition "$current_status" "planning"; then
@@ -531,11 +492,11 @@ cmd_plan() {
     # Ensure Issue labels are correct
     local repo
     repo=$(get_space_repo)
-    _flow_step "Ensuring Issue labels..."
+    log_step "Ensuring Issue labels..."
     ensure_issue_labels "$issue_number" "$plan_file" "$repo"
 
     echo ""
-    _flow_success "Plan status: planning"
+    log_success "Plan status: planning"
     echo ""
     echo "Planning workflow:"
     echo "  1. Fill in all sections (Goal, Scope, Files, Tasks)"
@@ -549,6 +510,7 @@ cmd_plan() {
 cmd_approve() {
     local issue_number=""
     local confirm=false
+    local update_issue=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -556,8 +518,12 @@ cmd_approve() {
                 confirm=true
                 shift
                 ;;
+            --update-issue)
+                update_issue=true
+                shift
+                ;;
             -*)
-                _flow_error "Unknown option: $1"
+                log_error "Unknown option: $1"
                 exit 1
                 ;;
             *)
@@ -570,26 +536,26 @@ cmd_approve() {
     done
 
     if [[ -z "$issue_number" ]]; then
-        _flow_error "Issue number required"
-        echo "Usage: flow.sh approve <issue> [--confirm]"
+        log_error "Issue number required"
+        echo "Usage: flow.sh approve <issue> [--confirm] [--update-issue]"
         exit 1
     fi
 
     local plan_file
     plan_file=$(find_plan_by_issue "$issue_number") || {
-        _flow_error "No plan found for Issue #$issue_number"
+        log_error "No plan found for Issue #$issue_number"
         exit 1
     }
 
     local plan_name
     plan_name=$(get_plan_name "$plan_file")
 
-    _flow_info "Found plan: $plan_name"
+    log_info "Found plan: $plan_name"
 
     local current_status
     current_status=$(get_current_status "$plan_file")
 
-    _flow_info "Current status: $current_status"
+    log_info "Current status: $current_status"
 
     # Validate transition
     if ! validate_transition "$current_status" "approved"; then
@@ -597,10 +563,10 @@ cmd_approve() {
     fi
 
     # Run check-doc first
-    _flow_step "Running document quality check..."
+    log_step "Running document quality check..."
     if ! check_doc_plan "$plan_file"; then
         echo ""
-        _flow_error "Plan failed check-doc validation"
+        log_error "Plan failed check-doc validation"
         echo "Fix the issues and retry: flow.sh approve $issue_number"
         exit 1
     fi
@@ -624,21 +590,25 @@ cmd_approve() {
     # Update status
     set_plan_status "$plan_file" "approved"
 
-    # Sync approved plan to Issue (final requirements/solution)
+    # Sync approved plan to Issue (only when --update-issue is set)
     local repo
     repo=$(get_space_repo)
-    _flow_step "Syncing approved plan to Issue..."
-    sync_plan_to_issue "$issue_number" "$plan_file" "$repo"
+    if [[ "$update_issue" == true ]]; then
+        log_step "Syncing approved plan to Issue..."
+        sync_plan_to_issue "$issue_number" "$plan_file" "$repo"
+    else
+        log_info "Skipping Issue update (use --update-issue to sync)"
+    fi
     
     # Ensure Issue labels are correct
-    _flow_step "Ensuring Issue labels..."
+    log_step "Ensuring Issue labels..."
     ensure_issue_labels "$issue_number" "$plan_file" "$repo"
 
     # Sync Issue label
     sync_issue_label "$plan_file" "approved"
 
     echo ""
-    _flow_success "Plan status: approved (user approved)"
+    log_success "Plan status: approved (user approved)"
     echo ""
     echo "Next: flow.sh dev $issue_number [--worktree]"
 }
@@ -655,7 +625,7 @@ cmd_dev() {
                 shift
                 ;;
             -*)
-                _flow_error "Unknown option: $1"
+                log_error "Unknown option: $1"
                 exit 1
                 ;;
             *)
@@ -668,26 +638,26 @@ cmd_dev() {
     done
 
     if [[ -z "$issue_number" ]]; then
-        _flow_error "Issue number required"
+        log_error "Issue number required"
         echo "Usage: flow.sh dev <issue> [--worktree]"
         exit 1
     fi
 
     local plan_file
     plan_file=$(find_plan_by_issue "$issue_number") || {
-        _flow_error "No plan found for Issue #$issue_number"
+        log_error "No plan found for Issue #$issue_number"
         exit 1
     }
 
     local plan_name
     plan_name=$(get_plan_name "$plan_file")
 
-    _flow_info "Found plan: $plan_name"
+    log_info "Found plan: $plan_name"
 
     local current_status
     current_status=$(get_current_status "$plan_file")
 
-    _flow_info "Current status: $current_status"
+    log_info "Current status: $current_status"
 
     # Validate transition
     if ! validate_transition "$current_status" "executing"; then
@@ -710,7 +680,7 @@ cmd_dev() {
         fi
 
         if [[ -z "$project" ]]; then
-            _flow_error "Cannot create worktree: no Target Project in plan"
+            log_error "Cannot create worktree: no Target Project in plan"
             exit 1
         fi
 
@@ -720,16 +690,16 @@ cmd_dev() {
 
         local worktree_script="$SKILL_DIR/../git-worktrees/scripts/worktree.sh"
         if [[ ! -f "$worktree_script" ]]; then
-            _flow_warn "git-worktrees skill not found, skipping worktree creation"
+            log_warn "git-worktrees skill not found, skipping worktree creation"
         else
-            _flow_step "Creating worktree..."
-            _flow_info "Project: $project, Branch: $branch"
+            log_step "Creating worktree..."
+            log_info "Project: $project, Branch: $branch"
             bash "$worktree_script" create "$project" "$branch" --no-install --no-test
         fi
     fi
 
     echo ""
-    _flow_success "Plan status: executing"
+    log_success "Plan status: executing"
     echo ""
     echo "Execute the plan, then run: flow.sh complete $issue_number"
     echo ""
@@ -748,7 +718,7 @@ cmd_complete() {
                 shift
                 ;;
             -*)
-                _flow_error "Unknown option: $1"
+                log_error "Unknown option: $1"
                 exit 1
                 ;;
             *)
@@ -761,39 +731,39 @@ cmd_complete() {
     done
 
     if [[ -z "$issue_number" ]]; then
-        _flow_error "Issue number required"
+        log_error "Issue number required"
         echo "Usage: flow.sh complete <issue> [--pr]"
         exit 1
     fi
 
     local plan_file
     plan_file=$(find_plan_by_issue "$issue_number") || {
-        _flow_error "No plan found for Issue #$issue_number"
+        log_error "No plan found for Issue #$issue_number"
         exit 1
     }
 
     local plan_name
     plan_name=$(get_plan_name "$plan_file")
 
-    _flow_info "Found plan: $plan_name"
+    log_info "Found plan: $plan_name"
 
     local current_status
     current_status=$(get_current_status "$plan_file")
 
-    _flow_info "Current status: $current_status"
+    log_info "Current status: $current_status"
 
     # Must be in executing state
     if [[ "$current_status" != "executing" ]]; then
-        _flow_error "Plan must be in executing state to complete"
+        log_error "Plan must be in executing state to complete"
         echo "Current status: $current_status"
         exit 1
     fi
 
     # Check Acceptance Criteria
-    _flow_step "Verifying Acceptance Criteria..."
+    log_step "Verifying Acceptance Criteria..."
     if ! check_acceptance_criteria "$plan_file"; then
         echo ""
-        _flow_error "Cannot complete: Acceptance Criteria not satisfied"
+        log_error "Cannot complete: Acceptance Criteria not satisfied"
         echo ""
         echo "Please complete the remaining items and update the Plan file:"
         echo "  $plan_file"
@@ -813,17 +783,17 @@ cmd_complete() {
     if [[ "$create_pr" == true ]]; then
         # With PR path: add pr/opened label
         if [[ -z "$project" ]]; then
-            _flow_error "Cannot create PR: no Target Project in plan"
+            log_error "Cannot create PR: no Target Project in plan"
             exit 1
         fi
         
-        _flow_step "Creating PR..."
-        _flow_info "Target Project: $project"
+        log_step "Creating PR..."
+        log_info "Target Project: $project"
         add_pr_label "$issue_number" "$repo"
         create_pr "$issue_number" --project "$project" --base main
 
         echo ""
-        _flow_success "Execution complete with PR"
+        log_success "Execution complete with PR"
         echo ""
         echo "PR Path:"
         echo "  1. Wait for PR review"
@@ -833,7 +803,7 @@ cmd_complete() {
         add_validation_label "$issue_number" "awaiting" "$repo"
 
         echo ""
-        _flow_success "Execution complete, awaiting validation"
+        log_success "Execution complete, awaiting validation"
         echo ""
         echo "═══════════════════════════════════════════════════════════════"
         echo "USER VALIDATION REQUIRED"
@@ -862,7 +832,7 @@ cmd_validate() {
                 shift
                 ;;
             -*)
-                _flow_error "Unknown option: $1"
+                log_error "Unknown option: $1"
                 exit 1
                 ;;
             *)
@@ -875,21 +845,21 @@ cmd_validate() {
     done
 
     if [[ -z "$issue_number" ]]; then
-        _flow_error "Issue number required"
+        log_error "Issue number required"
         echo "Usage: flow.sh validate <issue> --confirm"
         exit 1
     fi
 
     local plan_file
     plan_file=$(find_plan_by_issue "$issue_number") || {
-        _flow_error "No plan found for Issue #$issue_number"
+        log_error "No plan found for Issue #$issue_number"
         exit 1
     }
 
     local plan_name
     plan_name=$(get_plan_name "$plan_file")
 
-    _flow_info "Found plan: $plan_name"
+    log_info "Found plan: $plan_name"
 
     # Check for validation/awaiting label (must have been completed without PR)
     local repo
@@ -899,7 +869,7 @@ cmd_validate() {
     issue_labels=$(gh issue view "$issue_number" --repo "$repo" --json labels -q '.labels[].name' 2>/dev/null || true)
 
     if ! echo "$issue_labels" | grep -q "validation/awaiting"; then
-        _flow_error "Issue does not have validation/awaiting label"
+        log_error "Issue does not have validation/awaiting label"
         echo "This command is for the no-PR validation path."
         echo "If you created a PR, wait for PR merge instead."
         exit 1
@@ -919,7 +889,7 @@ cmd_validate() {
     add_validation_label "$issue_number" "passed" "$repo"
 
     echo ""
-    _flow_success "Validation passed"
+    log_success "Validation passed"
     echo ""
     echo "Next: flow.sh archive $issue_number"
 }
@@ -929,26 +899,26 @@ cmd_archive() {
     local issue_number="$1"
 
     if [[ -z "$issue_number" ]]; then
-        _flow_error "Issue number required"
+        log_error "Issue number required"
         echo "Usage: flow.sh archive <issue>"
         exit 1
     fi
 
     local plan_file
     plan_file=$(find_plan_by_issue "$issue_number") || {
-        _flow_error "No plan found for Issue #$issue_number"
+        log_error "No plan found for Issue #$issue_number"
         exit 1
     }
 
     local plan_name
     plan_name=$(get_plan_name "$plan_file")
 
-    _flow_info "Found plan: $plan_name"
+    log_info "Found plan: $plan_name"
 
     local current_status
     current_status=$(get_current_status "$plan_file")
 
-    _flow_info "Current status: $current_status"
+    log_info "Current status: $current_status"
 
     local repo
     repo=$(get_space_repo)
@@ -971,20 +941,20 @@ cmd_archive() {
         pr_url=$(get_pr_url_from_issue "$issue_number" "$repo")
         
         if [[ -n "$pr_url" ]]; then
-            _flow_info "Found PR URL: $pr_url"
+            log_info "Found PR URL: $pr_url"
             
             if is_pr_merged "$pr_url"; then
                 can_archive=true
                 archive_reason="PR merged: $pr_url"
             else
-                _flow_error "PR exists but not merged yet"
+                log_error "PR exists but not merged yet"
                 echo "PR URL: $pr_url"
                 echo "Wait for PR to be merged before archiving."
                 exit 1
             fi
         else
             # Fallback: try to find PR by branch name in Issue repo
-            _flow_warn "No PR URL found in Issue body, checking Issue repo for merged PRs..."
+            log_warn "No PR URL found in Issue body, checking Issue repo for merged PRs..."
             local pr_info
             pr_info=$(gh pr list --repo "$repo" --state merged --search "Closes #$issue_number" --json number,url 2>/dev/null || echo "[]")
             
@@ -992,7 +962,7 @@ cmd_archive() {
                 can_archive=true
                 archive_reason="PR merged (found via search)"
             else
-                _flow_error "Cannot determine PR status"
+                log_error "Cannot determine PR status"
                 echo "No PR URL in Issue body and no merged PR found referencing #$issue_number"
                 echo ""
                 echo "If PR is in a different repo, ensure PR URL is recorded in Issue body:"
@@ -1003,13 +973,13 @@ cmd_archive() {
     fi
 
     if [[ "$can_archive" != true ]]; then
-        _flow_error "Cannot archive: neither validation/passed nor merged PR found"
+        log_error "Cannot archive: neither validation/passed nor merged PR found"
         echo "Complete validation first: flow.sh validate $issue_number --confirm"
         echo "Or wait for PR to be merged."
         exit 1
     fi
 
-    _flow_info "Archive condition met: $archive_reason"
+    log_info "Archive condition met: $archive_reason"
 
     # Update status to done
     set_plan_status "$plan_file" "done"
@@ -1022,7 +992,7 @@ cmd_archive() {
     close_issue "$issue_number" --repo "$repo" --comment "Plan archived, closing issue."
 
     echo ""
-    _flow_success "Plan archived: $archived_file"
+    log_success "Plan archived: $archived_file"
     echo ""
     echo "Next: commit the changes"
 }
@@ -1032,7 +1002,7 @@ cmd_status() {
     local issue_number="$1"
 
     if [[ -z "$issue_number" ]]; then
-        _flow_error "Issue number required"
+        log_error "Issue number required"
         echo "Usage: flow.sh status <issue>"
         exit 1
     fi
@@ -1040,10 +1010,10 @@ cmd_status() {
     local repo
     repo=$(get_space_repo)
 
-    _flow_step "Fetching Issue #$issue_number info..."
+    log_step "Fetching Issue #$issue_number info..."
     local issue_info
     issue_info=$(get_issue_info "$issue_number" "$repo") || {
-        _flow_error "Issue #$issue_number not found"
+        log_error "Issue #$issue_number not found"
         exit 1
     }
 
@@ -1062,7 +1032,7 @@ cmd_status() {
 
     local plan_file
     plan_file=$(find_plan_by_issue "$issue_number") || {
-        _flow_warn "No plan linked to this Issue"
+        log_warn "No plan linked to this Issue"
         exit 0
     }
 
@@ -1110,7 +1080,7 @@ cmd_list() {
 
     local repo
     repo=$(get_space_repo) || {
-        _flow_error "Cannot get repo info"
+        log_error "Cannot get repo info"
         return 1
     }
 
@@ -1161,7 +1131,7 @@ cmd_decompose_prd() {
                 shift 2
                 ;;
             -*)
-                _flow_error "Unknown option: $1"
+                log_error "Unknown option: $1"
                 exit 1
                 ;;
             *)
@@ -1174,27 +1144,27 @@ cmd_decompose_prd() {
     done
 
     if [[ -z "$prd_path" ]]; then
-        _flow_error "PRD path required"
+        log_error "PRD path required"
         echo "Usage: flow.sh decompose-prd <prd-path> [--dry-run] [--project <name>]"
         exit 1
     fi
 
-    local root_dir="$(_find_flow_root)"
+    local root_dir="$(find_workspace_root)"
     local full_prd_path="$root_dir/$prd_path"
 
     if [[ ! -f "$full_prd_path" ]]; then
-        _flow_error "PRD file not found: $full_prd_path"
+        log_error "PRD file not found: $full_prd_path"
         exit 1
     fi
 
-    _flow_info "Parsing PRD: $prd_path"
+    log_info "Parsing PRD: $prd_path"
 
     # Extract Implementation Phases from PRD
     local phases_section
     phases_section=$(sed -n '/## Implementation Phases/,/^## /p' "$full_prd_path" | head -n -1)
 
     if [[ -z "$phases_section" ]]; then
-        _flow_warn "No '## Implementation Phases' section found in PRD"
+        log_warn "No '## Implementation Phases' section found in PRD"
         echo "Looking for Phase sections..."
 
         local created_issues=()
@@ -1231,9 +1201,9 @@ This Issue was auto-created by dev-flow decompose-prd."
                     
                     if [[ -n "$issue_num" ]]; then
                         created_issues+=("#$issue_num")
-                        _flow_success "Issue #$issue_num created: [Phase $phase_num] $phase_title"
+                        log_success "Issue #$issue_num created: [Phase $phase_num] $phase_title"
                     else
-                        _flow_error "Failed to create Issue for Phase $phase_num"
+                        log_error "Failed to create Issue for Phase $phase_num"
                     fi
                 fi
             fi
@@ -1241,11 +1211,11 @@ This Issue was auto-created by dev-flow decompose-prd."
 
         if [[ "$dry_run" != true && ${#created_issues[@]} -gt 0 ]]; then
             echo ""
-            _flow_success "Created ${#created_issues[@]} Issues: ${created_issues[*]}"
+            log_success "Created ${#created_issues[@]} Issues: ${created_issues[*]}"
         fi
     else
         echo ""
-        _flow_info "Found Implementation Phases section"
+        log_info "Found Implementation Phases section"
         echo ""
 
         if [[ "$dry_run" == true ]]; then
@@ -1282,18 +1252,18 @@ This Issue was auto-created by dev-flow decompose-prd."
                     
                     if [[ -n "$issue_num" ]]; then
                         created_issues+=("#$issue_num")
-                        _flow_success "Issue #$issue_num created: [Phase $phase_num] $phase_title"
+                        log_success "Issue #$issue_num created: [Phase $phase_num] $phase_title"
                     else
-                        _flow_error "Failed to create Issue for Phase $phase_num"
+                        log_error "Failed to create Issue for Phase $phase_num"
                     fi
                 fi
             done <<< "$phases_section"
 
             if [[ ${#created_issues[@]} -gt 0 ]]; then
                 echo ""
-                _flow_success "Created ${#created_issues[@]} Issues: ${created_issues[*]}"
+                log_success "Created ${#created_issues[@]} Issues: ${created_issues[*]}"
             else
-                _flow_warn "No phases found in Implementation Phases section"
+                log_warn "No phases found in Implementation Phases section"
             fi
         fi
     fi
@@ -1304,22 +1274,22 @@ cmd_reset() {
     local issue_number="$1"
 
     if [[ -z "$issue_number" ]]; then
-        _flow_error "Issue number required"
+        log_error "Issue number required"
         echo "Usage: flow.sh reset <issue>"
         exit 1
     fi
 
     local plan_file
     plan_file=$(find_plan_by_issue "$issue_number") || {
-        _flow_error "No plan found for Issue #$issue_number"
+        log_error "No plan found for Issue #$issue_number"
         exit 1
     }
 
     local plan_name
     plan_name=$(get_plan_name "$plan_file")
 
-    _flow_warn "This will reset plan '$plan_name' to investigating status"
-    _flow_warn "This is a destructive operation that will lose current progress"
+    log_warn "This will reset plan '$plan_name' to investigating status"
+    log_warn "This is a destructive operation that will lose current progress"
     echo ""
     read -p "Are you sure? (y/N): " confirm
 
@@ -1331,7 +1301,7 @@ cmd_reset() {
     set_plan_status "$plan_file" "investigating"
 
     echo ""
-    _flow_success "Plan reset to investigating: $plan_file"
+    log_success "Plan reset to investigating: $plan_file"
 }
 
 # cmd_create: Create a new Issue with proper labels
@@ -1361,7 +1331,7 @@ cmd_create() {
                 shift 2
                 ;;
             -*)
-                _flow_error "Unknown option: $1"
+                log_error "Unknown option: $1"
                 echo "Usage: flow.sh create --title \"<title>\" --project <name> --type <type> [--body \"<body>\"]"
                 exit 1
                 ;;
@@ -1373,19 +1343,19 @@ cmd_create() {
     
     # Validate required args
     if [[ -z "$title" ]]; then
-        _flow_error "Missing --title"
+        log_error "Missing --title"
         echo "Usage: flow.sh create --title \"<title>\" --project <name> --type <type>"
         exit 1
     fi
     
     if [[ -z "$project" ]]; then
-        _flow_error "Missing --project"
+        log_error "Missing --project"
         echo "Available projects: agent-tools, wopal-cli, space"
         exit 1
     fi
     
     if [[ -z "$type" ]]; then
-        _flow_error "Missing --type"
+        log_error "Missing --type"
         echo "Available types: feature, fix, refactor, docs, chore"
         exit 1
     fi
@@ -1395,7 +1365,7 @@ cmd_create() {
         agent-tools|wopal-cli|space)
             ;;
         *)
-            _flow_error "Invalid project: $project"
+            log_error "Invalid project: $project"
             echo "Available projects: agent-tools, wopal-cli, space"
             exit 1
             ;;
@@ -1420,7 +1390,7 @@ cmd_create() {
             type_label="type/chore"
             ;;
         *)
-            _flow_error "Invalid type: $type"
+            log_error "Invalid type: $type"
             echo "Available types: feature, fix, refactor, docs, chore"
             exit 1
             ;;
@@ -1429,25 +1399,45 @@ cmd_create() {
     local repo
     repo=$(get_space_repo)
     
-    _flow_step "Creating Issue..."
-    _flow_info "Title: $title"
-    _flow_info "Project: $project"
-    _flow_info "Type: $type"
+    log_step "Creating Issue..."
+    log_info "Title: $title"
+    log_info "Project: $project"
+    log_info "Type: $type"
     
     # Ensure labels exist
     ensure_flow_labels_exist "$repo"
     ensure_label_exists "$type_label" "$repo"
     ensure_label_exists "project/$project" "$repo"
     
-    # Build default body if not provided
+    # Build default body if not provided (English headers, Chinese content)
     if [[ -z "$body" ]]; then
-        body="## 概述
+        body="## Goal
 
-<描述任务内容>
+<一句话描述目标>
 
-## 验收标准
+## Background
 
-- [ ] <验收条件>
+<背景和问题描述>
+
+## In Scope
+
+- [ ] 范围项 1
+- [ ] 范围项 2
+
+## Out of Scope
+
+- 不做的项（原因）
+
+## Acceptance Criteria
+
+- [ ] 验收条件 1
+- [ ] 验收条件 2
+
+## Related Resources
+
+| Resource | Link |
+|----------|------|
+| Plan | [plan-name](../docs/...) |
 "
     fi
     
@@ -1460,7 +1450,7 @@ cmd_create() {
         --body "$body" 2>/dev/null | grep -E "^https://" | head -1)
     
     if [[ -z "$issue_url" ]]; then
-        _flow_error "Failed to create Issue"
+        log_error "Failed to create Issue"
         exit 1
     fi
     
@@ -1469,7 +1459,7 @@ cmd_create() {
     issue_number=$(echo "$issue_url" | grep -oE '[0-9]+$')
     
     echo ""
-    _flow_success "Issue created: [#${issue_number}]($issue_url)"
+    log_success "Issue created: [#${issue_number}]($issue_url)"
     echo ""
     echo "Labels added:"
     echo "  - status/planning"
@@ -1493,7 +1483,8 @@ Usage: flow.sh <command> <issue> [options]
                                     创建 Plan 并进入调查阶段
   spike <issue>                    调查研究阶段（保持 investigating）
   plan <issue> [--check]           进入计划阶段
-  approve <issue> [--confirm]      提交审批（用户确认后执行）
+  approve <issue> [--confirm] [--update-issue]
+                                    提交审批（用户确认后执行）
   dev <issue> [--worktree]         开始执行
   complete <issue> [--pr]          标记完成
   validate <issue> --confirm       用户验证确认（无 PR 路径）
@@ -1522,6 +1513,7 @@ Usage: flow.sh <command> <issue> [options]
   --worktree         在隔离的 worktree 中执行
   --pr               完成时创建 PR
   --confirm          确认操作（仅限用户执行）
+  --update-issue     同步 Plan 到 Issue（Goal/Scope 有调整时使用）
   --check            仅运行文档检查
   --dry-run          预览模式
 
@@ -1560,7 +1552,7 @@ case "${1:-help}" in
     reset)          shift; cmd_reset "$@" ;;
     help|--help|-h) cmd_help ;;
     *)
-        _flow_error "Unknown command: $1"
+        log_error "Unknown command: $1"
         cmd_help
         exit 1
         ;;

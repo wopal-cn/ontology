@@ -12,6 +12,11 @@
 
 set -e
 
+# Load shared utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SKILL_DIR/lib/common.sh"
+
 # ============================================
 # State Constants (bash 3.x compatible)
 # ============================================
@@ -44,30 +49,6 @@ _get_state_order() {
         done)          echo 5 ;;
         *)             echo 0 ;;
     esac
-}
-
-# ============================================
-# Auto-detect Workspace Root
-# ============================================
-
-_state_machine_find_root() {
-    local search_dir="${1:-$(pwd)}"
-    while [[ "$search_dir" != "/" ]]; do
-        # Check for .wopal directory (WopalSpace specific)
-        if [[ -d "$search_dir/.wopal" ]]; then
-            echo "$search_dir"
-            return 0
-        fi
-        # Check if we're inside .wopal
-        if [[ "$(basename "$search_dir")" == ".wopal" ]]; then
-            echo "$(dirname "$search_dir")"
-            return 0
-        fi
-        search_dir="$(dirname "$search_dir")"
-    done
-
-    # Fallback to git root
-    git rev-parse --show-toplevel 2>/dev/null || echo "."
 }
 
 # ============================================
@@ -232,7 +213,8 @@ sync_issue_label() {
     fi
 
     # Update all linked Issues
-    local old_labels="status/planning status/approved status/in-progress status/in-review status/validated status/done status/blocked"
+    # Only remove 5-state model labels (status/validated and status/blocked are deprecated)
+    local old_labels="status/planning status/approved status/in-progress status/done"
     for issue_number in "${issue_numbers[@]}"; do
         for old_label in $old_labels; do
             gh issue edit "$issue_number" --remove-label "$old_label" 2>/dev/null || true

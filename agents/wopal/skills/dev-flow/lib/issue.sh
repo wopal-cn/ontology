@@ -17,42 +17,10 @@
 
 set -euo pipefail
 
-# ============================================
-# Color Output Constants
-# ============================================
-
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[0;33m'
-readonly BLUE='\033[0;34m'
-readonly NC='\033[0m'
-
-_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-_success() { echo -e "${GREEN}[OK]${NC} $1"; }
-_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
-
-# ============================================
-# Find Workspace Root
-# ============================================
-
-_find_workspace_root() {
-    local dir="${1:-$(pwd)}"
-    while [[ "$dir" != "/" ]]; do
-        if [[ -f "$dir/.workspace.md" ]]; then
-            echo "$dir"
-            return 0
-        fi
-        # Also check for .wopal
-        if [[ -d "$dir/.wopal" ]]; then
-            echo "$dir"
-            return 0
-        fi
-        dir=$(dirname "$dir")
-    done
-    # Fallback to git root
-    git rev-parse --show-toplevel 2>/dev/null || echo "."
-}
+# Load shared utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SKILL_DIR/lib/common.sh"
 
 # ============================================
 # Issue Functions
@@ -63,16 +31,16 @@ _find_workspace_root() {
 # Output: owner/repo string
 get_space_repo() {
     local workspace_root
-    workspace_root=$(_find_workspace_root)
+    workspace_root=$(find_workspace_root)
 
     if ! command -v gh &> /dev/null; then
-        _error "gh CLI not available"
+        log_error "gh CLI not available"
         return 1
     fi
 
     cd "$workspace_root"
     gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || {
-        _error "Cannot get repo info. Ensure you're in a git repo with gh CLI configured"
+        log_error "Cannot get repo info. Ensure you're in a git repo with gh CLI configured"
         return 1
     }
 }
@@ -102,7 +70,7 @@ get_issue_info() {
     fi
 
     if ! command -v gh &> /dev/null; then
-        _error "gh CLI not available"
+        log_error "gh CLI not available"
         return 1
     fi
 
@@ -144,21 +112,21 @@ update_issue_label() {
     fi
 
     if ! command -v gh &> /dev/null; then
-        _warn "gh CLI not available, skipping label update"
+        log_warn "gh CLI not available, skipping label update"
         return 0
     fi
 
     case "$action" in
         add)
             gh issue edit "$issue_number" --repo "$repo" --add-label "$label" 2>/dev/null && \
-                _success "Issue #$issue_number label added: $label" || \
-                _warn "Failed to add label to Issue #$issue_number"
+                log_success "Issue #$issue_number label added: $label" || \
+                log_warn "Failed to add label to Issue #$issue_number"
             ;;
         remove)
             gh issue edit "$issue_number" --repo "$repo" --remove-label "$label" 2>/dev/null || true
             ;;
         *)
-            _error "Invalid action: $action (use 'add' or 'remove')"
+            log_error "Invalid action: $action (use 'add' or 'remove')"
             return 1
             ;;
     esac
@@ -174,7 +142,7 @@ update_issue_link() {
     local link_value="$4"
 
     if ! command -v gh &> /dev/null; then
-        _warn "gh CLI not available, skipping issue link update"
+        log_warn "gh CLI not available, skipping issue link update"
         return 0
     fi
 
@@ -202,7 +170,7 @@ update_issue_link() {
             label="PR"
             ;;
         *)
-            _error "Invalid link type: $link_type"
+            log_error "Invalid link type: $link_type"
             return 1
             ;;
     esac
@@ -272,15 +240,15 @@ create_issue() {
                 shift 2
                 ;;
             *)
-                _error "Unknown parameter: $1"
+                log_error "Unknown parameter: $1"
                 return 1
                 ;;
         esac
     done
 
-    [[ -z "$title" ]] && { _error "Missing --title"; return 1; }
-    [[ -z "$project" ]] && { _error "Missing --project"; return 1; }
-    [[ -z "$type" ]] && { _error "Missing --type"; return 1; }
+    [[ -z "$title" ]] && { log_error "Missing --title"; return 1; }
+    [[ -z "$project" ]] && { log_error "Missing --project"; return 1; }
+    [[ -z "$type" ]] && { log_error "Missing --type"; return 1; }
 
     local repo
     repo=$(get_space_repo)
@@ -288,8 +256,8 @@ create_issue() {
     # Build labels
     labels+=("status/planning" "type/$type" "project/$project")
 
-    _info "Creating Issue: $title"
-    _info "Project: $project, Type: $type"
+    log_info "Creating Issue: $title"
+    log_info "Project: $project, Type: $type"
 
     # Build gh command arguments array
     local gh_args=()
@@ -304,7 +272,7 @@ create_issue() {
     local issue_url
     issue_url=$(gh issue create "${gh_args[@]}")
 
-    _success "Issue created: $issue_url"
+    log_success "Issue created: $issue_url"
 
     # Extract Issue number
     local issue_number
@@ -348,7 +316,7 @@ close_issue() {
         repo=$(get_space_repo)
     fi
 
-    _info "Closing Issue #$issue_number..."
+    log_info "Closing Issue #$issue_number..."
 
     if [[ -n "$comment" ]]; then
         gh issue comment "$issue_number" --repo "$repo" --body "$comment"
@@ -365,7 +333,7 @@ close_issue() {
     done
     gh issue edit "$issue_number" --repo "$repo" --add-label "status/done" 2>/dev/null || true
 
-    _success "Issue #$issue_number closed"
+    log_success "Issue #$issue_number closed"
 }
 
 # Get project repo from project name
@@ -374,18 +342,18 @@ close_issue() {
 get_project_repo() {
     local project="$1"
     local workspace_root
-    workspace_root=$(_find_workspace_root)
+    workspace_root=$(find_workspace_root)
     
     local project_dir="$workspace_root/projects/$project"
     
     if [[ ! -d "$project_dir" ]]; then
-        _error "Project directory not found: $project_dir"
+        log_error "Project directory not found: $project_dir"
         return 1
     fi
     
     cd "$project_dir"
     gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || {
-        _error "Cannot get repo info for project: $project"
+        log_error "Cannot get repo info for project: $project"
         return 1
     }
 }
@@ -420,12 +388,12 @@ create_pr() {
         esac
     done
 
-    [[ -z "$project" ]] && { _error "Missing --project"; return 1; }
+    [[ -z "$project" ]] && { log_error "Missing --project"; return 1; }
 
     local space_repo
     space_repo=$(get_space_repo)
 
-    _info "Getting Issue #$issue_number info..."
+    log_info "Getting Issue #$issue_number info..."
 
     local issue_info
     issue_info=$(get_issue_info "$issue_number" "$space_repo")
@@ -439,14 +407,14 @@ create_pr() {
 
     # Get current branch from project directory
     local workspace_root project_dir
-    workspace_root=$(_find_workspace_root)
+    workspace_root=$(find_workspace_root)
     project_dir="$workspace_root/projects/$project"
     
     local current_branch
     current_branch=$(cd "$project_dir" && git branch --show-current)
 
     if [[ -z "$current_branch" || "$current_branch" == "main" || "$current_branch" == "master" ]]; then
-        _error "Please run this command on a feature branch in project: $project (current: ${current_branch:-detached})"
+        log_error "Please run this command on a feature branch in project: $project (current: ${current_branch:-detached})"
         return 1
     fi
 
@@ -473,9 +441,9 @@ Refs $space_repo#$issue_number
 EOF
 )
 
-    _info "Creating PR in $pr_repo..."
-    _info "Title: $title"
-    _info "Branch: $current_branch -> $base"
+    log_info "Creating PR in $pr_repo..."
+    log_info "Title: $title"
+    log_info "Branch: $current_branch -> $base"
 
     local pr_url
     if [[ "$draft" == true ]]; then
@@ -484,7 +452,7 @@ EOF
         pr_url=$(cd "$project_dir" && gh pr create --repo "$pr_repo" --base "$base" --title "$title" --body "$pr_body")
     fi
 
-    _success "PR created: $pr_url"
+    log_success "PR created: $pr_url"
 
     # Update Issue in space repo
     gh issue edit "$issue_number" --repo "$space_repo" --add-label "status/in-review" 2>/dev/null || true
@@ -495,15 +463,15 @@ EOF
 # Usage: check_gh_cli
 check_gh_cli() {
     if ! command -v gh &> /dev/null; then
-        _error "gh CLI is required but not installed"
-        _info "Install: brew install gh"
+        log_error "gh CLI is required but not installed"
+        log_info "Install: brew install gh"
         return 1
     fi
 
     # Check if authenticated
     if ! gh auth status &> /dev/null; then
-        _error "gh CLI is not authenticated"
-        _info "Run: gh auth login"
+        log_error "gh CLI is not authenticated"
+        log_info "Run: gh auth login"
         return 1
     fi
 
@@ -563,7 +531,7 @@ ensure_label_exists() {
     fi
 
     if ! command -v gh &> /dev/null; then
-        _warn "gh CLI not available, skipping label creation"
+        log_warn "gh CLI not available, skipping label creation"
         return 0
     fi
 
@@ -578,10 +546,10 @@ ensure_label_exists() {
     local color="${label_def%%:*}"
     local description="${label_def#*:}"
 
-    _info "Creating label: $label_name"
+    log_info "Creating label: $label_name"
     gh label create "$label_name" --repo "$repo" --color "$color" --description "$description" 2>/dev/null && \
-        _success "Label created: $label_name" || \
-        _warn "Failed to create label: $label_name (may already exist)"
+        log_success "Label created: $label_name" || \
+        log_warn "Failed to create label: $label_name (may already exist)"
 
     return 0
 }
@@ -595,7 +563,7 @@ ensure_flow_labels_exist() {
         repo=$(get_space_repo)
     fi
 
-    _info "Ensuring dev-flow labels exist in $repo..."
+    log_info "Ensuring dev-flow labels exist in $repo..."
 
     local label_names
     label_names=$(_get_flow_label_names)
@@ -603,7 +571,7 @@ ensure_flow_labels_exist() {
         ensure_label_exists "$label_name" "$repo"
     done
 
-    _success "All dev-flow labels ready"
+    log_success "All dev-flow labels ready"
 }
 
 # Add validation label to issue
@@ -627,8 +595,8 @@ add_validation_label() {
     
     # Add new label
     gh issue edit "$issue_number" --repo "$repo" --add-label "$label" 2>/dev/null && \
-        _success "Issue #$issue_number label added: $label" || \
-        _warn "Failed to add label to Issue #$issue_number"
+        log_success "Issue #$issue_number label added: $label" || \
+        log_warn "Failed to add label to Issue #$issue_number"
 }
 
 # Add PR label to issue
@@ -645,8 +613,8 @@ add_pr_label() {
     ensure_label_exists "$label" "$repo"
     
     gh issue edit "$issue_number" --repo "$repo" --add-label "$label" 2>/dev/null && \
-        _success "Issue #$issue_number label added: $label" || \
-        _warn "Failed to add label to Issue #$issue_number"
+        log_success "Issue #$issue_number label added: $label" || \
+        log_warn "Failed to add label to Issue #$issue_number"
 }
 
 # ============================================
@@ -690,15 +658,15 @@ parse_pr_url() {
 is_pr_merged() {
     local pr_url="$1"
     
-    local pr_info
-    pr_info=$(parse_pr_url "$pr_url")
+    local prlog_info
+    prlog_info=$(parse_pr_url "$pr_url")
     
-    if [[ -z "$pr_info" ]]; then
+    if [[ -z "$prlog_info" ]]; then
         return 1
     fi
     
     local pr_repo pr_number
-    read -r pr_repo pr_number <<< "$pr_info"
+    read -r pr_repo pr_number <<< "$prlog_info"
     
     # Check PR mergedAt field
     local merged_at
@@ -715,9 +683,9 @@ is_pr_merged() {
 # Sync Approved Plan to Issue
 # ============================================
 
-# Sync approved plan to Issue body (called at approve --confirm)
+# Sync approved plan to Issue body (called at approve --confirm --update-issue)
 # Usage: sync_plan_to_issue <issue_number> <plan_file> [repo]
-# This updates Issue body with confirmed requirements/solution from Plan
+# This replaces the entire Issue body with normalized content from Plan
 sync_plan_to_issue() {
     local issue_number="$1"
     local plan_file="$2"
@@ -728,35 +696,25 @@ sync_plan_to_issue() {
     fi
     
     if [[ ! -f "$plan_file" ]]; then
-        _warn "Plan file not found: $plan_file"
+        log_warn "Plan file not found: $plan_file"
         return 1
     fi
     
     if ! command -v gh &> /dev/null; then
-        _warn "gh CLI not available, skipping issue sync"
+        log_warn "gh CLI not available, skipping issue sync"
         return 0
     fi
     
-    _info "Syncing approved plan to Issue #$issue_number..."
+    log_info "Syncing approved plan to Issue #$issue_number..."
     
-    # Get current Issue body
-    local current_body
-    current_body=$(gh issue view "$issue_number" --repo "$repo" --json body -q .body)
-    
-    # Extract sections from Plan (requirements/solution level, not implementation details)
-    local goal scope_assessment technical_context affected_components in_scope out_of_scope risks
+    # Extract sections from Plan
+    local goal technical_context in_scope out_of_scope acceptance_criteria
     
     # Extract Goal
     goal=$(sed -n '/^## Goal/,/^##[^#]/{ /^## Goal/d; /^##[^#]/d; p; }' "$plan_file" | sed '/^$/d' | head -5)
     
-    # Extract Scope Assessment
-    scope_assessment=$(sed -n '/^## Scope Assessment/,/^##[^#]/{ /^## Scope Assessment/d; /^##[^#]/d; p; }' "$plan_file")
-    
-    # Extract Technical Context
+    # Extract Technical Context as Background
     technical_context=$(sed -n '/^## Technical Context/,/^##[^#]/{ /^## Technical Context/d; /^##[^#]/d; p; }' "$plan_file" | sed '/^$/d' | head -20)
-    
-    # Extract Affected Components
-    affected_components=$(sed -n '/^## Affected Components/,/^##[^#]/{ /^## Affected Components/d; /^##[^#]/d; p; }' "$plan_file" | head -15)
     
     # Extract In Scope
     in_scope=$(sed -n '/^## In Scope/,/^##[^#]/{ /^## In Scope/d; /^##[^#]/d; p; }' "$plan_file" | head -15)
@@ -764,156 +722,103 @@ sync_plan_to_issue() {
     # Extract Out of Scope
     out_of_scope=$(sed -n '/^## Out of Scope/,/^##[^#]/{ /^## Out of Scope/d; /^##[^#]/d; p; }' "$plan_file" | head -10)
     
-    # Extract Risks & Open Questions
-    risks=$(sed -n '/^## Risks \& Open Questions/,/^##[^#]/{ /^## Risks \& Open Questions/d; /^##[^#]/d; p; }' "$plan_file" | head -10)
+    # Extract Acceptance Criteria
+    acceptance_criteria=$(sed -n '/^## Acceptance Criteria/,/^##[^#]/{ /^## Acceptance Criteria/d; /^##[^#]/d; p; }' "$plan_file" | head -15)
     
-    # Build approved plan section
-    local plan_section=""
-    local has_content=false
+    # Get plan name for Related Resources
+    local plan_name
+    plan_name=$(basename "$plan_file" .md)
     
-    # Goal (skip placeholder)
+    # Build normalized Issue body (English headers, Chinese content preserved)
+    local new_body=""
+    
+    # Goal section
     if [[ -n "$goal" ]] && ! echo "$goal" | grep -qF "一句话描述"; then
-        plan_section+="
-## Goal
+        new_body+="## Goal
 
 $goal
-"
-        has_content=true
-    fi
-    
-    # Scope Assessment (skip placeholder)
-    if [[ -n "$scope_assessment" ]] && ! echo "$scope_assessment" | grep -qF "Low|Medium|High"; then
-        plan_section+="
-## Scope Assessment
 
-$scope_assessment
 "
-        has_content=true
+    else
+        new_body+="## Goal
+
+<目标描述>
+
+"
     fi
     
-    # Technical Context (skip placeholder)
+    # Background section (from Technical Context)
     if [[ -n "$technical_context" ]] && ! echo "$technical_context" | grep -qF "<当前架构"; then
-        plan_section+="
-## Technical Context
+        new_body+="## Background
 
 $technical_context
-"
-        has_content=true
-    fi
-    
-    # Affected Components
-    if [[ -n "$affected_components" ]] && echo "$affected_components" | grep -qF '|'; then
-        plan_section+="
-## Affected Components
 
-$affected_components
 "
-        has_content=true
+    else
+        new_body+="## Background
+
+<背景描述>
+
+"
     fi
     
-    # In Scope
+    # In Scope section
     if [[ -n "$in_scope" ]] && echo "$in_scope" | grep -qF '-'; then
-        plan_section+="
-## In Scope
+        new_body+="## In Scope
 
 $in_scope
+
 "
-        has_content=true
+    else
+        new_body+="## In Scope
+
+- [ ] 范围项 1
+
+"
     fi
     
-    # Out of Scope
+    # Out of Scope section
     if [[ -n "$out_of_scope" ]] && ! echo "$out_of_scope" | grep -qF "<本次不做"; then
-        plan_section+="
-## Out of Scope
+        new_body+="## Out of Scope
 
 $out_of_scope
-"
-        has_content=true
-    fi
-    
-    # Risks (skip placeholder)
-    if [[ -n "$risks" ]] && ! echo "$risks" | grep -qF "<风险"; then
-        plan_section+="
-## Risks
 
-$risks
 "
-        has_content=true
-    fi
-    
-    if [[ "$has_content" != true ]]; then
-        _warn "No plan content found to sync"
-        return 0
-    fi
-    
-    # Check if approved plan section already exists
-    local marker="<!-- APPROVED_PLAN_START -->"
-    local marker_end="<!-- APPROVED_PLAN_END -->"
-    local new_body
-    
-    if echo "$current_body" | grep -qF "$marker"; then
-        # Replace existing section using awk
-        local temp_file section_file
-        temp_file=$(mktemp)
-        section_file=$(mktemp)
-        echo "$current_body" > "$temp_file"
-        {
-            echo "$marker"
-            echo "$plan_section"
-            echo "$marker_end"
-        } > "$section_file"
-        
-        new_body=$(awk '
-            BEGIN { in_marker=0; }
-            /<!-- APPROVED_PLAN_START -->/ { 
-                in_marker=1; 
-                while ((getline line < "'"$section_file"'") > 0) print line;
-                close("'"$section_file"'");
-                next; 
-            }
-            /<!-- APPROVED_PLAN_END -->/ { in_marker=0; next; }
-            in_marker { next; }
-            { print; }
-        ' "$temp_file")
-        
-        rm -f "$temp_file" "$section_file"
     else
-        # Append section before "关联资源" or at the end
-        if echo "$current_body" | grep -q "## 关联资源"; then
-            local temp_file section_file
-            temp_file=$(mktemp)
-            section_file=$(mktemp)
-            echo "$current_body" > "$temp_file"
-            {
-                echo "$marker"
-                echo "$plan_section"
-                echo "$marker_end"
-            } > "$section_file"
-            
-            new_body=$(awk '
-                /## 关联资源/ {
-                    while ((getline line < "'"$section_file"'") > 0) print line;
-                    close("'"$section_file"'");
-                }
-                { print; }
-            ' "$temp_file")
-            
-            rm -f "$temp_file" "$section_file"
-        else
-            new_body="$current_body
+        new_body+="## Out of Scope
 
----
+- 不做的项（原因）
 
-$marker
-$plan_section
-$marker_end"
-        fi
+"
     fi
     
-    # Update Issue body
+    # Acceptance Criteria section
+    if [[ -n "$acceptance_criteria" ]] && echo "$acceptance_criteria" | grep -qF '-'; then
+        new_body+="## Acceptance Criteria
+
+$acceptance_criteria
+
+"
+    else
+        new_body+="## Acceptance Criteria
+
+- [ ] 验收条件 1
+
+"
+    fi
+    
+    # Related Resources section
+    new_body+="## Related Resources
+
+| Resource | Link |
+|----------|------|
+| Plan | [$plan_name](../docs/products/plans/$plan_name.md) |
+"
+    
+    # Update Issue body (replace entire body)
     gh issue edit "$issue_number" --repo "$repo" --body "$new_body" && \
-        _success "Issue #$issue_number updated with approved plan" || \
-        _warn "Failed to update Issue #$issue_number"
+        log_success "Issue #$issue_number updated with approved plan" || \
+        log_warn "Failed to update Issue #$issue_number"
 }
 
 # Ensure Issue has correct labels based on Plan metadata
@@ -929,16 +834,16 @@ ensure_issue_labels() {
     fi
     
     if [[ ! -f "$plan_file" ]]; then
-        _warn "Plan file not found: $plan_file"
+        log_warn "Plan file not found: $plan_file"
         return 1
     fi
     
     if ! command -v gh &> /dev/null; then
-        _warn "gh CLI not available, skipping label sync"
+        log_warn "gh CLI not available, skipping label sync"
         return 0
     fi
     
-    _info "Ensuring Issue #$issue_number labels are correct..."
+    log_info "Ensuring Issue #$issue_number labels are correct..."
     
     # Extract metadata from Plan
     local plan_type plan_project plan_status
@@ -1013,15 +918,15 @@ ensure_issue_labels() {
         
         # Add label
         if gh issue edit "$issue_number" --repo "$repo" --add-label "$label" 2>/dev/null; then
-            _success "Added label: $label"
+            log_success "Added label: $label"
             ((added_count++))
         fi
     done
     
     if [[ $added_count -eq 0 ]]; then
-        _info "All labels already correct"
+        log_info "All labels already correct"
     else
-        _success "Updated $added_count labels on Issue #$issue_number"
+        log_success "Updated $added_count labels on Issue #$issue_number"
     fi
 }
 

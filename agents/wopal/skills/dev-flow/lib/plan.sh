@@ -16,44 +16,10 @@
 
 set -e
 
-# ============================================
-# Color Output Constants
-# ============================================
-
-readonly PLAN_RED='\033[0;31m'
-readonly PLAN_GREEN='\033[0;32m'
-readonly PLAN_YELLOW='\033[0;33m'
-readonly PLAN_BLUE='\033[0;34m'
-readonly PLAN_NC='\033[0m'
-
-_plan_info() { echo -e "${PLAN_BLUE}[INFO]${PLAN_NC} $1"; }
-_plan_success() { echo -e "${PLAN_GREEN}[OK]${PLAN_NC} $1"; }
-_plan_warn() { echo -e "${PLAN_YELLOW}[WARN]${PLAN_NC} $1"; }
-_plan_error() { echo -e "${PLAN_RED}[ERROR]${PLAN_NC} $1" >&2; }
-
-# ============================================
-# Auto-detect Workspace Root
-# ============================================
-
-_plan_find_root() {
-    local search_dir="${1:-$(pwd)}"
-    while [[ "$search_dir" != "/" ]]; do
-        # Check for .wopal directory (WopalSpace specific)
-        if [[ -d "$search_dir/.wopal" ]]; then
-            echo "$search_dir"
-            return 0
-        fi
-        # Check if we're inside .wopal
-        if [[ "$(basename "$search_dir")" == ".wopal" ]]; then
-            echo "$(dirname "$search_dir")"
-            return 0
-        fi
-        search_dir="$(dirname "$search_dir")"
-    done
-
-    # Fallback to git root
-    git rev-parse --show-toplevel 2>/dev/null || echo "."
-}
+# Load shared utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SKILL_DIR/lib/common.sh"
 
 # Global project context
 PLAN_PROJECT=""
@@ -68,7 +34,7 @@ PLAN_PROJECT=""
 resolve_plan_dir() {
     local project="${PLAN_PROJECT:-}"
     local root_dir
-    root_dir=$(_plan_find_root)
+    root_dir=$(find_workspace_root)
 
     # Parse args
     while [[ $# -gt 0 ]]; do
@@ -102,7 +68,7 @@ resolve_plan_file() {
     shift || true
     local project="${PLAN_PROJECT:-}"
     local root_dir
-    root_dir=$(_plan_find_root)
+    root_dir=$(find_workspace_root)
 
     # Parse args
     while [[ $# -gt 0 ]]; do
@@ -122,7 +88,7 @@ resolve_plan_file() {
     done
 
     if [[ -z "$input" ]]; then
-        _plan_error "Plan name/pattern required"
+        log_error "Plan name/pattern required"
         return 1
     fi
 
@@ -144,13 +110,13 @@ resolve_plan_file() {
     local matches=("$plan_dir"/*"$input"*.md)
 
     if [[ ! -e "${matches[0]}" ]]; then
-        _plan_error "No plan found matching: $input"
+        log_error "No plan found matching: $input"
         echo "   Searched in: $plan_dir" >&2
         return 1
     fi
 
     if [[ ${#matches[@]} -gt 1 ]]; then
-        _plan_error "Multiple plans matched: $input"
+        log_error "Multiple plans matched: $input"
         printf '  - %s\n' "${matches[@]}" >&2
         return 1
     fi
@@ -170,7 +136,7 @@ validate_plan_name() {
     local name="$1"
 
     if [[ ! "$name" =~ ^([a-z0-9-]+)-(feature|enhance|fix|refactor|docs|test)-([a-z0-9-]+)$ ]]; then
-        _plan_error "Invalid plan name: $name"
+        log_error "Invalid plan name: $name"
         echo ""
         echo "Plan naming convention:"
         echo "  <component>-<type>-<description>.md"
@@ -245,7 +211,7 @@ create_plan() {
     done
 
     if [[ -z "$plan_name" ]]; then
-        _plan_error "Plan name required"
+        log_error "Plan name required"
         return 1
     fi
 
@@ -255,7 +221,7 @@ create_plan() {
     fi
 
     local root_dir
-    root_dir=$(_plan_find_root)
+    root_dir=$(find_workspace_root)
 
     # Determine plan directory
     local plan_dir
@@ -269,13 +235,13 @@ create_plan() {
 
     local plan_file="$plan_dir/${plan_name}.md"
     if [[ -f "$plan_file" ]]; then
-        _plan_error "Plan already exists: $plan_file"
+        log_error "Plan already exists: $plan_file"
         return 1
     fi
 
     # Validate PRD path if provided
     if [[ -n "$prd_path" && ! -f "${root_dir}/${prd_path}" ]]; then
-        _plan_error "PRD file not found: $prd_path"
+        log_error "PRD file not found: $prd_path"
         return 1
     fi
 
@@ -408,7 +374,7 @@ ${project_line}
 - [ ] 验收条件 2
 EOF
 
-    _plan_success "Created plan: $plan_file"
+    log_success "Created plan: $plan_file"
 
     if [[ ${#issue_numbers[@]} -gt 0 ]]; then
         local linked_issues=""
@@ -436,7 +402,7 @@ get_plan_status() {
     local plan_file="$1"
 
     if [[ ! -f "$plan_file" ]]; then
-        _plan_error "Plan file not found: $plan_file"
+        log_error "Plan file not found: $plan_file"
         return 1
     fi
 
@@ -457,7 +423,7 @@ set_plan_status() {
     local new_status="$2"
 
     if [[ ! -f "$plan_file" ]]; then
-        _plan_error "Plan file not found: $plan_file"
+        log_error "Plan file not found: $plan_file"
         return 1
     fi
 
@@ -465,9 +431,9 @@ set_plan_status() {
         # macOS and Linux compatible sed
         sed -i '' "s/^\- \*\*Status\*\*: .*/- **Status**: $new_status/" "$plan_file" 2>/dev/null || \
         sed -i "s/^\- \*\*Status\*\*: .*/- **Status**: $new_status/" "$plan_file"
-        _plan_success "Status updated: $new_status"
+        log_success "Status updated: $new_status"
     else
-        _plan_error "Status line not found in plan file"
+        log_error "Status line not found in plan file"
         return 1
     fi
 }
@@ -479,24 +445,24 @@ link_prd() {
     local prd_path="$2"
 
     if [[ ! -f "$plan_file" ]]; then
-        _plan_error "Plan file not found: $plan_file"
+        log_error "Plan file not found: $plan_file"
         return 1
     fi
 
     local root_dir
-    root_dir=$(_plan_find_root)
+    root_dir=$(find_workspace_root)
 
     if [[ -n "$prd_path" && ! -f "${root_dir}/${prd_path}" ]]; then
-        _plan_warn "PRD file not found: $prd_path (linking anyway)"
+        log_warn "PRD file not found: $prd_path (linking anyway)"
     fi
 
     # Update PRD line
     if grep -q '^\- \*\*PRD\*\*:' "$plan_file"; then
         sed -i '' "s|^\- \*\*PRD\*\*: .*|- **PRD**: \`${prd_path}\`|" "$plan_file" 2>/dev/null || \
         sed -i "s|^\- \*\*PRD\*\*: .*|- **PRD**: \`${prd_path}\`|" "$plan_file"
-        _plan_success "PRD linked: $prd_path"
+        log_success "PRD linked: $prd_path"
     else
-        _plan_error "PRD line not found in plan file"
+        log_error "PRD line not found in plan file"
         return 1
     fi
 }
@@ -508,7 +474,7 @@ archive_plan() {
     local plan_file="$1"
 
     if [[ ! -f "$plan_file" ]]; then
-        _plan_error "Plan file not found: $plan_file"
+        log_error "Plan file not found: $plan_file"
         return 1
     fi
 
@@ -518,7 +484,7 @@ archive_plan() {
     # In 5-state model, we archive from executing state after validation
     # The status transition to "done" happens before archive
     if [[ "$current_status" != "executing" && "$current_status" != "done" ]]; then
-        _plan_error "Plan must be in executing state (after validation) before archiving"
+        log_error "Plan must be in executing state (after validation) before archiving"
         echo "   Current status: $current_status" >&2
         return 1
     fi
@@ -534,7 +500,7 @@ archive_plan() {
     local archived_file="$done_dir/$plan_name"
     mv "$plan_file" "$archived_file"
 
-    _plan_success "Plan archived: $archived_file"
+    log_success "Plan archived: $archived_file"
 
     echo "$archived_file"
 }
@@ -568,7 +534,7 @@ get_plan_metadata() {
     local plan_file="$1"
 
     if [[ ! -f "$plan_file" ]]; then
-        _plan_error "Plan file not found: $plan_file"
+        log_error "Plan file not found: $plan_file"
         return 1
     fi
 
@@ -599,7 +565,7 @@ check_acceptance_criteria() {
     local plan_file="$1"
     
     if [[ ! -f "$plan_file" ]]; then
-        _plan_error "Plan file not found: $plan_file"
+        log_error "Plan file not found: $plan_file"
         return 1
     fi
     
@@ -609,7 +575,7 @@ check_acceptance_criteria() {
     
     # If no section or empty, pass
     if [[ -z "$ac_section" ]] || ! echo "$ac_section" | grep -q '\-'; then
-        _plan_info "No Acceptance Criteria found in plan"
+        log_info "No Acceptance Criteria found in plan"
         return 0
     fi
     
@@ -618,7 +584,7 @@ check_acceptance_criteria() {
     unchecked=$(echo "$ac_section" | grep -E '^\s*-\s+\[\s*\]' || true)
     
     if [[ -n "$unchecked" ]]; then
-        _plan_error "Acceptance Criteria not completed:"
+        log_error "Acceptance Criteria not completed:"
         echo ""
         echo "$unchecked" | while read -r line; do
             echo "  $line"
@@ -632,13 +598,13 @@ check_acceptance_criteria() {
     checked=$(echo "$ac_section" | grep -E '^\s*-\s+\[x\]' || true)
     
     if [[ -z "$checked" ]]; then
-        _plan_warn "No Acceptance Criteria items found (checked or unchecked)"
+        log_warn "No Acceptance Criteria items found (checked or unchecked)"
         return 0
     fi
     
     local checked_count
     checked_count=$(echo "$checked" | wc -l | tr -d ' ')
-    _plan_success "All $checked_count Acceptance Criteria completed"
+    log_success "All $checked_count Acceptance Criteria completed"
     return 0
 }
 

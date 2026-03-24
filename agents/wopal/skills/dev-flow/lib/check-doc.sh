@@ -9,40 +9,10 @@
 
 set -e
 
-# ============================================
-# Color Output Constants
-# ============================================
-
-readonly CHECK_RED='\033[0;31m'
-readonly CHECK_GREEN='\033[0;32m'
-readonly CHECK_YELLOW='\033[0;33m'
-readonly CHECK_BLUE='\033[0;34m'
-readonly CHECK_NC='\033[0m'
-
-_check_info() { echo -e "${CHECK_BLUE}[INFO]${CHECK_NC} $1"; }
-_check_success() { echo -e "${CHECK_GREEN}[OK]${CHECK_NC} $1"; }
-_check_warn() { echo -e "${CHECK_YELLOW}[WARN]${CHECK_NC} $1"; }
-_check_error() { echo -e "${CHECK_RED}[ERROR]${CHECK_NC} $1" >&2; }
-
-# ============================================
-# Auto-detect Workspace Root
-# ============================================
-
-_check_find_root() {
-    local search_dir="${1:-$(pwd)}"
-    while [[ "$search_dir" != "/" ]]; do
-        if [[ -d "$search_dir/.wopal" ]]; then
-            echo "$search_dir"
-            return 0
-        fi
-        if [[ "$(basename "$search_dir")" == ".wopal" ]]; then
-            echo "$(dirname "$search_dir")"
-            return 0
-        fi
-        search_dir="$(dirname "$search_dir")"
-    done
-    git rev-parse --show-toplevel 2>/dev/null || echo "."
-}
+# Load shared utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SKILL_DIR/lib/common.sh"
 
 # ============================================
 # Helper Functions
@@ -106,7 +76,7 @@ check_doc_plan() {
     local plan_file="$1"
 
     if [[ ! -f "$plan_file" ]]; then
-        _check_error "Plan file not found: $plan_file"
+        log_error "Plan file not found: $plan_file"
         return 1
     fi
 
@@ -118,7 +88,7 @@ check_doc_plan() {
 
     # Get workspace root for file existence checks
     local root_dir
-    root_dir=$(_check_find_root)
+    root_dir=$(find_workspace_root)
 
     # ============================================
     # 1. Check for placeholders (exclude code blocks)
@@ -134,7 +104,7 @@ check_doc_plan() {
         ((issues++))
         placeholder_found="yes"
     else
-        _check_success "No placeholders"
+        log_success "No placeholders"
     fi
 
     # ============================================
@@ -145,7 +115,7 @@ check_doc_plan() {
         grep -n '<!--' "$plan_file" | grep -v '<!--.*-->' | head -5
         ((issues++))
     elif [[ -z "$placeholder_found" ]]; then
-        _check_success "No HTML comment placeholders"
+        log_success "No HTML comment placeholders"
     fi
 
     # ============================================
@@ -155,9 +125,9 @@ check_doc_plan() {
     plan_type=$(_extract_plan_type "$plan_file")
     
     if [[ -n "$plan_type" ]]; then
-        _check_success "Plan type: $plan_type"
+        log_success "Plan type: $plan_type"
     else
-        _check_warn "Plan type not detected (no Type metadata or filename pattern)"
+        log_warn "Plan type not detected (no Type metadata or filename pattern)"
     fi
 
     # ============================================
@@ -174,13 +144,13 @@ check_doc_plan() {
     # PRD is optional for all plan types (changed from mandatory for feature)
     if [[ -n "$prd_path" && "$prd_path" != *"待关联"* ]]; then
         if [[ ! -f "${root_dir}/$prd_path" ]]; then
-            _check_warn "PRD file not found: $prd_path"
+            log_warn "PRD file not found: $prd_path"
             ((warnings++))
         else
-            _check_success "PRD linked: $prd_path"
+            log_success "PRD linked: $prd_path"
         fi
     else
-        _check_success "No PRD (optional)"
+        log_success "No PRD (optional)"
     fi
 
     # ============================================
@@ -189,7 +159,7 @@ check_doc_plan() {
     local missing_sections=0
     for section in "## Goal" "## In Scope" "## Out of Scope" "## Files" "## Implementation" "## Acceptance Criteria"; do
         if grep -q "$section" "$plan_file"; then
-            _check_success "$section"
+            log_success "$section"
         else
             echo "Missing section: $section"
             ((issues++))
@@ -203,9 +173,9 @@ check_doc_plan() {
     local spike_sections="## Technical Context## Affected Components## Code References"
     for section in "## Technical Context" "## Affected Components" "## Code References"; do
         if grep -q "$section" "$plan_file"; then
-            _check_success "$section (spike investigation)"
+            log_success "$section (spike investigation)"
         else
-            _check_warn "Missing $section (recommended for spike investigation)"
+            log_warn "Missing $section (recommended for spike investigation)"
             ((warnings++))
         fi
     done
@@ -217,7 +187,7 @@ check_doc_plan() {
         # Check for Complexity and Confidence
         if grep -q '^\- \*\*Complexity\*\*:' "$plan_file" && \
            grep -q '^\- \*\*Confidence\*\*:' "$plan_file"; then
-            _check_success "## Scope Assessment"
+            log_success "## Scope Assessment"
         else
             echo "Scope Assessment missing Complexity or Confidence"
             ((issues++))
@@ -233,7 +203,7 @@ check_doc_plan() {
     local file_section
     file_section=$(grep -A 10 '^## Files' "$plan_file" || true)
     if echo "$file_section" | grep -qE '(\- `|^\| .*\.|^\| `)' 2>/dev/null; then
-        _check_success "File list populated"
+        log_success "File list populated"
     else
         echo "Empty file list"
         ((issues++))
@@ -248,7 +218,7 @@ check_doc_plan() {
         echo "No tasks found"
         ((issues++))
     else
-        _check_success "Task count: $task_count"
+        log_success "Task count: $task_count"
     fi
 
     # ============================================
@@ -262,7 +232,7 @@ check_doc_plan() {
             echo "Some tasks are missing verification commands ($verify_count/$task_count)"
             ((issues++))
         else
-            _check_success "All tasks have verification commands"
+            log_success "All tasks have verification commands"
         fi
     fi
 
@@ -272,19 +242,19 @@ check_doc_plan() {
     local checkbox_count
     checkbox_count="$(grep -c '^- \[ \] Step ' "$plan_file" || true)"
     if [[ "${checkbox_count:-0}" -lt "${task_count:-0}" ]]; then
-        _check_warn "Task granularity may be too coarse (steps: $checkbox_count, tasks: $task_count)"
+        log_warn "Task granularity may be too coarse (steps: $checkbox_count, tasks: $task_count)"
         ((warnings++))
     else
-        _check_success "Basic step granularity present"
+        log_success "Basic step granularity present"
     fi
 
     # ============================================
     # 11. Test Plan section (recommended)
     # ============================================
     if grep -q '^## Test Plan' "$plan_file"; then
-        _check_success "## Test Plan"
+        log_success "## Test Plan"
     else
-        _check_warn "Missing ## Test Plan (recommended)"
+        log_warn "Missing ## Test Plan (recommended)"
         ((warnings++))
     fi
 
@@ -307,7 +277,7 @@ check_doc_plan_quick() {
     local plan_file="$1"
 
     if [[ ! -f "$plan_file" ]]; then
-        _check_error "Plan file not found: $plan_file"
+        log_error "Plan file not found: $plan_file"
         return 1
     fi
 
