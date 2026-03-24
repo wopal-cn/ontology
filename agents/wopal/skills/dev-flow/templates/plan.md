@@ -1,25 +1,30 @@
 # {plan_name}
 
-## 元数据
+## Metadata
 
-- **Issue**: #{issue_number}
-- **Type**: {type}
-- **Target Project**: {project}
-- **Created**: {date}
-- **Status**: draft
-- **Mode**: {mode}
+{issue_line}
+{type_line}
+{project_line}- **Created**: {date}
+- **Status**: investigating
 
-## 目标
+## Scope Assessment
+
+- **Complexity**: Low|Medium|High
+- **Confidence**: High|Medium|Low
+
+## Goal
 
 一句话描述本计划要达成的目标。
 
-## Problem
+## Technical Context
 
-描述当前存在的问题或需要改进的地方。
+<当前架构描述，为什么需要变更>
 
-## Appetite
+## Affected Components
 
-时间预算（如：0.5 天、1 天、2-3 天）
+| Component | Key Files | Role |
+|-----------|-----------|------|
+| <component> | `file1`, `file2` |<在此变更中的作用> |
 
 ## In Scope
 
@@ -32,35 +37,54 @@
 
 列出本次不做的内容：
 
-- [ ] 功能点（原因或后续版本规划）
+- <本次不做的内容及原因>
 
-## 文件清单
+## Code References
+
+| Location | Description |
+|----------|-------------|
+| `file:line` | <代码做什么，为什么相关> |
+
+## Files
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
 | `relative/path/to/file` | 修改或创建 | 简要说明 |
 
-## 实施步骤
+## Implementation
 
 ### Task 1: 任务标题
 
-**Files**:
-- Modify: `relative/path/to/file`
+**Files**: `path/to/file`
 
-**改动**:
+**Changes**:
 1. 具体改动点 1
 2. 具体改动点 2
 
-**验证**: 验证命令或验证方法
+**Verification**: 验证命令或验证方法
 
 - [ ] Step 1: 具体操作
 - [ ] Step 2: 验证通过
 
-## 验收标准
+## Test Plan
 
+- **Unit**: <测试内容或 N/A>
+- **Integration**: <测试内容或 N/A>
+- **E2E**: <测试内容或 N/A>
+
+## Risks & Open Questions
+
+- <风险或待确认问题>
+
+## Documentation Impact
+
+- <需要更新的文档或 None>
+
+## Acceptance Criteria
+
+<!-- 
+  ⚠️ 强制要求：complete 前必须全部打勾
+  AI 必须执行验证工作，不能跳过
+-->
 - [ ] 验收条件 1
 - [ ] 验收条件 2
-
-## 风险与依赖
-
-列出可能的风险和依赖项。

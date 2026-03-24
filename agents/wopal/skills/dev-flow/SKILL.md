@@ -23,7 +23,7 @@ compatibility:
 
 # dev-flow
 
-## Critical: `--confirm` Flag Is Human-Only
+## CRITICAL: `--confirm` Flag Is Human-Only
 
 The `--confirm` flag is a **human gate**. Under **no circumstances** should the agent:
 
@@ -35,6 +35,28 @@ The `--confirm` flag is a **human gate**. Under **no circumstances** should the 
 If the user has not explicitly confirmed (by saying "approved", "validation passed", etc.), the agent **must stop and wait**.
 
 This is a non-negotiable safety control — it ensures a human explicitly authorizes every transition from planning to execution and from execution to archive.
+
+## CRITICAL: State Machine Compliance
+
+The agent **must strictly follow** the state machine sequence:
+
+```
+create → start → plan → approve → dev → complete → validate → archive
+```
+
+| Phase | Agent Action | Human Gate |
+|-------|---------------|------------|
+| Implementation | Execute after `approve --confirm` | `approve --confirm` |
+| Validation | Run tests, verify changes, mark Acceptance Criteria **immediately** per item | `validate --confirm` |
+
+### Verification Discipline
+
+1. **Mark Progress Immediately**: Each completed verification item must be marked `[x]` in the Plan file **right away**, not batched at the end
+2. **Clean Up Test Data**: Test Issues created during verification must be **deleted** (not closed) after use:
+   ```bash
+   gh issue delete <issue> --repo <repo> --yes
+   ```
+3. **No Skipping**: Never skip `validate` phase or proceed to `archive` without user confirmation
 
 ## 状态机 (5-State Model)
 
@@ -82,6 +104,16 @@ flow.sh list                               # 列出任务
 flow.sh decompose-prd <prd> [--dry-run]    # 从 PRD 创建 Issue
 ```
 
+## start 命令要求
+
+运行 `flow.sh start <issue>` 前，Issue 必须有 `project/*` label，否则会报错并显示修复指引。
+
+示例：
+```bash
+# 添加项目 label
+gh issue edit <issue> --add-label 'project/agent-tools'
+```
+
 ## 创建 Issue
 
 **必须使用 `flow.sh create`**，禁止直接用 `gh issue create`。
@@ -91,7 +123,7 @@ flow.sh decompose-prd <prd> [--dry-run]    # 从 PRD 创建 Issue
 | 参数 | 必填 | 说明 |
 |------|------|------|
 | `--title` | ✅ | Issue 标题，格式：`<type>(<scope>): <description>` |
-| `--project` | ✅ | 目标项目：`agent-tools`、`wopal-cli`、`space` |
+| `--project` | ✅ | 目标项目名（格式：`[a-z0-9-]+`） |
 | `--type` | ✅ | 类型：`feature`、`fix`、`refactor`、`docs`、`chore` |
 | `--body` | ❌ | Issue 内容（可选，有默认模板） |
 
@@ -110,37 +142,7 @@ flow.sh create \
   --type feature
 ```
 
-**默认 Issue Body 模板**：
-
-```markdown
-## Goal
-
-<一句话描述目标>
-
-## Background
-
-<背景和问题描述>
-
-## In Scope
-
-- [ ] 范围项 1
-- [ ] 范围项 2
-
-## Out of Scope
-
-- 不做的项（原因）
-
-## Acceptance Criteria
-
-- [ ] 验收条件 1
-- [ ] 验收条件 2
-
-## Related Resources
-
-| Resource | Link |
-|----------|------|
-| Plan | [plan-name](../docs/...) |
-```
+**Issue Body 模板**：见 `templates/issue.md`
 
 ## 验证路径
 

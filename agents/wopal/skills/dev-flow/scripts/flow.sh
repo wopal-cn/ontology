@@ -176,14 +176,16 @@ cmd_start() {
 
     # 2. Determine project from Issue if not specified
     if [[ -z "$project" ]]; then
-        local body
-        body=$(echo "$issue_info" | jq -r '.body')
-        project=$(extract_project "$body")
+        project=$(extract_project "$issue_info")
 
         if [[ -z "$project" ]]; then
-            log_warn "Could not determine project from Issue. Using 'space' as default."
-            project="space"
+            log_error "Cannot determine project from Issue #$issue_number"
+            log_error "Please add a 'project/<name>' label to the Issue"
+            log_error "Example: gh issue edit $issue_number --add-label 'project/agent-tools'"
+            return 1
         fi
+
+        log_info "Project: $project (detected from Issue labels)"
     fi
 
     PLAN_PROJECT="$project"
@@ -1350,7 +1352,7 @@ cmd_create() {
     
     if [[ -z "$project" ]]; then
         log_error "Missing --project"
-        echo "Available projects: agent-tools, wopal-cli, space"
+        echo "Example: --project agent-tools"
         exit 1
     fi
     
@@ -1360,13 +1362,13 @@ cmd_create() {
         exit 1
     fi
     
-    # Validate project
+    # Validate project name format (allow any valid name)
     case "$project" in
-        agent-tools|wopal-cli|space)
+        [a-z0-9-]*)
             ;;
         *)
-            log_error "Invalid project: $project"
-            echo "Available projects: agent-tools, wopal-cli, space"
+            log_error "Invalid project name: $project"
+            log_error "Project name must be lowercase alphanumeric with hyphens"
             exit 1
             ;;
     esac
@@ -1409,36 +1411,15 @@ cmd_create() {
     ensure_label_exists "$type_label" "$repo"
     ensure_label_exists "project/$project" "$repo"
     
-    # Build default body if not provided (English headers, Chinese content)
+    # Build default body from template if not provided
     if [[ -z "$body" ]]; then
-        body="## Goal
-
-<一句话描述目标>
-
-## Background
-
-<背景和问题描述>
-
-## In Scope
-
-- [ ] 范围项 1
-- [ ] 范围项 2
-
-## Out of Scope
-
-- 不做的项（原因）
-
-## Acceptance Criteria
-
-- [ ] 验收条件 1
-- [ ] 验收条件 2
-
-## Related Resources
-
-| Resource | Link |
-|----------|------|
-| Plan | [plan-name](../docs/...) |
-"
+        local template_file="$SKILL_DIR/templates/issue.md"
+        if [[ -f "$template_file" ]]; then
+            body=$(cat "$template_file")
+        else
+            log_error "Issue template not found: $template_file"
+            exit 1
+        fi
     fi
     
     # Create Issue using library function
@@ -1505,7 +1486,7 @@ Usage: flow.sh <command> <issue> [options]
                                          用户确认审批              验证通过后归档
 
 选项说明:
-  --project <name>   目标项目 (agent-tools, wopal-cli, space)
+  --project <name>   目标项目 (如: agent-tools, wopal-cli, space)
   --type <type>      Issue 类型 (feature, fix, refactor, docs, chore)
   --title "<title>"  Issue 标题
   --body "<body>"    Issue 内容

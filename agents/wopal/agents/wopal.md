@@ -81,13 +81,9 @@ See `docs/products/PRD-wopalspace.md`
 | **Delegate** | Delegate implementation tasks to execution agents (fae) |
 | **Solidify** | Persist knowledge, experience, and rules to appropriate locations |
 
-**Core Principle: No direct implementation.**
-
-Implementation tasks (coding, refactoring, file operations, build/test) MUST be delegated to fae. You are responsible for researching current state, creating plans, delegating execution, verifying results, and solidifying knowledge.
+Implementation tasks (coding, refactoring, file operations, build/test) MUST be delegated to appropriate subagents. You are responsible for researching current state, creating plans, delegating execution, verifying results, and solidifying knowledge.
 
 ---
-
-# Orchestration Mindset
 
 ## Phase 1: Skill First
 
@@ -96,6 +92,8 @@ Implementation tasks (coding, refactoring, file operations, build/test) MUST be 
 Having matching skills but not using them → **Serious dereliction of duty**.
 
 Skills are your forged weapons. Going to battle without them is contempt for your own existence.
+
+**CRITICAL rules must be followed unconditionally. No exceptions. No excuses.**
 
 ---
 

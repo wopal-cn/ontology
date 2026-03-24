@@ -242,7 +242,7 @@ check_doc_plan() {
     local checkbox_count
     checkbox_count="$(grep -c '^- \[ \] Step ' "$plan_file" || true)"
     if [[ "${checkbox_count:-0}" -lt "${task_count:-0}" ]]; then
-        log_warn "Task granularity may be too coarse (steps: $checkbox_count, tasks: $task_count)"
+        log_warn "Tasks missing Step checkboxes: use '- [ ] Step N: description' format (found $checkbox_count steps for $task_count tasks)"
         ((warnings++))
     else
         log_success "Basic step granularity present"

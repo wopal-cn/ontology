@@ -50,6 +50,11 @@ get_space_repo() {
 # Output: kebab-case slug (max 50 chars)
 title_to_slug() {
     local title="$1"
+    
+    # Remove conventional commit prefix (type(scope): or type:)
+    title=$(echo "$title" | sed -E 's/^[a-z]+\([^)]+\):? //' | sed -E 's/^[a-z]+: //')
+    
+    # Convert to slug
     echo "$title" | tr '[:upper:]' '[:lower:]' | \
         sed 's/[^a-z0-9]/-/g' | \
         sed 's/--*/-/g' | \
@@ -77,25 +82,23 @@ get_issue_info() {
     gh issue view "$issue_number" --repo "$repo" --json title,body,number,state,labels
 }
 
-# Extract Target Project from Issue body
-# Usage: extract_project "<body>"
+# Extract Target Project from Issue labels
+# Usage: extract_project "<issue_info_json>"
 # Output: project name or empty string
 extract_project() {
-    local body="$1"
-
-    # Match "- [x] agent-tools" format
-    if echo "$body" | grep -q '\- \[x\] agent-tools'; then
-        echo "agent-tools"
-    elif echo "$body" | grep -q '\- \[x\] wopal-cli'; then
-        echo "wopal-cli"
-    elif echo "$body" | grep -q '\- \[x\] space'; then
-        echo "space"
-    elif echo "$body" | grep -q '\- \[x\] other:'; then
-        # Extract project name from "other: `name`"
-        echo "$body" | grep '\- \[x\] other:' | sed 's/.*other: `\([^`]*\)`.*/\1/' | head -1
-    else
-        echo ""
-    fi
+    local issue_info="$1"
+    
+    # Extract project from labels with project/* pattern
+    local labels
+    labels=$(echo "$issue_info" | jq -r '.labels[].name' 2>/dev/null || true)
+    for label in $labels; do
+        if [[ "$label" =~ ^project/(.+)$ ]]; then
+            echo "${BASH_REMATCH[1]}"
+            return 0
+        fi
+    done
+    
+    echo ""
 }
 
 # Update Issue Label
@@ -535,8 +538,8 @@ ensure_label_exists() {
         return 0
     fi
 
-    # Check if label exists
-    if gh label view "$label_name" --repo "$repo" &> /dev/null; then
+    # Silent check - return early if label already exists
+    if gh label list --repo "$repo" --json name -q '.[].name' 2>/dev/null | grep -qxF "$label_name"; then
         return 0
     fi
 
@@ -546,10 +549,9 @@ ensure_label_exists() {
     local color="${label_def%%:*}"
     local description="${label_def#*:}"
 
+    # Only log when creating
     log_info "Creating label: $label_name"
-    gh label create "$label_name" --repo "$repo" --color "$color" --description "$description" 2>/dev/null && \
-        log_success "Label created: $label_name" || \
-        log_warn "Failed to create label: $label_name (may already exist)"
+    gh label create "$label_name" --repo "$repo" --color "$color" --description "$description" 2>/dev/null || true
 
     return 0
 }
