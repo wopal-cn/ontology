@@ -165,7 +165,7 @@ python scripts/sync-to-wopal.py -y
 OpenCode 配置 (`opencode.jsonc`)：
 ```json
 "plugin": [
-  "./projects/agent-tools/agents/wopal/plugins/rules-plugin/src/index.ts"
+  "./projects/ontology/agents/wopal/plugins/rules-plugin/src/index.ts"
 ]
 ```
 

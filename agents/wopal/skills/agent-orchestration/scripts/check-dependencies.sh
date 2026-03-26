@@ -50,7 +50,7 @@ echo ""
 errors=0
 
 # 必须依赖
-check_command "process-adapter" "cd projects/agent-tools/tools/process && npm install && npm link" || ((errors++))
+check_command "process-adapter" "cd projects/ontology/tools/process && npm install && npm link" || ((errors++))
 check_command "opencode" "参考 https://opencode.ai 安装 OpenCode CLI" || ((errors++))
 
 # 可选依赖（Worktree 集成）

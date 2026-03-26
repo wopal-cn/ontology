@@ -36,7 +36,7 @@ Implement user authentication feature using OpenSpec artifacts to drive OpenCode
 ```bash
 # Generate execution summary
 cd projects/web/wopal
-../../projects/agent-tools/skills/my-skills/agent-orchestration/scripts/prepare_openspec_context.sh add-auth
+../../projects/ontology/skills/my-skills/agent-orchestration/scripts/prepare_openspec_context.sh add-auth
 
 # Output: openspec-context.md (consolidated view)
 ```

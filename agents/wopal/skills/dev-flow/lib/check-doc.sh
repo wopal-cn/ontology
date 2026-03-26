@@ -110,9 +110,16 @@ check_doc_plan() {
     # ============================================
     # 2. Check for unclosed HTML comments
     # ============================================
-    if grep -n '<!--' "$plan_file" | grep -v '<!--.*-->' > /dev/null 2>&1; then
-        echo "Found unclosed HTML comments:"
-        grep -n '<!--' "$plan_file" | grep -v '<!--.*-->' | head -5
+    # Count total <!-- and --> using grep -c (avoids option parsing issues)
+    local total_opens
+    total_opens=$(grep -c '<!--' "$plan_file" 2>/dev/null | tr -d '\n' || echo "0")
+    local total_closes
+    total_closes=$(grep -c '\-\->' "$plan_file" 2>/dev/null | tr -d '\n' || echo "0")
+    local unclosed_count=$((total_opens - total_closes))
+    
+    if [[ "$unclosed_count" -gt 0 ]]; then
+        echo "Found unclosed HTML comments (missing -->):"
+        grep -n '<!--' "$plan_file" | head -5
         ((issues++))
     elif [[ -z "$placeholder_found" ]]; then
         log_success "No HTML comment placeholders"

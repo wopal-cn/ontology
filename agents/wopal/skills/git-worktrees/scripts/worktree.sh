@@ -476,27 +476,27 @@ Git Worktree 管理工具 - 工作空间级管理
   路径格式: <workspace>/.worktrees/<project>-<branch>
   
   示例:
-    项目: agent-tools, 分支: feature/auth
-    路径: .worktrees/agent-tools-feature-auth
+    项目: ontology, 分支: feature/auth
+    路径: .worktrees/ontology-feature-auth
 
 示例：
   # 创建新分支的 worktree
-  $0 create agent-tools feature/wopal-cli-scan
+  $0 create ontology feature/wopal-cli-scan
   $0 create wopal bugfix-123
   
   # 使用已存在的分支
-  $0 create agent-tools hotfix --existing
+  $0 create ontology hotfix --existing
   
   # 列出 worktree
   $0 list                    # 列出所有
-  $0 list agent-tools        # 只列出 agent-tools 的
+  $0 list ontology        # 只列出 ontology 的
   $0 list --all              # 列出所有（详细模式）
   
   # 删除 worktree
-  $0 remove agent-tools feature/wopal-cli-scan
+  $0 remove ontology feature/wopal-cli-scan
   
   # 清理
-  $0 prune agent-tools
+  $0 prune ontology
 
 注意事项：
   - 项目名必须从 .workspace.md 中的项目列表选择

@@ -20,7 +20,7 @@ description: >
 安装 `@wopal/process`：
 
 ```bash
-cd projects/agent-tools/tools/process && npm install && npm link
+cd projects/ontology/tools/process && npm install && npm link
 ```
 
 检查所有依赖：
@@ -39,7 +39,7 @@ SESSION=$(process-adapter start \
   "OPENCODE_PERMISSION='{\"bash\":{\"*\":\"allow\"},\"edit\":{\"*\":\"allow\"},\"write\":{\"*\":\"allow\"}}' \
    opencode run 'Read AGENTS.md and summarize project architecture.'" \
   --name my-task \
-  --cwd projects/agent-tools | awk '{print $3}')
+  --cwd projects/ontology | awk '{print $3}')
 
 # 查看进度
 process-adapter log $SESSION
@@ -52,7 +52,7 @@ WORKSPACE_ROOT="/Users/sam/coding/wopal/wopal-workspace"
 CHANGE="add-auth"
 
 # 1. 创建 worktree
-.agents/skills/git-worktrees/scripts/worktree.sh create agent-tools feature/auth
+.agents/skills/git-worktrees/scripts/worktree.sh create ontology feature/auth
 
 # 2. 清理标记文件
 rm -f /tmp/opencode-done-$CHANGE
@@ -63,7 +63,7 @@ SESSION=$(process-adapter start \
    OPENCODE_PERMISSION='{\"bash\":{\"*\":\"allow\"},\"edit\":{\"*\":\"allow\"},\"write\":{\"*\":\"allow\"}}' \
    opencode run 'Read $WORKSPACE_ROOT/openspec/changes/$CHANGE/tasks.md and implement all tasks. Run tests.'" \
   --name $CHANGE \
-  --cwd .worktrees/agent-tools-feature-auth | awk '{print $3}')
+  --cwd .worktrees/ontology-feature-auth | awk '{print $3}')
 
 # 4. 监控完成
 .agents/skills/agent-orchestration/scripts/wait-for-opencode.sh $CHANGE 300
@@ -76,7 +76,7 @@ process-adapter log $SESSION
 
 ```bash
 .agents/skills/agent-orchestration/scripts/quick-start.sh \
-  agent-tools feature/auth add-auth 300
+  ontology feature/auth add-auth 300
 ```
 
 ## 核心概念
@@ -131,7 +131,7 @@ OPENCODE_PERMISSION='{
 .agents/skills/git-worktrees/scripts/worktree.sh create <project> <branch>
 
 # 生成路径：.worktrees/<project>-<branch-dir>/
-# 分支中的 / 自动转换为 -，如 feature/auth → agent-tools-feature-auth
+# 分支中的 / 自动转换为 -，如 feature/auth → ontology-feature-auth
 
 # 清理
 .agents/skills/git-worktrees/scripts/worktree.sh remove <project> <branch>

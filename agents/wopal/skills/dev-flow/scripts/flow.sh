@@ -72,27 +72,21 @@ find_plan_by_issue() {
     local issue_number="$1"
     local root_dir="$(find_workspace_root)"
 
-    local search_dirs=(
-        "$root_dir/docs/products/plans"
-        "$root_dir/docs/products/agent-tools/plans"
-        "$root_dir/docs/products/wopal-cli/plans"
-        "$root_dir/docs/products/space/plans"
-    )
+    # Dynamically find all project plan directories
+    local search_dir="$root_dir/docs/products"
+    
+    if [[ ! -d "$search_dir" ]]; then
+        return 1
+    fi
 
-    for search_dir in "${search_dirs[@]}"; do
-        if [[ ! -d "$search_dir" ]]; then
-            continue
+    # Search docs/products/plans/ (global) and docs/products/*/plans/ (project-specific)
+    while IFS= read -r -d '' plan_file; do
+        local issue_line
+        if grep -q "Issue.*#$issue_number" "$plan_file" 2>/dev/null; then
+            echo "$plan_file"
+            return 0
         fi
-
-        while IFS= read -r -d '' plan_file; do
-            local issue_line
-            issue_line=$(grep -m1 '^\- \*\*Issue\*\*:' "$plan_file" 2>/dev/null || true)
-            if [[ "$issue_line" =~ \#$issue_number([^0-9]|$) ]]; then
-                echo "$plan_file"
-                return 0
-            fi
-        done < <(find "$search_dir" -name "*.md" -not -path "*/done/*" -print0 2>/dev/null)
-    done
+    done < <(find "$search_dir" -name "*.md" -not -path "*/done/*" -print0 2>/dev/null)
 
     return 1
 }
@@ -181,7 +175,7 @@ cmd_start() {
         if [[ -z "$project" ]]; then
             log_error "Cannot determine project from Issue #$issue_number"
             log_error "Please add a 'project/<name>' label to the Issue"
-            log_error "Example: gh issue edit $issue_number --add-label 'project/agent-tools'"
+            log_error "Example: gh issue edit $issue_number --add-label 'project/ontology'"
             return 1
         fi
 
@@ -1352,7 +1346,7 @@ cmd_create() {
     
     if [[ -z "$project" ]]; then
         log_error "Missing --project"
-        echo "Example: --project agent-tools"
+        echo "Example: --project ontology"
         exit 1
     fi
     
@@ -1486,7 +1480,7 @@ Usage: flow.sh <command> <issue> [options]
                                          用户确认审批              验证通过后归档
 
 选项说明:
-  --project <name>   目标项目 (如: agent-tools, wopal-cli, space)
+  --project <name>   目标项目 (如: ontology, wopal-cli, space)
   --type <type>      Issue 类型 (feature, fix, refactor, docs, chore)
   --title "<title>"  Issue 标题
   --body "<body>"    Issue 内容
@@ -1503,7 +1497,7 @@ Usage: flow.sh <command> <issue> [options]
   flow.sh create --title "feat(wopal-cli): add skills remove" --project wopal-cli --type feature
   
   # 完整工作流
-  flow.sh start 42 --project agent-tools
+  flow.sh start 42 --project ontology
   flow.sh spike 42
   flow.sh plan 42
   flow.sh approve 42 --confirm

@@ -71,7 +71,7 @@ def get_default_inbox() -> Path:
     except (subprocess.CalledProcessError, FileNotFoundError):
         script_dir = Path(__file__).parent
         project_root = script_dir.parent.parent.parent.parent.parent
-    return project_root / "projects" / "agent-tools" / "skills" / "download" / "INBOX"
+    return project_root / "projects" / "ontology" / "skills" / "download" / "INBOX"
 
 
 def download_skill(
@@ -196,7 +196,7 @@ def main():
     parser.add_argument(
         "--dest",
         "-d",
-        help="Destination directory (default: projects/agent-tools/skills/download/INBOX)",
+        help="Destination directory (default: projects/ontology/skills/download/INBOX)",
     )
     parser.add_argument(
         "--force",

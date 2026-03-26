@@ -12,7 +12,7 @@ When OpenCode runs in a worktree, it operates in an isolated directory that shar
 Workspace Root: /Users/sam/coding/wopal/wopal-workspace/
 OpenSpec Files: /Users/sam/coding/wopal/wopal-workspace/openspec/changes/add-auth/tasks.md
 
-Worktree:       /Users/sam/coding/wopal/wopal-workspace/.worktrees/agent-tools-feature-auth/
+Worktree:       /Users/sam/coding/wopal/wopal-workspace/.worktrees/ontology-feature-auth/
                  (OpenCode runs here, so relative paths start here)
 ```
 
@@ -50,8 +50,8 @@ Without `external_directory`, OpenCode will auto-reject the permission request a
 
 ```bash
 WORKTREE=".agents/skills/git-worktrees/scripts/worktree.sh"
-"$WORKTREE" create agent-tools feature/add-auth
-# Creates: .worktrees/agent-tools-feature-add-auth/
+"$WORKTREE" create ontology feature/add-auth
+# Creates: .worktrees/ontology-feature-add-auth/
 ```
 
 ### 2. Set Up Variables
@@ -59,7 +59,7 @@ WORKTREE=".agents/skills/git-worktrees/scripts/worktree.sh"
 ```bash
 WORKSPACE_ROOT="/Users/sam/coding/wopal/wopal-workspace"
 CHANGE="add-auth"
-PROJECT="agent-tools"
+PROJECT="ontology"
 BRANCH="feature/add-auth"
 BRANCH_DIR=$(echo "$BRANCH" | tr '/' '-')
 WORKTREE_DIR="$WORKSPACE_ROOT/.worktrees/$PROJECT-$BRANCH_DIR"
@@ -89,7 +89,7 @@ process-adapter log $SESSION
 
 ```bash
 process-adapter remove $SESSION
-.agents/skills/git-worktrees/scripts/worktree.sh remove agent-tools feature/add-auth
+.agents/skills/git-worktrees/scripts/worktree.sh remove ontology feature/add-auth
 ```
 
 ## Common Pitfalls
@@ -129,10 +129,10 @@ SESSION=$(process-adapter start ...)
 
 ```bash
 # ❌ Old format (deprecated)
-./scripts/worktree.sh create add-feature-x --subproject agent-tools
+./scripts/worktree.sh create add-feature-x --subproject ontology
 
 # ✅ New format
-.agents/skills/git-worktrees/scripts/worktree.sh create agent-tools feature/add-auth
+.agents/skills/git-worktrees/scripts/worktree.sh create ontology feature/add-auth
 ```
 
 ## Related

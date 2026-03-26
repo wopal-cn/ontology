@@ -55,7 +55,7 @@ Download skills from GitHub to local INBOX directory.
 
 **Options:**
 - `source` - Skill identifier (owner/repo@skill) or GitHub URL (required)
-- `--dest, -d` - Destination directory (default: projects/agent-tools/skills/download/INBOX)
+- `--dest, -d` - Destination directory (default: projects/ontology/skills/download/INBOX)
 - `--force, -f` - Overwrite existing skill
 - `--verbose, -v` - Show detailed output
 

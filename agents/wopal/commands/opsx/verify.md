@@ -14,7 +14,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 1. **Resolve and change to the correct project directory (CRITICAL)**
 
    OpenSpec CLI requires running from a directory containing the `openspec/` folder.
-   - Look at the user's current context, active file, or explicit instructions to determine the target sub-project (e.g., `projects/agent-tools`).
+   - Look at the user's current context, active file, or explicit instructions to determine the target sub-project (e.g., `projects/ontology`).
    - If ambiguous, ask the user.
    - Run `cd <project-path>` before executing ANY `openspec` commands.
    - NEVER run `openspec` from the workspace root.

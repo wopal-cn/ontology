@@ -199,5 +199,5 @@ git merge feature/new-skill --no-ff
 
 ## 脚本位置
 
-- 源码：`projects/agent-tools/skills/my-skills/project-worktrees/scripts/worktree.sh`
+- 源码：`projects/ontology/skills/my-skills/project-worktrees/scripts/worktree.sh`
 - 部署后：`.agents/skills/project-worktrees/scripts/worktree.sh`

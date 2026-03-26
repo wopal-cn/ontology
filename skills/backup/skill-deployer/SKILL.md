@@ -75,7 +75,7 @@ Each deployed skill includes a `version.json` file for tracking:
 ```json
 {
   "name": "skill-deployer",
-  "source_path": "projects/agent-tools/skills/my-skills/skill-deployer",
+  "source_path": "projects/ontology/skills/my-skills/skill-deployer",
   "content_hash": "a1b2c3d4...",
   "deployed_at": "2026-02-28T14:15:00Z",
   "deploy_type": "copy"

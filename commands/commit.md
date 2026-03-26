@@ -73,14 +73,14 @@ git diff --stat
   - MEMORY.md
   - docs/products/plans/xxx.md
 
-📦 projects/agent-tools:
+📦 projects/ontology:
   - agents/wopal/commands/summon.md
   - commands/commit.md
 
 分组:
   [workspace] 组1 (docs): 更新知识沉淀 → MEMORY.md
   [workspace] 组2 (chore): 归档计划 → plans/xxx.md
-  [agent-tools] 组1 (feat): 优化命令提示词 → summon.md + commit.md
+  [ontology] 组1 (feat): 优化命令提示词 → summon.md + commit.md
 ```
 
 ### Type 判断
@@ -109,7 +109,7 @@ git diff --stat
 2. docs: 更新知识沉淀
    - MEMORY.md
 
-📦 projects/agent-tools (main)
+📦 projects/ontology (main)
 1. fix: 修复 commit 命令项目扫描漏洞
    - commands/commit.md
 
@@ -128,7 +128,7 @@ git diff --stat
 
 ```bash
 # 1. 进入项目提交
-cd projects/agent-tools
+cd projects/ontology
 git add <files-group-1>
 git commit -m "fix: 修复 commit 命令项目扫描漏洞"
 

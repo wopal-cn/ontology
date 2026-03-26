@@ -141,7 +141,7 @@ validate_plan_name() {
         echo "Plan naming convention:"
         echo "  <component>-<type>-<description>.md"
         echo ""
-        echo "Components: plan-master, fae, wopal-cli, agent-tools, etc."
+        echo "Components: plan-master, fae, wopal-cli, ontology, etc."
         echo "Types: feature, enhance, fix, refactor, docs, test"
         echo "  - feature: new functionality"
         echo "  - enhance: improvement/optimization"

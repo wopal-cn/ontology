@@ -34,7 +34,7 @@ description: Wopal 与 Fae 协作的完整生命周期指南。覆盖委派、�
 
 | Space 视角 | Fae 视角 |
 |------------|----------|
-| `projects/agent-tools/` | `/project/` |
+| `projects/ontology/` | `/project/` |
 | `.agents/skills/` | 不可见 |
 
 ```bash

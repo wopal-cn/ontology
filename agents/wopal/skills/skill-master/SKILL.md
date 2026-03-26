@@ -11,7 +11,7 @@ description: ⚠️ MUST LOAD BEFORE any skill operation (install/update/deploy)
 
 | 层级 | 共享技能 | Agent 专用技能 |
 |------|----------|----------------|
-| 源码层 | `projects/agent-tools/skills/<name>/` | `projects/agent-tools/agents/<agent>/skills/<name>/` |
+| 源码层 | `projects/ontology/skills/<name>/` | `projects/ontology/agents/<agent>/skills/<name>/` |
 | 部署层 | `.wopal/skills/<name>/` | `.wopal/agents/<agent>/skills/<name>/` |
 | 适配层 | `.agents/skills/<name>/` → symlink | `.agents/skills/<name>/` → symlink |
 

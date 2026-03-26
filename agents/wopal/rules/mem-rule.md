@@ -62,7 +62,7 @@ keywords:
 按影响范围选择：
 - **优化宪法**（`AGENTS.md`）：工作规则/协作约定
 - **更新规范**（项目 `AGENTS.md`）：项目特定知识/流程
-- **增强技能**（`projects/agent-tools/skills/`）：能力不足
+- **增强技能**（`projects/ontology/skills/`）：能力不足
 - **升级灵魂**（系统提示词）：核心行为特质
 
 ## 命令

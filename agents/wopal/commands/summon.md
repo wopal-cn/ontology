@@ -4,7 +4,7 @@ description: 召唤 Wopal，唤醒记忆与上下文
 
 # 召唤
 
-项目模式: `$ARGUMENTS`（如 `agent-tools`、`web/wopal`）
+项目模式: `$ARGUMENTS`（如 `ontology`、`web/wopal`）
 
 ## 流程
 

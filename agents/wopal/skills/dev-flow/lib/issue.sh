@@ -508,7 +508,7 @@ _get_label_props() {
         type/docs)          echo "0075ca:Documentation" ;;
         type/chore)         echo "f9d0c4:Chore/maintenance" ;;
         # Project labels
-        project/agent-tools) echo "5319e7:agent-tools project" ;;
+        project/ontology) echo "5319e7:ontology project" ;;
         project/wopal-cli)   echo "1d76db:wopal-cli project" ;;
         project/space)       echo "0e8a16:space-level changes" ;;
         # Unknown label - generic color
@@ -901,7 +901,7 @@ ensure_issue_labels() {
     # Project label
     if [[ -n "$plan_project" ]]; then
         case "$plan_project" in
-            agent-tools|wopal-cli|space)
+            ontology|wopal-cli|space)
                 labels_to_add+=("project/$plan_project")
                 ;;
         esac

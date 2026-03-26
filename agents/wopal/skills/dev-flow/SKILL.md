@@ -111,7 +111,7 @@ flow.sh decompose-prd <prd> [--dry-run]    # 从 PRD 创建 Issue
 示例：
 ```bash
 # 添加项目 label
-gh issue edit <issue> --add-label 'project/agent-tools'
+gh issue edit <issue> --add-label 'project/ontology'
 ```
 
 ## 创建 Issue
@@ -198,7 +198,7 @@ executing
 |------|--------|------|
 | **status** | `status/planning` → `status/approved` → `status/in-progress` → `status/done` | 流程状态 |
 | **type** | `type/feature`, `type/bug`, `type/refactor`, `type/docs`, `type/chore` | 任务类型 |
-| **project** | `project/agent-tools`, `project/wopal-cli`, `project/space` | 目标项目 |
+| **project** | `project/ontology`, `project/wopal-cli`, `project/space` | 目标项目 |
 | **validation** | `validation/awaiting`, `validation/passed` | 用户验证（无 PR 路径） |
 | **pr** | `pr/opened` | PR 已创建 |
 
@@ -406,7 +406,7 @@ Plan 评审通过后，Agent 需判断是否更新 Issue：
 用户: 帮我开发 Issue #14
 
 AI: 
-  flow.sh start 14 --project agent-tools
+  flow.sh start 14 --project ontology
   flow.sh spike 14
   [调查研究...]
   flow.sh plan 14

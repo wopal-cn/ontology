@@ -6,7 +6,7 @@ Quickly analyze the architecture of a project using OpenCode.
 
 ## Task
 
-"Summarize the architecture of the agent-tools project, focusing on the core components and their interactions."
+"Summarize the architecture of the ontology project, focusing on the core components and their interactions."
 
 ## Execution
 
@@ -18,7 +18,7 @@ SESSION=$(process-adapter start \
   "OPENCODE_PERMISSION='{\"bash\":{\"*\":\"allow\"},\"edit\":{\"*\":\"allow\"},\"write\":{\"*\":\"allow\"}}' \
    opencode run 'Read AGENTS.md and summarize the architecture of this project. Focus on core components and their interactions. Be concise (max 300 words).'" \
   --name summary-task \
-  --cwd projects/agent-tools | awk '{print $3}')
+  --cwd projects/ontology | awk '{print $3}')
 
 echo "Session ID: $SESSION"
 ```
@@ -33,7 +33,7 @@ process-adapter poll $SESSION
 process-adapter log $SESSION
 
 # Example output:
-# The agent-tools project is organized into several key areas:
+# The ontology project is organized into several key areas:
 # 1. **commands/** - Custom slash commands (11 total)
 # 2. **rules/** - Conditional trigger rules (6 total)
 # 3. **skills/** - Deployable skill packages

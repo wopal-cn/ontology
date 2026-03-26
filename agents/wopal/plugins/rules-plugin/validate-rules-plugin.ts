@@ -10,7 +10,7 @@
  *
  * 使用方法：
  *   cd /path/to/workspace
- *   bun projects/agent-tools/plugins/opencode/rules-plugin/validate-rules-plugin.ts
+ *   bun projects/ontology/plugins/opencode/rules-plugin/validate-rules-plugin.ts
  */
 
 import { cwd } from 'process';

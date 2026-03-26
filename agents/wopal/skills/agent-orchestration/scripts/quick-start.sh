@@ -7,8 +7,8 @@
 #   ./scripts/quick-start.sh <project> <branch> <change> [timeout]
 #
 # 示例：
-#   ./scripts/quick-start.sh agent-tools feature/auth add-auth
-#   ./scripts/quick-start.sh agent-tools feature/auth add-auth 600
+#   ./scripts/quick-start.sh ontology feature/auth add-auth
+#   ./scripts/quick-start.sh ontology feature/auth add-auth 600
 
 set -euo pipefail
 
@@ -32,14 +32,14 @@ show_help() {
   quick-start.sh <project> <branch> <change> [timeout]
 
 参数：
-  project   项目名（如 agent-tools、web）
+  project   项目名（如 ontology、web）
   branch    分支名（如 feature/auth，/ 自动转换为 -）
   change    OpenSpec 变更名（如 add-auth）
   timeout   监控超时时间（秒），默认 300
 
 示例：
-  quick-start.sh agent-tools feature/auth add-auth
-  quick-start.sh agent-tools feature/auth add-auth 600
+  quick-start.sh ontology feature/auth add-auth
+  quick-start.sh ontology feature/auth add-auth 600
 
 说明：
   1. 检查依赖（process-adapter、opencode、worktree 技能）
