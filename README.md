@@ -1,4 +1,4 @@
-# Agent Tools
+# WopalSpace ontology — 本体能力锻造层
 
 AI Agent 能力锻造工具集 — 为 AI 编码助手提供可插拔的命令、规则、技能和插件。
 
@@ -47,7 +47,7 @@ python scripts/sync-to-wopal.py -y
 ## 目录结构
 
 ```
-agent-tools/
+ontology/
 ├── commands/          # 共享命令（所有 Agent 通用）
 ├── rules/             # 共享规则
 ├── skills/            # 共享技能
