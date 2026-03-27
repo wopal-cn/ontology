@@ -1,0 +1,18 @@
+{
+  "name": "automating-mail",
+  "description": "Automates Apple Mail via JXA with AppleScript dictionary discovery. Use when asked to \"automate email\", \"send mail via script\", \"JXA Mail automation\", or \"filter email messages\". Covers accounts, mailboxes, batch message filtering, composition, attachments, and UI fallback.",
+  "source": "spillwavesolutions/automating-mac-apps-plugin@automating-mail",
+  "sourceUrl": "https://github.com/spillwavesolutions/automating-mac-apps-plugin.git",
+  "skillPath": "/plugins/automating-mac-apps-plugin/skills/automating-mail",
+  "downloadedAt": "2026-03-27T01:16:10.207Z",
+  "skillFolderHash": "485b8ee8a62d7b0f8ce234955b93b0dc0b06768b",
+  "commit": "313fc9b3d752e120ffc25039ed4d0e262dbc7cd7",
+  "lastScannedAt": "2026-03-27T01:17:49.413Z",
+  "lastScanStatus": "pass",
+  "lastScanRiskScore": 0,
+  "lastScanSummary": {
+    "critical": 0,
+    "warning": 0,
+    "passed": 13
+  }
+}
