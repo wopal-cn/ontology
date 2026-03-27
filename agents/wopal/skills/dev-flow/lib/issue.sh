@@ -205,9 +205,14 @@ update_issue_link() {
 # Create Issue
 # Usage: create_issue --title "<title>" --project <project> --type <type> [options]
 # Options:
-#   --body "<body>"      Issue body content
-#   --label "<label>"    Additional labels (can be used multiple times)
-#   --assignee "<user>"  Assignee
+#   --body "<body>"         Issue body content (fallback if no structured params)
+#   --label "<label>"       Additional labels (can be used multiple times)
+#   --assignee "<user>"     Assignee
+#   --goal "<text>"         One-line goal (structured)
+#   --background "<text>"   Background description (structured)
+#   --scope "<items>"       In-scope items, comma-separated (structured)
+#   --out-of-scope "<items>" Out-of-scope items, comma-separated (structured)
+#   --reference "<path>"    Research document path (structured)
 create_issue() {
     local title=""
     local project=""
@@ -215,6 +220,11 @@ create_issue() {
     local body=""
     local labels=()
     local assignee=""
+    local goal=""
+    local background=""
+    local scope=""
+    local out_of_scope=""
+    local reference=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -242,6 +252,26 @@ create_issue() {
                 assignee="$2"
                 shift 2
                 ;;
+            --goal)
+                goal="$2"
+                shift 2
+                ;;
+            --background)
+                background="$2"
+                shift 2
+                ;;
+            --scope)
+                scope="$2"
+                shift 2
+                ;;
+            --out-of-scope)
+                out_of_scope="$2"
+                shift 2
+                ;;
+            --reference)
+                reference="$2"
+                shift 2
+                ;;
             *)
                 log_error "Unknown parameter: $1"
                 return 1
@@ -252,6 +282,65 @@ create_issue() {
     [[ -z "$title" ]] && { log_error "Missing --title"; return 1; }
     [[ -z "$project" ]] && { log_error "Missing --project"; return 1; }
     [[ -z "$type" ]] && { log_error "Missing --type"; return 1; }
+
+    # Build structured body if any structured params provided
+    if [[ -n "$goal" || -n "$background" || -n "$scope" || -n "$out_of_scope" || -n "$reference" ]]; then
+        local NL=$'\n'
+
+        # Goal
+        body+="## Goal${NL}${NL}"
+        if [[ -n "$goal" ]]; then
+            body+="$goal${NL}${NL}"
+        else
+            body+="<一句话描述目标>${NL}${NL}"
+        fi
+
+        # Background
+        body+="## Background${NL}${NL}"
+        if [[ -n "$background" ]]; then
+            body+="$background${NL}${NL}"
+        else
+            body+="<背景和问题描述>${NL}${NL}"
+        fi
+
+        # In Scope
+        body+="## In Scope${NL}${NL}"
+        if [[ -n "$scope" ]]; then
+            IFS=',' read -ra items <<< "$scope"
+            for item in "${items[@]}"; do
+                item=$(echo "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                body+="- [ ] ${item}${NL}"
+            done
+        else
+            body+="- [ ] 范围项 1${NL}- [ ] 范围项 2${NL}"
+        fi
+        body+="${NL}"
+
+        # Out of Scope
+        body+="## Out of Scope${NL}${NL}"
+        if [[ -n "$out_of_scope" ]]; then
+            IFS=',' read -ra items <<< "$out_of_scope"
+            for item in "${items[@]}"; do
+                item=$(echo "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                body+="- ${item}${NL}"
+            done
+        else
+            body+="- 不做的项（原因）${NL}"
+        fi
+        body+="${NL}"
+
+        # Acceptance Criteria (always placeholder for plan to fill)
+        body+="## Acceptance Criteria${NL}${NL}- [ ] 待 plan 细化后填充${NL}${NL}"
+
+        # Related Resources
+        body+="## Related Resources${NL}${NL}"
+        body+="| Resource | Link |${NL}"
+        body+="|----------|------|${NL}"
+        if [[ -n "$reference" ]]; then
+            body+="| Research | $reference |${NL}"
+        fi
+        body+="| Plan | _待关联_ |${NL}"
+    fi
 
     local repo
     repo=$(get_space_repo)

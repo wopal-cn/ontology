@@ -86,7 +86,8 @@ investigating → planning → approved → executing → done
 
 ```bash
 # 创建 Issue（推荐方式）
-flow.sh create --title "<title>" --project <name> --type <type> [--body "<body>"]
+flow.sh create --title "<title>" --project <name> --type <type> [options]
+# 可选参数: --goal, --background, --scope, --out-of-scope, --reference, --body
 
 # 生命周期
 flow.sh start <issue> [--project <name>]   # 创建 Plan
@@ -125,7 +126,12 @@ gh issue edit <issue> --add-label 'project/ontology'
 | `--title` | ✅ | Issue 标题，格式：`<type>(<scope>): <description>` |
 | `--project` | ✅ | 目标项目名（格式：`[a-z0-9-]+`） |
 | `--type` | ✅ | 类型：`feature`、`fix`、`refactor`、`docs`、`chore` |
-| `--body` | ❌ | Issue 内容（可选，有默认模板） |
+| `--goal` | ❌ | 一句话目标 |
+| `--background` | ❌ | 背景描述 |
+| `--scope` | ❌ | 范围项（逗号分隔） |
+| `--out-of-scope` | ❌ | 不做的项（逗号分隔） |
+| `--reference` | ❌ | 研究报告路径 |
+| `--body` | ❌ | 完整 body（结构化参数优先） |
 
 ### 自动添加的 Labels
 
@@ -136,10 +142,21 @@ gh issue edit <issue> --add-label 'project/ontology'
 ### 示例
 
 ```bash
+# 基本用法（使用模板）
 flow.sh create \
   --title "feat(wopal-cli): add skills remove command" \
   --project wopal-cli \
   --type feature
+
+# 结构化参数（一步填入讨论结果）
+flow.sh create \
+  --title "feat(skills): mac-reminder 个人待办技能" \
+  --project ontology \
+  --type feature \
+  --goal "为 Wopal 提供个人待办管理，通过 macOS Reminders App 实现" \
+  --background "经调研 AppleScript 可直接操作 Reminders App，JXA 有超时问题排除" \
+  --scope "AppleScript 封装脚本, SKILL.md, 安装部署与 E2E 验证" \
+  --out-of-scope "优先级排序, 依赖管理, 本地文件存储"
 ```
 
 **Issue Body 模板**：见 `templates/issue.md`

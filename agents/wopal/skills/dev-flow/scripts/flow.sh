@@ -1301,12 +1301,17 @@ cmd_reset() {
 }
 
 # cmd_create: Create a new Issue with proper labels
-# Usage: flow.sh create --title "<title>" --project <name> --type <type> [--body "<body>"]
+# Usage: flow.sh create --title "<title>" --project <name> --type <type> [options]
 cmd_create() {
     local title=""
     local project=""
     local type=""
     local body=""
+    local goal=""
+    local background=""
+    local scope=""
+    local out_of_scope=""
+    local reference=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1326,9 +1331,31 @@ cmd_create() {
                 body="$2"
                 shift 2
                 ;;
+            --goal)
+                goal="$2"
+                shift 2
+                ;;
+            --background)
+                background="$2"
+                shift 2
+                ;;
+            --scope)
+                scope="$2"
+                shift 2
+                ;;
+            --out-of-scope)
+                out_of_scope="$2"
+                shift 2
+                ;;
+            --reference)
+                reference="$2"
+                shift 2
+                ;;
             -*)
                 log_error "Unknown option: $1"
-                echo "Usage: flow.sh create --title \"<title>\" --project <name> --type <type> [--body \"<body>\"]"
+                echo "Usage: flow.sh create --title \"<title>\" --project <name> --type <type>"
+                echo "                     [--body \"<body>\"] [--goal \"<text>\"] [--background \"<text>\"]"
+                echo "                     [--scope \"<items>\"] [--out-of-scope \"<items>\"] [--reference \"<path>\"]"
                 exit 1
                 ;;
             *)
@@ -1347,6 +1374,7 @@ cmd_create() {
     if [[ -z "$project" ]]; then
         log_error "Missing --project"
         echo "Example: --project ontology"
+        echo "Optional: --goal, --background, --scope, --out-of-scope, --reference"
         exit 1
     fi
     
@@ -1406,7 +1434,8 @@ cmd_create() {
     ensure_label_exists "project/$project" "$repo"
     
     # Build default body from template if not provided
-    if [[ -z "$body" ]]; then
+    # Only use template when no body AND no structured params
+    if [[ -z "$body" && -z "$goal" && -z "$background" && -z "$scope" && -z "$out_of_scope" && -z "$reference" ]]; then
         local template_file="$SKILL_DIR/templates/issue.md"
         if [[ -f "$template_file" ]]; then
             body=$(cat "$template_file")
@@ -1422,7 +1451,13 @@ cmd_create() {
         --title "$title" \
         --project "$project" \
         --type "$type" \
-        --body "$body" 2>/dev/null | grep -E "^https://" | head -1)
+        --body "$body" \
+        ${goal:+--goal "$goal"} \
+        ${background:+--background "$background"} \
+        ${scope:+--scope "$scope"} \
+        ${out_of_scope:+--out-of-scope "$out_of_scope"} \
+        ${reference:+--reference "$reference"} \
+        2>/dev/null | grep -E "^https://" | head -1)
     
     if [[ -z "$issue_url" ]]; then
         log_error "Failed to create Issue"
@@ -1452,8 +1487,9 @@ dev-flow — 统一开发工作流 (5-state model)
 Usage: flow.sh <command> <issue> [options]
 
 生命周期命令:
-  create --title "<title>" --project <name> --type <type> [--body "<body>"]
+  create --title "<title>" --project <name> --type <type> [options]
                                     创建规范化的 Issue
+                                    可选: --goal, --background, --scope, --out-of-scope, --reference, --body
   start <issue> [--project <name>] [--prd <path>]
                                     创建 Plan 并进入调查阶段
   spike <issue>                    调查研究阶段（保持 investigating）
