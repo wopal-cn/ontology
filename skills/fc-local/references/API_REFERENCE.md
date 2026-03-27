@@ -27,23 +27,6 @@ fc-cli scrape <url> [options]
 | `--clean` | AI removes nav, ads, sidebars | false |
 | `--prompt <text>` | Custom AI processing (implies --clean) | - |
 
-### extract
-
-AI-powered structured data extraction.
-
-```bash
-fc-cli extract <urls...> [options]
-```
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--prompt <text>` | Extraction prompt | Required |
-| `--prompt-file <file>` | Prompt from file | - |
-| `--schema <file>` | JSON Schema file | - |
-| `--wait` | Wait for completion | false |
-| `--poll-interval <s>` | Polling interval | 2 |
-| `--timeout <s>` | Timeout | 120 |
-
 ### crawl
 
 Crawl entire website.
@@ -102,20 +85,6 @@ fc-cli batch-status <job_id> [options]
 | `--poll-interval <s>` | Polling interval | 2 |
 | `--timeout <s>` | Timeout | 120 |
 
-### extract-status
-
-Check extract job status.
-
-```bash
-fc-cli extract-status <job_id> [options]
-```
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--wait` | Wait for completion | false |
-| `--poll-interval <s>` | Polling interval | 2 |
-| `--timeout <s>` | Timeout | 120 |
-
 ### map
 
 Discover links on website.
@@ -165,7 +134,7 @@ fc-cli llmstxt <path> [options]
 fc-cli --interactive
 ```
 
-Available: `scrape`, `search`, `crawl`, `crawl-status`, `map`, `extract`, `extract-status`, `batch`, `batch-status`, `llmstxt`, `exit`
+Available: `scrape`, `search`, `crawl`, `crawl-status`, `map`, `batch`, `batch-status`, `llmstxt`, `exit`
 
 ---
 

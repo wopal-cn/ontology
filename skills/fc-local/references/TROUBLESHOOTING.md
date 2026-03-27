@@ -18,7 +18,7 @@ my-fc logs playwright-service 100  # Playwright logs
 
 ### Empty Content / Scrape Returns Nothing
 
-**Symptoms**: `scrape` returns empty markdown, `extract` returns `{"success": true, "data": {}}`
+**Symptoms**: `scrape` returns empty markdown
 
 **Diagnosis**:
 ```bash

@@ -36,46 +36,6 @@ fc-cli scrape https://example.com --prompt "Extract only the product description
 
 ---
 
-## Extract Structured Data 🤖
-
-```bash
-# Simple extraction
-fc-cli extract https://github.com/user/repo --prompt "Extract repo name, stars, description" --wait
-
-# Twitter/X tweets (100% success rate)
-fc-cli extract https://x.com/user/status/123 \
-  --prompt "Extract tweet content, author, timestamp" \
-  --wait
-
-# With JSON Schema
-cat > schema.json << 'EOF'
-{
-  "type": "object",
-  "properties": {
-    "name": { "type": "string" },
-    "price": { "type": "number" },
-    "inStock": { "type": "boolean" }
-  }
-}
-EOF
-
-fc-cli extract https://example.com/product \
-  --prompt "Extract product info" \
-  --schema schema.json \
-  --wait \
-  -o product.json
-
-# Multiple URLs
-fc-cli extract \
-  https://site1.com/page1 \
-  https://site2.com/page2 \
-  --prompt "Extract title and main content" \
-  --wait \
-  -o results.json
-```
-
----
-
 ## Crawl Website
 
 ```bash
@@ -178,31 +138,14 @@ fc-cli llmstxt ./python-docs --full
 ### Workflow 2: GitHub Repo Info
 
 ```bash
-fc-cli extract https://github.com/modelcontextprotocol/servers \
-  --prompt "Extract: name, description, stars, language, topics" \
-  --wait \
-  -o repo.json
+fc-cli scrape https://github.com/modelcontextprotocol/servers -o repo.md
 ```
 
 ### Workflow 3: Product Monitoring
 
 ```bash
-# Create schema
-cat > product-schema.json << 'EOF'
-{
-  "type": "object",
-  "properties": {
-    "name": { "type": "string" },
-    "price": { "type": "number" },
-    "availability": { "type": "string" }
-  }
-}
-EOF
-
-# Extract
-fc-cli extract https://shop.example.com/product/123 \
-  --schema product-schema.json \
-  --wait
+# Scrape product page
+fc-cli scrape https://shop.example.com/product/123 -o product.md
 ```
 
 ---
@@ -212,5 +155,4 @@ fc-cli extract https://shop.example.com/product/123 \
 1. **Test first**: Use `--limit 10` before full crawl
 2. **Save output**: Always use `-o` for important results
 3. **Use --clean**: Removes noise for better content
-4. **Twitter/X**: Always use `extract` with `--prompt`
-5. **Large sites**: Combine `--limit` with `--timeout`
+4. **Large sites**: Combine `--limit` with `--timeout`

@@ -1,12 +1,12 @@
 ---
 name: fc-local
 description: |
-  Local web scraping tool. ⚠️ MUST use when: (1) Scrape/crawl web pages to Markdown, (2) Extract structured data from URLs, (3) Extract Twitter/X tweets, (4) Batch scrape multiple URLs, (5) Generate LLMs.txt. 🔴 Trigger when user mentions URL scraping, site crawling, or web extraction. 🔄 If anti-crawling blocks fc-local, auto-switch to CDP fallback (scrape-cdp.sh).
+  Local web scraping & search tool. ⚠️ MUST use when: (1) Scrape/crawl web pages to Markdown, (2) Web search, (3) Batch scrape multiple URLs, (4) Generate LLMs.txt. 🔴 Trigger when user mentions URL scraping, site crawling, web search, or content extraction. 🔄 If anti-crawling blocks fc-local, auto-switch to CDP fallback (scrape-cdp.sh).
 ---
 
 # fc-local — Local Web Scraping
 
-CLI wrapper for web scraping, crawling, and AI-powered extraction.
+CLI wrapper for web scraping and crawling.
 
 ## Prerequisites
 
@@ -14,7 +14,7 @@ CLI wrapper for web scraping, crawling, and AI-powered extraction.
 
 | Command | Description |
 |---------|-------------|
-| `fc-cli` | CLI for scrape/crawl/extract operations |
+| `fc-cli` | CLI for scrape/crawl operations |
 | `my-fc` | Service manager (start/stop/status/health/logs) |
 | `chrome_remote` | Chrome CDP manager (for anti-crawling fallback) |
 
@@ -45,8 +45,6 @@ which fc-cli my-fc chrome_remote agent-browser jq
 | Need | Command | Options |
 |------|---------|---------|
 | Single page | `scrape <url>` | `--format`, `--clean`🤖, `--prompt`🤖 |
-| Structured data | `extract <urls...>` | `--prompt`🤖, `--schema`, `--wait` |
-| Twitter/X tweets | `extract <url>` | `--prompt "Extract tweet content"`🤖 |
 | Entire site | `crawl <url>` | `--limit`, `--wait`, `--clean`🤖 |
 | Multiple URLs | `batch <file>` | `--wait` |
 | Link discovery | `map <url>` | `--limit`, `--filter` |
@@ -68,16 +66,6 @@ fc-cli scrape <url> [-o docs/scraped/<name>.md] [--format markdown|html|links] [
 - `--format`: Output format (default: markdown)
 - `--clean`🤖: AI removes nav, ads, sidebars
 - `--prompt`🤖: Custom AI processing (implies --clean)
-
-### extract — AI Extraction
-
-```bash
-fc-cli extract <urls...> --prompt <text> [--schema <file>] [--wait]
-```
-
-- `--prompt`🤖: What to extract (required for AI extraction)
-- `--schema`: JSON Schema for structured output
-- `--wait`: Wait for completion
 
 ### crawl — Website Crawling
 
@@ -134,7 +122,7 @@ fc-cli crawl-status job_abc123
 fc-cli crawl https://example.com --wait
 ```
 
-Status commands: `crawl-status`, `batch-status`, `extract-status`
+Status commands: `crawl-status`, `batch-status`
 
 ## Global Options
 
@@ -154,7 +142,6 @@ Status commands: `crawl-status`, `batch-status`, `extract-status`
 | "结构化获取" | Markdown output (already structured) | `fc-cli scrape <url>` |
 | "爬取整个网站" | Plain crawl | `fc-cli crawl <url>` |
 | "用 AI 清理内容" | Explicit AI request | `fc-cli scrape <url> --clean` ✅ |
-| "提取特定信息，比如标题和日期" | Explicit AI extraction | `fc-cli extract <url> --prompt "..."` ✅ |
 
 **Key principle**: `scrape` already returns structured Markdown. "结构化" ≠ AI extraction.
 
