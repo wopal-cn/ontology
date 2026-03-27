@@ -5,32 +5,74 @@ import { SessionStore } from "./session-store.js"
 function createRuntime(taskManager: {
   markTaskCompletedBySession: ReturnType<typeof vi.fn>
   markTaskErrorBySession: ReturnType<typeof vi.fn>
+  markTaskWaitingBySession?: ReturnType<typeof vi.fn>
   notifyParent: ReturnType<typeof vi.fn>
+  findBySession?: ReturnType<typeof vi.fn>
+  getClient?: ReturnType<typeof vi.fn>
 }) {
+  const fullTaskManager = {
+    findBySession: vi.fn().mockReturnValue(undefined),
+    getClient: vi.fn().mockReturnValue({
+      session: {
+        messages: vi.fn().mockResolvedValue({ data: [] }),
+      },
+    }),
+    markTaskWaitingBySession: vi.fn(),
+    ...taskManager,
+  }
   return new OpenCodeRulesRuntime({
-    client: {},
+    client: {
+      session: {
+        messages: vi.fn().mockResolvedValue({ data: [] }),
+        promptAsync: vi.fn().mockResolvedValue(undefined),
+      },
+    },
     directory: "/tmp",
     projectDirectory: "/tmp",
     ruleFiles: [],
     sessionStore: new SessionStore({ max: 10 }),
     debugLog: () => {},
-    taskManager: taskManager as never,
+    taskManager: fullTaskManager as never,
   })
 }
 
 describe("OpenCodeRulesRuntime event handling", () => {
   it("marks running task completed on session.idle and notifies parent", async () => {
+    const mockTask = { id: "task-1", sessionID: "child-1", status: "running" }
+    // Mock messages with an assistant message that has finish: "stop" and no question
+    const mockMessages = [
+      {
+        info: { role: "assistant", finish: "stop" },
+        parts: [{ type: "text", text: "Task completed successfully." }],
+      },
+    ]
     const taskManager = {
+      findBySession: vi.fn().mockReturnValue(mockTask),
       markTaskCompletedBySession: vi.fn().mockReturnValue({ id: "task-1" }),
       markTaskErrorBySession: vi.fn(),
+      markTaskWaitingBySession: vi.fn(),
       notifyParent: vi.fn().mockResolvedValue(undefined),
     }
-    const runtime = createRuntime(taskManager)
+    const runtime = new OpenCodeRulesRuntime({
+      client: {
+        session: {
+          messages: vi.fn().mockResolvedValue({ data: mockMessages }),
+          promptAsync: vi.fn().mockResolvedValue(undefined),
+        },
+      },
+      directory: "/tmp",
+      projectDirectory: "/tmp",
+      ruleFiles: [],
+      sessionStore: new SessionStore({ max: 10 }),
+      debugLog: () => {},
+      taskManager: taskManager as never,
+    })
 
     await (runtime as unknown as { onEvent: (input: unknown) => Promise<void> }).onEvent({
       event: { type: "session.idle", properties: { sessionID: "child-1" } },
     })
 
+    expect(taskManager.findBySession).toHaveBeenCalledWith("child-1")
     expect(taskManager.markTaskCompletedBySession).toHaveBeenCalledWith("child-1")
     expect(taskManager.notifyParent).toHaveBeenCalledWith("task-1")
   })
@@ -57,8 +99,30 @@ describe("OpenCodeRulesRuntime event handling", () => {
     expect(taskManager.notifyParent).toHaveBeenCalledWith("task-1")
   })
 
-  it("does not notify when idle event arrives after task already finalized", async () => {
+  it("does not process idle event for non-wopal_task session", async () => {
+    // findBySession returns undefined means this is not a wopal_task child session
     const taskManager = {
+      findBySession: vi.fn().mockReturnValue(undefined),
+      markTaskCompletedBySession: vi.fn(),
+      markTaskErrorBySession: vi.fn(),
+      notifyParent: vi.fn().mockResolvedValue(undefined),
+    }
+    const runtime = createRuntime(taskManager)
+
+    await (runtime as unknown as { onEvent: (input: unknown) => Promise<void> }).onEvent({
+      event: { type: "session.idle", properties: { sessionID: "main-session" } },
+    })
+
+    expect(taskManager.findBySession).toHaveBeenCalledWith("main-session")
+    expect(taskManager.markTaskCompletedBySession).not.toHaveBeenCalled()
+    expect(taskManager.notifyParent).not.toHaveBeenCalled()
+  })
+
+  it("does not notify when idle event arrives after task already finalized", async () => {
+    // Task is in completed state (not running), so markTaskCompletedBySession returns undefined
+    const completedTask = { id: "task-1", sessionID: "child-1", status: "completed" }
+    const taskManager = {
+      findBySession: vi.fn().mockReturnValue(completedTask),
       markTaskCompletedBySession: vi.fn().mockReturnValue(undefined),
       markTaskErrorBySession: vi.fn(),
       notifyParent: vi.fn().mockResolvedValue(undefined),

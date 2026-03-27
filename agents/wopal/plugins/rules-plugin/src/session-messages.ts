@@ -47,3 +47,67 @@ export function extractAssistantContent(messages: SessionMessage[]): string {
 
   return extractedContent.filter((text) => text.length > 0).join("\n\n")
 }
+
+/**
+ * 提取完整对话历史，格式化为可读文本
+ *
+ * @param messages - 会话消息列表
+ * @param options - 选项 { lastN?: number, maxLength?: number }
+ * @returns 格式化的对话历史文本
+ */
+export function extractFullHistory(
+  messages: SessionMessage[],
+  options?: { lastN?: number; maxLength?: number }
+): string {
+  if (!messages || messages.length === 0) return ""
+
+  const maxLength = options?.maxLength ?? 4000
+  const lastN = options?.lastN
+
+  // 过滤并格式化消息
+  const formatted: string[] = []
+  const relevantMessages = lastN ? messages.slice(-lastN) : messages
+
+  let turnCount = 0
+  for (const msg of relevantMessages) {
+    const role = msg.info?.role ?? "unknown"
+
+    // 提取文本内容
+    const texts: string[] = []
+    if (msg.parts) {
+      for (const part of msg.parts) {
+        if (part.type === "text" && part.text) {
+          texts.push(part.text)
+        } else if (part.type === "tool_call" && part.tool) {
+          texts.push(`[tool: ${part.tool}]`)
+        } else if (part.type === "tool_result") {
+          const content = typeof part.content === "string"
+            ? part.content
+            : part.content?.map(c => c.text).filter(Boolean).join("\n") ?? ""
+          const truncated = content.length > 500
+            ? content.slice(0, 500) + "...(truncated)"
+            : content
+          texts.push(`[tool_result]: ${truncated}`)
+        } else if (part.type === "reasoning" && part.text) {
+          texts.push(`[reasoning]: ${part.text}`)
+        }
+      }
+    }
+
+    if (texts.length > 0) {
+      turnCount++
+      const header = `--- Turn ${turnCount} [${role}] ---`
+      formatted.push(header)
+      formatted.push(...texts)
+    }
+  }
+
+  let result = formatted.join("\n")
+
+  // 截断到 maxLength
+  if (result.length > maxLength) {
+    result = result.slice(0, maxLength) + "\n...(earlier content truncated)"
+  }
+
+  return result
+}

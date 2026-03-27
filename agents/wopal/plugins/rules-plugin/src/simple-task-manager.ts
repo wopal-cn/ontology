@@ -5,6 +5,7 @@ import type {
   WopalTask,
 } from "./types.js"
 import type { DebugLog } from "./debug.js"
+import type { IdleDiagnostic } from "./idle-diagnostic.js"
 import { createDebugLog } from "./debug.js"
 import {
   checkAndInterruptStaleTasks,
@@ -357,6 +358,23 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
     }
 
     this.debugLog(`[markError] taskId=${task.id} sessionID=${sessionID} error="${error.substring(0, 100)}"`)
+    return task
+  }
+
+  markTaskWaitingBySession(sessionID: string, diagnostic: IdleDiagnostic): WopalTask | undefined {
+    const task = this.findBySession(sessionID)
+    if (!task || task.status !== 'running') {
+      return undefined
+    }
+
+    this.clearTimeoutTimer(task.id)
+    // 注意：waiting 状态不释放 concurrency slot，因为任务可能恢复
+    task.status = 'waiting'
+    task.waitingReason = diagnostic.reason
+    if (diagnostic.lastMessage !== undefined) {
+      task.lastAssistantMessage = diagnostic.lastMessage
+    }
+    this.debugLog(`[markWaiting] taskId=${task.id} sessionID=${sessionID} reason=${diagnostic.reason}`)
     return task
   }
 

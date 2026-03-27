@@ -1,6 +1,6 @@
 import { tool, type ToolContext, type ToolDefinition } from "@opencode-ai/plugin"
 import type { SimpleTaskManager } from "../simple-task-manager.js"
-import { getErrorMessage, extractMessages, extractAssistantContent } from "../session-messages.js"
+import { getErrorMessage, extractMessages, extractAssistantContent, extractFullHistory } from "../session-messages.js"
 import { consumeNewMessages } from "../session-cursor.js"
 import { analyzeProgress, type ProgressInfo } from "../progress-analyzer.js"
 import { detectLoop, type LoopWarning } from "../loop-detector.js"
@@ -65,16 +65,20 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
     description: "Get lifecycle status for a background task owned by the current session",
     args: {
       task_id: tool.schema.string().describe("Task ID returned by wopal_task"),
+      verbose: tool.schema.boolean().optional().describe("If true, output full conversation history. Default: false. Automatically enabled for waiting tasks."),
+      last_n: tool.schema.number().optional().describe("When verbose=true, only output the last N messages. Default: all messages."),
     },
-    execute: async (args: { task_id: string }, context: ToolContext) => {
+    execute: async (args: { task_id: string; verbose?: boolean; last_n?: number }, context: ToolContext) => {
       if (!context.sessionID) {
         return "Current session ID is unavailable; cannot read task status."
       }
 
-      const task = manager.getTaskForParent(args.task_id, context.sessionID)
+      const { task_id, verbose = false, last_n } = args
+
+      const task = manager.getTaskForParent(task_id, context.sessionID)
 
       if (!task) {
-        return `Task not found for current session: ${args.task_id}`
+        return `Task not found for current session: ${task_id}`
       }
 
       let result = `**Task:** ${task.id}\n`
@@ -141,7 +145,7 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
       } else if (task.status === 'running' && task.sessionID) {
         // Enhanced: fetch messages and analyze progress
         const client = manager.getClient()
-        
+
         // Try to get session status (may not be available)
         let sessionStatus = "unknown"
         try {
@@ -173,7 +177,7 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
             } else {
               const messages = extractMessages(messagesResult)
               const newMessages = consumeNewMessages(task.sessionID, messages)
-              
+
               const progress = analyzeProgress(messages, newMessages)
               const loopWarning = detectLoop(messages)
               const recentOutput = extractAssistantContent(newMessages) || null
@@ -191,8 +195,67 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
         }
       } else if (task.status === 'running') {
         result += `\nTask is still running.`
+      } else if (task.status === 'waiting' && task.sessionID) {
+        // waiting 状态显示等待原因
+        if (task.waitingReason) {
+          result += `\n**Waiting reason:** ${task.waitingReason}`
+        }
+
+        // waiting 状态自动启用 verbose
+        const client = manager.getClient()
+        if (typeof client.session?.messages === "function") {
+          try {
+            debugLog(`[verbose] fetching messages for waiting task ${task.id}`)
+            const messagesResult = await client.session.messages({
+              path: { id: task.sessionID },
+            })
+
+            const error = getErrorMessage(messagesResult)
+            if (error) {
+              result += `\n\n---\n**Full History:**\n(Failed to fetch: ${error})`
+            } else {
+              const messages = extractMessages(messagesResult)
+              const history = extractFullHistory(messages, last_n ? { lastN: last_n } : undefined)
+              result += `\n\n---\n**Full History:**\n${history || "(No messages)"}`
+            }
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err)
+            result += `\n\n---\n**Full History:**\n(Failed to fetch: ${errorMsg})`
+          }
+        }
+      } else if (task.status === 'waiting') {
+        result += `\nTask is waiting.`
+        if (task.waitingReason) {
+          result += `\n**Waiting reason:** ${task.waitingReason}`
+        }
       } else if (task.status === 'cancelled') {
         result += `\nTask was cancelled at ${task.completedAt?.toISOString()}`
+      }
+
+      // verbose 模式：对于非 waiting 状态也输出完整历史
+      const shouldShowVerbose = verbose && task.status !== 'waiting' && task.sessionID
+      if (shouldShowVerbose) {
+        const client = manager.getClient()
+        if (typeof client.session?.messages === "function") {
+          try {
+            debugLog(`[verbose] fetching messages for task ${task.id}`)
+            const messagesResult = await client.session.messages({
+              path: { id: task.sessionID },
+            })
+
+            const error = getErrorMessage(messagesResult)
+            if (error) {
+              result += `\n\n---\n**Full History:**\n(Failed to fetch: ${error})`
+            } else {
+              const messages = extractMessages(messagesResult)
+              const history = extractFullHistory(messages, last_n ? { lastN: last_n } : undefined)
+              result += `\n\n---\n**Full History:**\n${history || "(No messages)"}`
+            }
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err)
+            result += `\n\n---\n**Full History:**\n(Failed to fetch: ${errorMsg})`
+          }
+        }
       }
 
       return result

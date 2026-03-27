@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test"
-import { getErrorMessage, extractMessages, extractAssistantContent } from "./session-messages.js"
+import { getErrorMessage, extractMessages, extractAssistantContent, extractFullHistory } from "./session-messages.js"
 import type { SessionMessage, MessagesResult } from "./types.js"
 
 describe("getErrorMessage", () => {

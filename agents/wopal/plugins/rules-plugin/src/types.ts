@@ -1,4 +1,4 @@
-export type WopalTaskStatus = 'pending' | 'running' | 'completed' | 'error' | 'cancelled' | 'interrupt'
+export type WopalTaskStatus = 'pending' | 'running' | 'waiting' | 'completed' | 'error' | 'cancelled' | 'interrupt'
 
 export type ErrorCategory = 'timeout' | 'crash' | 'network' | 'cancelled' | 'unknown'
 
@@ -31,6 +31,9 @@ export interface WopalTask {
   // Progress notification tracking
   lastNotifyMessageCount?: number
   lastNotifyTime?: Date
+  // Idle diagnostic fields
+  waitingReason?: string
+  lastAssistantMessage?: string
 }
 
 export interface LaunchInput {

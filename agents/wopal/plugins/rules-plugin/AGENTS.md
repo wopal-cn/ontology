@@ -16,10 +16,14 @@
 │  ├── utils.ts                   │  ├── concurrency-manager  │
 │  ├── message-context.ts         │  ├── stale-detector       │
 │  └── mcp-tools.ts               │  ├── error-classifier     │
+│                                 │  ├── idle-diagnostic      │ ← NEW
+│                                 │  ├── permission-proxy     │ ← NEW
+│                                 │  ├── question-relay       │ ← NEW
 │                                 │  └── tools/               │
 │                                 │      ├── wopal-task       │
 │                                 │      ├── wopal-output     │
-│                                 │      └── wopal-cancel     │
+│                                 │      ├── wopal-cancel     │
+│                                 │      └── wopal-reply      │ ← NEW
 ├─────────────────────────────────────────────────────────────┤
 │  基础设施: debug.ts, session-store.ts, types.ts              │
 └─────────────────────────────────────────────────────────────┘
@@ -27,7 +31,8 @@
 
 **核心流程**：
 - **规则注入**：发现规则文件 → 匹配条件 → 注入系统提示词
-- **任务委派**：`wopal_task` 启动子会话 → `wopal_output` 查询状态 → `session.idle` 事件触发完成
+- **任务委派**：`wopal_task` 启动子会话 → `wopal_output` 查询状态 → `session.idle` 事件触发诊断 → 完成/等待/错误
+- **双向通信**：子会话等待 → `[WOPAL TASK WAITING]` 通知父代理 → `wopal_reply` 恢复执行
 
 ---
 
@@ -37,6 +42,8 @@
 |------|------|------|
 | **工具** | OpenCode 工具定义 | `src/tools/` |
 | **核心逻辑** | 任务管理、并发控制 | `src/simple-task-manager.ts`, `src/concurrency-manager.ts` |
+| **诊断模块** | Idle 状态诊断 | `src/idle-diagnostic.ts` |
+| **事件处理** | 权限代理、问题中继 | `src/permission-proxy.ts`, `src/question-relay.ts` |
 | **检测器** | Stale 检测、错误分类 | `src/stale-detector.ts`, `src/error-classifier.ts` |
 | **运行时** | 事件钩子、规则注入 | `src/runtime.ts` |
 | **测试** | 单元测试 | `src/*.test.ts` |
@@ -53,11 +60,14 @@ src/
 ├── concurrency-manager.ts # 并发控制 (FIFO 队列 + slot 移交)
 ├── stale-detector.ts     # Stale 任务检测
 ├── error-classifier.ts   # 错误分类
+├── idle-diagnostic.ts    # Idle 状态诊断 (区分 completed/waiting/error)
+├── permission-proxy.ts    # 子会话权限自动代理
+├── question-relay.ts     # Question Tool 事件中继
 ├── runtime.ts            # OpenCode 事件钩子
 ├── debug.ts              # 调试日志系统
 ├── session-store.ts      # 会话状态存储
 ├── message-context.ts    # 消息上下文提取
-├── session-messages.ts   # 消息提取
+├── session-messages.ts   # 消息提取 (含 extractFullHistory)
 ├── session-cursor.ts     # 消息游标 (避免重复输出)
 ├── progress-analyzer.ts  # 进度分析
 ├── loop-detector.ts      # 循环检测
@@ -67,7 +77,8 @@ src/
     ├── index.ts          # 工具注册
     ├── wopal-task.ts     # wopal_task 工具
     ├── wopal-output.ts   # wopal_output 工具
-    └── wopal-cancel.ts   # wopal_cancel 工具
+    ├── wopal-cancel.ts   # wopal_cancel 工具
+    └── wopal-reply.ts    # wopal_reply 工具 (恢复等待中的任务)
 ```
 
 ---
@@ -118,7 +129,7 @@ WOPAL_PLUGIN_LOG_FILE=/tmp/wopal-plugin.log
 
 ```typescript
 // 任务状态
-type WopalTaskStatus = 'pending' | 'running' | 'completed' | 'error' | 'cancelled' | 'interrupt'
+type WopalTaskStatus = 'pending' | 'running' | 'waiting' | 'completed' | 'error' | 'cancelled' | 'interrupt'
 
 // 终端状态
 ['completed', 'error', 'cancelled', 'interrupt']
@@ -135,8 +146,53 @@ interface WopalTask {
   startedAt?: Date
   progress?: TaskProgress
   errorCategory?: ErrorCategory
+  // Idle 诊断字段
+  waitingReason?: string       // waiting 状态原因
+  lastAssistantMessage?: string // 最后 assistant 消息摘要
+}
+
+// Idle 诊断结果
+interface IdleDiagnostic {
+  verdict: 'completed' | 'waiting' | 'error'
+  reason: string
+  lastMessage?: string
 }
 ```
+
+---
+
+## 双向通信机制
+
+### 状态流转
+
+```
+running → [session.idle] → diagnoseIdle() → {completed | waiting | error}
+         ↑                                           │
+         │                                           ↓
+         └─────── wopal_reply ←── [WOPAL TASK WAITING] 通知
+```
+
+### 通知格式
+
+| 状态 | 通知标记 | 说明 |
+|------|---------|------|
+| `completed` | `[WOPAL TASK COMPLETED]` | 任务正常完成 |
+| `waiting` | `[WOPAL TASK WAITING]` | 子代理提问，等待父代理回复 |
+| `error` | `[WOPAL TASK ERROR]` | 任务异常终止 |
+| `permission` | `[WOPAL TASK PERMISSION]` | 权限自动授权通知 |
+| `question` | `[WOPAL TASK QUESTION]` | Question Tool 事件中继 |
+
+### wopal_reply 使用
+
+当收到 `[WOPAL TASK WAITING]` 通知时，父代理可使用 `wopal_reply` 恢复子会话：
+
+```
+wopal_reply(task_id="wopal-task-xxx", message="继续执行方案 A")
+```
+
+### 权限自动代理
+
+子会话权限请求（如 bash、write）自动 `once` 授权，避免无 TUI 导致的永久阻塞。
 
 ---
 
@@ -176,3 +232,5 @@ OpenCode 配置 (`opencode.jsonc`)：
 - **禁止 console.log**：使用 `createDebugLog()` 或 `createWarnLog()` 输出日志
 - **Bun 原生 TS**：OpenCode 直接运行 `.ts` 文件，无需 `dist/`
 - **测试优先**：修改核心逻辑后运行 `npm run test:run` 验证
+- **子会话无 TUI**：权限请求自动授权，Question Tool 事件中继到父代理
+- **waiting 不释放并发槽**：任务恢复后继续执行，不占用新槽位

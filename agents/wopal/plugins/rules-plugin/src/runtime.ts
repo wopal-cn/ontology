@@ -16,6 +16,8 @@ import { createDebugLog, type DebugLog } from "./debug.js";
 import type { SessionStore } from "./session-store.js";
 import type { Model } from "@opencode-ai/sdk";
 import type { SimpleTaskManager } from "./simple-task-manager.js";
+import type { IdleDiagnostic } from "./idle-diagnostic.js";
+import type { WopalTask } from "./types.js";
 
 interface MessagesTransformOutput {
   messages: MessageWithInfo[];
@@ -369,14 +371,41 @@ export class OpenCodeRulesRuntime {
     const eventType = input.event.type
     const props = input.event.properties
 
+    const NOISY_EVENTS = new Set(["message.part.delta", "message.part.updated"])
+    if (!NOISY_EVENTS.has(eventType)) {
+      this.taskDebugLog(`[onEvent] received event: ${eventType}`)
+    }
+
     if (eventType === "session.idle") {
       const sessionID = props?.sessionID as string | undefined
       if (!sessionID) return
 
-      const task = this.taskManager.markTaskCompletedBySession(sessionID)
-      if (task) {
-        this.taskDebugLog(`task ${task.id} completed via session.idle`)
-        this.taskManager.notifyParent(task.id).catch(() => {})
+      // 检查是否是 wopal_task 子会话
+      const task = this.taskManager?.findBySession(sessionID)
+      if (!task) return
+
+      // 拉取消息并诊断
+      const diagnostic = await this.diagnoseIdleSession(sessionID)
+
+      if (diagnostic.verdict === 'completed') {
+        const completedTask = this.taskManager.markTaskCompletedBySession(sessionID)
+        if (completedTask) {
+          this.taskDebugLog(`task ${completedTask.id} completed via session.idle`)
+          this.taskManager.notifyParent(completedTask.id).catch(() => {})
+        }
+      } else if (diagnostic.verdict === 'waiting') {
+        const waitingTask = this.taskManager.markTaskWaitingBySession(sessionID, diagnostic)
+        if (waitingTask) {
+          this.taskDebugLog(`task ${waitingTask.id} waiting: ${diagnostic.reason}`)
+          this.notifyParentWaiting(waitingTask, diagnostic).catch(() => {})
+        }
+      } else {
+        // error
+        const errorTask = this.taskManager.markTaskErrorBySession(sessionID, diagnostic.reason)
+        if (errorTask) {
+          this.taskDebugLog(`task ${errorTask.id} error: ${diagnostic.reason}`)
+          this.taskManager.notifyParent(errorTask.id).catch(() => {})
+        }
       }
     }
 
@@ -390,6 +419,40 @@ export class OpenCodeRulesRuntime {
           this.taskDebugLog(`task ${task.id} error: ${error}`)
           this.taskManager.notifyParent(task.id).catch(() => {})
         }
+      }
+    }
+
+    // 权限请求事件
+    if (eventType === "permission.asked") {
+      const sessionID = props?.sessionID as string | undefined
+      const requestID = props?.id as string | undefined // OpenCode uses 'id', not 'requestID'
+      const permission = props?.permission as string | undefined
+
+      this.taskDebugLog(`[permission.asked] event received: sessionID=${sessionID} id=${requestID} permission=${permission}`)
+
+      if (sessionID && requestID && permission) {
+        const { handlePermissionAsked } = await import("./permission-proxy.js")
+        const patterns = props?.patterns as string[] | undefined
+        await handlePermissionAsked(
+          { sessionID, requestID, permission, ...(patterns ? { patterns } : {}) },
+          this.taskManager!,
+          this.client,
+          this.taskDebugLog
+        )
+      }
+    }
+
+    // 问题请求事件
+    if (eventType === "question.asked") {
+      const sessionID = props?.sessionID as string | undefined
+
+      if (sessionID && props?.question) {
+        const { handleQuestionAsked } = await import("./question-relay.js")
+        await handleQuestionAsked(
+          { sessionID, question: props.question as { header?: string; options?: Array<{ label: string; value: string }> } },
+          this.taskManager!,
+          this.taskDebugLog
+        )
       }
     }
   }
@@ -413,5 +476,53 @@ export class OpenCodeRulesRuntime {
     }
 
     return String(error)
+  }
+
+  private async diagnoseIdleSession(sessionID: string): Promise<IdleDiagnostic> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const client = this.client as any
+      if (typeof client?.session?.messages !== "function") {
+        return { verdict: 'error', reason: 'no_message_access' }
+      }
+
+      const result = await client.session.messages({ path: { id: sessionID } })
+      const messages = result?.data ?? []
+
+      const { diagnoseIdle } = await import("./idle-diagnostic.js")
+      return diagnoseIdle(messages)
+    } catch (err) {
+      this.taskDebugLog(`diagnoseIdleSession error: ${err}`)
+      return { verdict: 'error', reason: 'diagnostic_failed' }
+    }
+  }
+
+  private async notifyParentWaiting(task: WopalTask, diagnostic: IdleDiagnostic): Promise<void> {
+    const notification = `<system-reminder>
+[WOPAL TASK WAITING]
+**Task ID:** \`${task.id}\`
+**Description:** ${task.description}
+**Reason:** ${diagnostic.reason}
+${diagnostic.lastMessage ? `**Last Message:**\n${diagnostic.lastMessage.slice(0, 500)}` : ''}
+
+The background task is waiting for your response. Use \`wopal_reply\` to continue.
+</system-reminder>`
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const client = this.client as any
+
+    if (typeof client?.session?.promptAsync !== "function") return
+
+    try {
+      await client.session.promptAsync({
+        path: { id: task.parentSessionID },
+        body: {
+          noReply: true,
+          parts: [{ type: "text", text: notification, synthetic: true }],
+        },
+      })
+    } catch (err) {
+      this.taskDebugLog(`notifyParentWaiting error: ${err}`)
+    }
   }
 }
