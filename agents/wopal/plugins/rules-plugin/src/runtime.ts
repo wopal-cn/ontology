@@ -17,7 +17,8 @@ import type { SessionStore } from "./session-store.js";
 import type { Model } from "@opencode-ai/sdk";
 import type { SimpleTaskManager } from "./simple-task-manager.js";
 import type { IdleDiagnostic } from "./idle-diagnostic.js";
-import type { WopalTask } from "./types.js";
+import type { WopalTask } from "./types.js"
+import { trackActivity } from "./progress-tracker.js";
 
 interface MessagesTransformOutput {
   messages: MessageWithInfo[];
@@ -374,6 +375,26 @@ export class OpenCodeRulesRuntime {
     const NOISY_EVENTS = new Set(["message.part.delta", "message.part.updated"])
     if (!NOISY_EVENTS.has(eventType)) {
       this.taskDebugLog(`[onEvent] received event: ${eventType}`)
+    }
+
+    // Track meaningful activity from streaming events for stuck detection
+    if (eventType === "message.part.delta") {
+      const sessionID = props?.sessionID as string | undefined
+      if (sessionID) {
+        const task = this.taskManager?.findBySession(sessionID)
+        if (task && task.status === "running") {
+          trackActivity(task, "text")
+        }
+      }
+    } else if (eventType === "message.part.updated") {
+      const sessionID = props?.sessionID as string | undefined
+      const part = (props as any)?.part as { type?: string } | undefined
+      if (sessionID) {
+        const task = this.taskManager?.findBySession(sessionID)
+        if (task && task.status === "running") {
+          trackActivity(task, part?.type)
+        }
+      }
     }
 
     if (eventType === "session.idle") {

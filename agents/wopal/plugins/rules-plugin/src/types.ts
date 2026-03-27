@@ -8,6 +8,7 @@ export interface TaskProgress {
   lastUpdate: Date
   lastMessage?: string
   lastMessageAt?: Date
+  lastMeaningfulActivity?: Date
 }
 
 export interface WopalTask {
@@ -34,6 +35,9 @@ export interface WopalTask {
   // Idle diagnostic fields
   waitingReason?: string
   lastAssistantMessage?: string
+  // Stuck detection
+  stuckNotified?: boolean
+  stuckNotifiedAt?: Date
 }
 
 export interface LaunchInput {

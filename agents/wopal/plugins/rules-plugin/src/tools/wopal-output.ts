@@ -1,6 +1,6 @@
 import { tool, type ToolContext, type ToolDefinition } from "@opencode-ai/plugin"
 import type { SimpleTaskManager } from "../simple-task-manager.js"
-import { getErrorMessage, extractMessages, extractAssistantContent, extractFullHistory } from "../session-messages.js"
+import { getErrorMessage, extractMessages, extractAssistantContent, extractBySection, type OutputSection } from "../session-messages.js"
 import { consumeNewMessages } from "../session-cursor.js"
 import { analyzeProgress, type ProgressInfo } from "../progress-analyzer.js"
 import { detectLoop, type LoopWarning } from "../loop-detector.js"
@@ -62,18 +62,18 @@ function formatProgressOutput(
 
 export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinition {
   return tool({
-    description: "Get lifecycle status for a background task owned by the current session",
+    description: "Get lifecycle status for a background task owned by the current session. Use `section` to retrieve specific content types: 'tools' for tool calls/results (check progress), 'reasoning' for thinking process (diagnose stuck), 'text' for text output (get results). Without section, returns a lightweight summary.",
     args: {
       task_id: tool.schema.string().describe("Task ID returned by wopal_task"),
-      verbose: tool.schema.boolean().optional().describe("If true, output full conversation history. Default: false. Automatically enabled for waiting tasks."),
-      last_n: tool.schema.number().optional().describe("When verbose=true, only output the last N messages. Default: all messages."),
+      section: tool.schema.enum(["tools", "reasoning", "text"]).optional().describe("Content section to retrieve: 'tools' (tool calls & results), 'reasoning' (thinking process), 'text' (text output). Omit for summary only."),
+      last_n: tool.schema.number().optional().describe("Only output the last N messages. Default: all messages."),
     },
-    execute: async (args: { task_id: string; verbose?: boolean; last_n?: number }, context: ToolContext) => {
+    execute: async (args: { task_id: string; section?: OutputSection; last_n?: number }, context: ToolContext) => {
       if (!context.sessionID) {
         return "Current session ID is unavailable; cannot read task status."
       }
 
-      const { task_id, verbose = false, last_n } = args
+      const { task_id, section, last_n } = args
 
       const task = manager.getTaskForParent(task_id, context.sessionID)
 
@@ -201,26 +201,27 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
           result += `\n**Waiting reason:** ${task.waitingReason}`
         }
 
-        // waiting 状态自动启用 verbose
+        // waiting 状态：如果指定了 section 则按分类获取，否则用 section="text" 获取文本内容
+        const fetchSection = section ?? "text"
         const client = manager.getClient()
         if (typeof client.session?.messages === "function") {
           try {
-            debugLog(`[verbose] fetching messages for waiting task ${task.id}`)
+            debugLog(`[section] fetching section="${fetchSection}" for waiting task ${task.id}`)
             const messagesResult = await client.session.messages({
               path: { id: task.sessionID },
             })
 
             const error = getErrorMessage(messagesResult)
             if (error) {
-              result += `\n\n---\n**Full History:**\n(Failed to fetch: ${error})`
+              result += `\n\n---\n**Section [${fetchSection}]:**\n(Failed to fetch: ${error})`
             } else {
               const messages = extractMessages(messagesResult)
-              const history = extractFullHistory(messages, last_n ? { lastN: last_n } : undefined)
-              result += `\n\n---\n**Full History:**\n${history || "(No messages)"}`
+              const sectionContent = extractBySection(messages, fetchSection, last_n ? { lastN: last_n } : undefined)
+              result += `\n\n---\n**Section [${fetchSection}]:**\n${sectionContent || "(No content)"}`
             }
           } catch (err) {
             const errorMsg = err instanceof Error ? err.message : String(err)
-            result += `\n\n---\n**Full History:**\n(Failed to fetch: ${errorMsg})`
+            result += `\n\n---\n**Section [${fetchSection}]:**\n(Failed to fetch: ${errorMsg})`
           }
         }
       } else if (task.status === 'waiting') {
@@ -232,28 +233,28 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
         result += `\nTask was cancelled at ${task.completedAt?.toISOString()}`
       }
 
-      // verbose 模式：对于非 waiting 状态也输出完整历史
-      const shouldShowVerbose = verbose && task.status !== 'waiting' && task.sessionID
-      if (shouldShowVerbose) {
+      // section 模式：按分类获取内容
+      const shouldShowSection = section && task.status !== 'waiting' && task.sessionID
+      if (shouldShowSection) {
         const client = manager.getClient()
         if (typeof client.session?.messages === "function") {
           try {
-            debugLog(`[verbose] fetching messages for task ${task.id}`)
+            debugLog(`[section] fetching section="${section}" for task ${task.id}`)
             const messagesResult = await client.session.messages({
               path: { id: task.sessionID },
             })
 
             const error = getErrorMessage(messagesResult)
             if (error) {
-              result += `\n\n---\n**Full History:**\n(Failed to fetch: ${error})`
+              result += `\n\n---\n**Section [${section}]:**\n(Failed to fetch: ${error})`
             } else {
               const messages = extractMessages(messagesResult)
-              const history = extractFullHistory(messages, last_n ? { lastN: last_n } : undefined)
-              result += `\n\n---\n**Full History:**\n${history || "(No messages)"}`
+              const sectionContent = extractBySection(messages, section, last_n ? { lastN: last_n } : undefined)
+              result += `\n\n---\n**Section [${section}]:**\n${sectionContent || "(No content)"}`
             }
           } catch (err) {
             const errorMsg = err instanceof Error ? err.message : String(err)
-            result += `\n\n---\n**Full History:**\n(Failed to fetch: ${errorMsg})`
+            result += `\n\n---\n**Section [${section}]:**\n(Failed to fetch: ${errorMsg})`
           }
         }
       }

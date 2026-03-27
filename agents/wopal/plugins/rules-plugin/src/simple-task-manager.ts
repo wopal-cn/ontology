@@ -13,6 +13,7 @@ import {
   DEFAULT_MESSAGE_STALENESS_TIMEOUT_MS,
   MIN_RUNTIME_BEFORE_STALE_MS,
 } from "./stale-detector.js"
+import { checkStuckTasks, clearStuckState, DEFAULT_STUCK_TIMEOUT_MS } from "./stuck-detector.js"
 import { ConcurrencyManager } from "./concurrency-manager.js"
 import { registerManagerForCleanup, unregisterManagerForCleanup } from "./process-cleanup.js"
 
@@ -95,6 +96,10 @@ export class SimpleTaskManager {
         },
         onStale: (task, reason) => this.interruptStaleTask(task, reason),
       })
+      // Check for stuck tasks (no meaningful activity for 2 minutes)
+      this.checkStuckTasks()
+      // Clear stuck state for tasks that resumed activity
+      clearStuckState(this.tasks.values())
       // Also check for progress notifications
       this.checkProgressNotifications()
     }, 30_000)
@@ -630,5 +635,56 @@ Task is still running. Use \`wopal_output(task_id="${task.id}")\` for details.
 
     await this.abortSession(task.sessionID)
     await this.notifyParent(task.id)
+  }
+
+  private async checkStuckTasks(): Promise<void> {
+    const results = checkStuckTasks({
+      tasks: this.tasks.values(),
+      config: { stuckTimeoutMs: DEFAULT_STUCK_TIMEOUT_MS },
+    })
+
+    for (const { task, durationMs } of results) {
+      const durationSeconds = Math.floor(durationMs / 1000)
+      const durationMinutes = Math.floor(durationSeconds / 60)
+      const durationText = durationMinutes >= 1
+        ? `${durationMinutes}min ${durationSeconds % 60}s`
+        : `${durationSeconds}s`
+
+      task.stuckNotified = true
+      task.stuckNotifiedAt = new Date()
+
+      this.debugLog(`[stuck] detected: taskId=${task.id} duration=${durationText}`)
+      await this.notifyParentStuck(task, durationText)
+    }
+  }
+
+  async notifyParentStuck(task: WopalTask, durationText: string): Promise<void> {
+    if (!task.sessionID) return
+
+    const notification = `<system-reminder>
+[WOPAL TASK STUCK]
+**ID:** \`${task.id}\`
+**Description:** ${task.description}
+**Duration:** No meaningful output for ${durationText}
+
+The background task may be stuck in a reasoning loop. Use \`wopal_output(task_id="${task.id}", section="reasoning")\` to check its thinking content. If it's truly stuck, use \`wopal_cancel(task_id="${task.id}")\` to terminate it.
+</system-reminder>`
+
+    if (typeof this.client.session?.promptAsync !== "function") {
+      this.debugLog("[notifyParentStuck] skipped: session.promptAsync unavailable")
+      return
+    }
+
+    await this.client.session.promptAsync({
+      path: { id: task.parentSessionID },
+      body: {
+        noReply: false,
+        parts: [{ type: "text", text: notification, synthetic: true }],
+      },
+    }).catch((err: unknown) => {
+      this.debugLog(`[notifyParentStuck] error: ${toErrorMessage(err)}`)
+    })
+
+    this.debugLog(`[notifyParentStuck] sent: taskId=${task.id} duration=${durationText}`)
   }
 }

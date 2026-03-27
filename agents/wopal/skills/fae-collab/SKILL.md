@@ -99,7 +99,13 @@ wopal fae task status <task-id> --json
 ### 插件
 ```typescript
 wopal_output({ task_id: "wopal-task-xxx" })
-// 返回：status, messages, recent output, last activity
+// 返回 summary：status, messages, last activity, tool calls
+
+// 按分类获取（控制上下文占用）：
+wopal_output({ task_id, section: "tools" })       // 工具调用和结果
+wopal_output({ task_id, section: "reasoning" })    // 思考过程
+wopal_output({ task_id, section: "text" })         // 文本输出
+wopal_output({ task_id, section: "reasoning", last_n: 3 })  // 只看最近 3 条
 ```
 
 ### 状态含义
@@ -148,6 +154,7 @@ wopal_output({ task_id })  // 获取结果
 | wait timeout (CLI) | 用户设置 | 继续等待或取消 |
 | timeout (插件) | 300s | 任务终止 |
 | staleTimeout (插件) | 180s | 无活动后终止 |
+| stuck detection (插件) | 120s | 通知 Wopal 检查 |
 
 ---
 
@@ -155,9 +162,10 @@ wopal_output({ task_id })  // 获取结果
 
 ### 任务卡住
 
-判断：running 状态 + 消息数不增长
-
-处理：检查日志 `logs/wopal-plugins-debug.log` → 继续等待或取消
+收到 `[WOPAL TASK STUCK]` 通知时：
+1. 用 `wopal_output({ task_id, section: "reasoning" })` 检查思考过程
+2. 判断是否 reasoning 死循环或异常内容
+3. 卡死 → `wopal_cancel({ task_id })`；正常推理 → 继续等待
 
 ### 取消
 

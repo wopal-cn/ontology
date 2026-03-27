@@ -111,3 +111,58 @@ export function extractFullHistory(
 
   return result
 }
+
+export type OutputSection = "tools" | "reasoning" | "text"
+
+/**
+ * Extract messages filtered by section type.
+ * Each section has independent maxLength control.
+ */
+export function extractBySection(
+  messages: SessionMessage[],
+  section: OutputSection,
+  options?: { lastN?: number; maxLength?: number }
+): string {
+  if (!messages || messages.length === 0) return ""
+
+  const maxLength = options?.maxLength ?? 2000
+  const relevantMessages = options?.lastN ? messages.slice(-options.lastN) : messages
+  const extracted: string[] = []
+
+  for (const msg of relevantMessages) {
+    if (msg.info?.role !== "assistant" && msg.info?.role !== "tool") continue
+    if (!msg.parts) continue
+
+    for (const part of msg.parts) {
+      if (section === "tools") {
+        if (part.type === "tool_call" && part.tool) {
+          extracted.push(`[tool: ${part.tool}]`)
+        } else if (part.type === "tool_result") {
+          const content = typeof part.content === "string"
+            ? part.content
+            : part.content?.map(c => c.text).filter(Boolean).join("\n") ?? ""
+          const truncated = content.length > 500
+            ? content.slice(0, 500) + "...(truncated)"
+            : content
+          extracted.push(`[result]: ${truncated}`)
+        }
+      } else if (section === "reasoning") {
+        if (part.type === "reasoning" && part.text) {
+          extracted.push(part.text)
+        }
+      } else if (section === "text") {
+        if (part.type === "text" && part.text) {
+          extracted.push(part.text)
+        }
+      }
+    }
+  }
+
+  let result = extracted.filter(t => t.length > 0).join("\n\n")
+
+  if (result.length > maxLength) {
+    result = result.slice(-maxLength) + "\n[...earlier content truncated]"
+  }
+
+  return result
+}
