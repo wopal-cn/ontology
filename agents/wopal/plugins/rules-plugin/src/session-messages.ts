@@ -84,10 +84,7 @@ export function extractFullHistory(
           const content = typeof part.content === "string"
             ? part.content
             : part.content?.map(c => c.text).filter(Boolean).join("\n") ?? ""
-          const truncated = content.length > 500
-            ? content.slice(0, 500) + "...(truncated)"
-            : content
-          texts.push(`[tool_result]: ${truncated}`)
+          texts.push(`[tool_result]: ${content}`)
         } else if (part.type === "reasoning" && part.text) {
           texts.push(`[reasoning]: ${part.text}`)
         }
@@ -141,10 +138,7 @@ export function extractBySection(
           const content = typeof part.content === "string"
             ? part.content
             : part.content?.map(c => c.text).filter(Boolean).join("\n") ?? ""
-          const truncated = content.length > 500
-            ? content.slice(0, 500) + "...(truncated)"
-            : content
-          extracted.push(`[result]: ${truncated}`)
+          extracted.push(`[result]: ${content}`)
         }
       } else if (section === "reasoning") {
         if (part.type === "reasoning" && part.text) {

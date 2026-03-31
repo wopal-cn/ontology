@@ -1,0 +1,436 @@
+[
+  {
+    "category": "knowledge",
+    "body": "## [知识]: Wopal-Fae 协作关系\n- 关系: Wopal 和 Fae 是协作对\n- 通知: 插件通知 `[WOPAL TASK *]` 发给 Wopal\n- 职责: Wopal 负责监控 Fae 状态、判断异常、决定终止或继续\n- 层级: Sam 是更高层指挥者，不参与循环",
+    "concepts": [
+      "collaboration",
+      "fae"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: fae-collab 协作技能\n- 技能名: `fae-collab`\n- 内容: 委派/检查/监控/异常处理/验证/收尾完整指南\n- 策略: 异步优先、分组并行、验证边界、ROI 评估\n- 使用: 使用前加载",
+    "concepts": [
+      "skill",
+      "collaboration",
+      "fae"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: Fae 定义与资源位置\n- 本质: 独立 OpenCode 实例（内核与 Wopal 相同）\n- 定义文件: `projects/ontology/agents/wopal/agents/fae.md` 和 `fae-cn.md`\n- 专用资源: `projects/ontology/agents/fae/`（skills/rules/commands）\n- 原则: 成熟之前不修改核心设计，通过 skills 扩展能力",
+    "concepts": [
+      "agent",
+      "fae",
+      "architecture"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: 三种委派模式\n1. Task Tool（同步）: 极简短任务（<2 分钟、明确无歧义）\n2. wopal_task（异步，优先）: 大多数任务，可并行分组\n3. 沙箱（Docker）: 需要隔离环境时",
+    "concepts": [
+      "delegation",
+      "workflow"
+    ]
+  },
+  {
+    "category": "experience",
+    "body": "## [经验]: 工具优先级策略\n- 策略: 网页搜索和抓取优先使用 `fc-local` 技能（本地免费），firecrawl 消耗 credit 仅作为备选\n- 原因: 持续打磨自研技能是空间核心策略",
+    "concepts": [
+      "tooling",
+      "cost-saving"
+    ]
+  },
+  {
+    "category": "experience",
+    "body": "## [经验]: 技能研究工具选择\n- 规则: 涉及技能查找、安装、更新、质量查询等任务，优先使用 `skill-master` 技能\n- 优化: 自研技能需持续使用和优化",
+    "concepts": [
+      "skill-management",
+      "workflow"
+    ]
+  },
+  {
+    "category": "experience",
+    "body": "## [经验]: 代码提交流程\n- 流程: 先归档（移动计划到 done/、标记 PLAN 完成）再提交代码",
+    "concepts": [
+      "workflow",
+      "git"
+    ]
+  },
+  {
+    "category": "requirement",
+    "body": "## [用户要求]: 技能变更更新流程\n- 要求: 技能源码修改后，必须运行 `wopal skills install <path> --agent <name> --force`\n- 目的: 更新部署层和 `.skill-lock.json`",
+    "concepts": [
+      "skill-management",
+      "deployment"
+    ]
+  },
+  {
+    "category": "experience",
+    "body": "## [经验]: 自动触发机制\n- 策略: 整合 commands 能力到 skills 可实现自动触发，无需用户手动调用",
+    "concepts": [
+      "skill-design",
+      "automation"
+    ]
+  },
+  {
+    "category": "experience",
+    "body": "## [经验]: SVG 图形任务分工\n- 背景: fae 当前不擅长 SVG 制图\n- 策略: 图形任务可由 Wopal 负责结构与 SVG 源码设计，再让执行分身机械落盘",
+    "concepts": [
+      "workflow",
+      "svg",
+      "fae"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: .deploy-ignore 规则\n- 匹配方式: 使用子串匹配\n- 限制: 不支持 glob（如用 `.test.ts` 而非 `*.test.ts`）",
+    "concepts": [
+      "deployment",
+      "configuration"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: 协作规则层级\n- 层级: 协议层（AGENTS.md 强制）> 技能层（skills 自动化）> 参考层（reference.md 补充）",
+    "concepts": [
+      "rules",
+      "hierarchy"
+    ]
+  },
+  {
+    "category": "requirement",
+    "body": "## [用户要求]: Plan Risks 规范\n- 要求: Plan 中 Risks 必须研究明确后写入\n- 禁止: 不能是占位符或开放问题",
+    "concepts": [
+      "planning",
+      "quality-standard"
+    ]
+  },
+  {
+    "category": "fact",
+    "body": "## [事实]: 文档存储规范\n- 结论: 所有文档放在空间级 `docs/` 目录\n- 限制: 项目级仓库（`projects/*/`）不放文档",
+    "concepts": [
+      "architecture",
+      "file-structure"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: OpenCode API 参考路径\n- 路径: `labs/ref-repos/opencode/packages/sdk/openapi.json`\n- 禁止: 不要访问 `http://localhost:<port>/openapi.json`",
+    "concepts": [
+      "reference",
+      "opencode"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: OpenCode 详细文档位置\n- 路径: `docs/research/opencode/deep-docs/`\n- 内容: 涵盖架构、核心模块、插件、SDK、UI 等 9 大章节\n- 用途: 查阅 OpenCode 实现细节时优先参考",
+    "concepts": [
+      "reference",
+      "opencode"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: OpenCode Part type 枚举值\n- 枚举: `\"tool\"`（不是 `\"tool_call\"`）、`\"text\"`、`\"reasoning\"`、`\"step-start\"`、`\"step-finish\"`、`\"file\"`、`\"snapshot\"` 等\n- 参考: `labs/ref-repos/opencode/packages/opencode/src/session/message-v2.ts`",
+    "concepts": [
+      "opencode",
+      "api",
+      "enum"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: OpenCode 插件事件\n- 订阅: `subscribeAll` 订阅 wildcard PubSub，BusEvent 和 SyncEvent 都能收到，无需区分\n- 属性 `message.part.delta`: `{sessionID, messageID, partID, field, delta}`\n- 属性 `message.part.updated`: `{sessionID, part, time}`，partType 在 `part.type` 里",
+    "concepts": [
+      "opencode",
+      "plugin",
+      "event"
+    ]
+  },
+  {
+    "category": "experience",
+    "body": "## [经验]: 规则与事实沉淀原则\n- 约束行为 → AGENTS.md\n- 发现事实 → MEMORY.md（*已沉淀至 AGENTS.md 记忆与进化章节*）",
+    "concepts": [
+      "knowledge-management",
+      "documentation"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: Wopal 系统提示词源文件\n- 中文: `projects/ontology/agents/wopal/agents/wopal-cn.md`\n- 英文: `projects/ontology/agents/wopal/agents/wopal.md`",
+    "concepts": [
+      "configuration",
+      "prompt"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: OpenCode Agent 加载限制\n- 限制: OpenCode 不支持从其他目录加载 agents\n- 要求: 必须 copy 到 `.opencode/agents/`（flat 结构）",
+    "concepts": [
+      "opencode",
+      "architecture"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: .agents/ 目录性质\n- 性质: `.agents/` 是 wopal 专用适配层\n- 说明: 其他 agent（fae、anglor）有其他方式获取工具，不在此目录",
+    "concepts": [
+      "architecture",
+      "directory"
+    ]
+  },
+  {
+    "category": "gotcha",
+    "body": "## [避坑方法]: 脚本中 gh CLI 参数\n### 问题\n在脚本上下文中可能返回空结果\n### 方案\n必须显式指定 `--repo` 参数",
+    "concepts": [
+      "github",
+      "cli",
+      "scripting"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: OrbStack Docker 路径\n- 路径: `~/.orbstack/bin/docker`\n- 配置: 不在默认 PATH，需在 `~/.zshenv` 中添加",
+    "concepts": [
+      "docker",
+      "orbstack",
+      "environment"
+    ]
+  },
+  {
+    "category": "requirement",
+    "body": "## [用户要求]: 技能安装与验证\n- 要求: 技能安装必须用 `skill-master` 技能\n- 步骤: `wopal skills install` 后必须 `wopal skills merge` 验证 symlink\n- 禁止: 禁止手动 `ln -s`",
+    "concepts": [
+      "skill-management",
+      "workflow"
+    ]
+  },
+  {
+    "category": "experience",
+    "body": "## [经验]: 外部技能自研流程\n- 步骤: 复制到 `projects/ontology/skills/` → 修改源码 → `wopal skills install` 覆盖",
+    "concepts": [
+      "skill-management",
+      "workflow"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: 技能脚本根目录检测优先级\n- 优先级: `.wopal` → `.git` → 当前目录\n- 说明: `.wopal` 是本空间特有标识",
+    "concepts": [
+      "skill",
+      "filesystem"
+    ]
+  },
+  {
+    "category": "experience",
+    "body": "## [经验]: 技能环境变量加载\n- 操作: 执行 skill 脚本前，如果需要环境变量，主动 `source scripts/load-env.sh`",
+    "concepts": [
+      "skill",
+      "environment"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: 技能源码定位规则\n- 共享: `projects/ontology/skills/`\n- Wopal 专用: `projects/ontology/agents/wopal/skills/`\n- Fae 专用: `projects/ontology/agents/fae/skills/`\n- 只读: `.wopal/` 和 `.agents/skills/` 是只读部署层，严禁反向复制\n- 注意: glob 在深层目录可能失效，优先用 `ls -la` 确认结构",
+    "concepts": [
+      "architecture",
+      "skill"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: 工作空间多仓库结构\n- 结构: space 根目录是主仓库，`projects/wopal-cli` 是独立子仓库\n- 独立性: 分支/worktree 完全独立",
+    "concepts": [
+      "architecture",
+      "git"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: 部署命令速查\n- 代理/命令/规则/插件: `python scripts/sync-to-wopal.py -y`\n- 技能: `wopal skills install <path>`",
+    "concepts": [
+      "deployment",
+      "commands"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: 技能 scope 与 agentScope 维度\n- 独立性: `scope`（安装层级）和 `agentScope`（所属 Agent）是独立维度\n- 互斥: `--global` 和 `--agent` 互斥\n- 规则: agentScope 隐含 space scope\n- 命令行为:\n  - `wopal skills install <path>`: 空间共享（`.wopal/skills/`，无 agentScope）\n  - `wopal skills install <path> --agent wopal`: Wopal 专属（`.wopal/agents/wopal/skills/`，有 agentScope）\n  - `wopal skills install <path> --global`: 全局共享（`~/.wopal/skills/`）\n  - `wopal skills remove <name> --agent wopal`: 移除 Agent 专属技能需要指定 `--agent`",
+    "concepts": [
+      "skill",
+      "scope",
+      "configuration"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: 本空间 GitHub 仓库\n- Repo: `sampx/wopal-space`\n- 注意: 不是 `Yufu-sg/wopal-workspace`",
+    "concepts": [
+      "github",
+      "repository"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: 插件部署机制\n- 机制: `sync-to-wopal.py` 部署插件后自动检测变更并 `npm install`\n- 触发条件: 仅 plugins mapping 有文件变更时触发",
+    "concepts": [
+      "deployment",
+      "plugin"
+    ]
+  },
+  {
+    "category": "experience",
+    "body": "## [经验]: 调试模式配置\n- 策略: 开发阶段 opencode.jsonc 直接引用源码路径 `./projects/ontology/.../src/index.ts`\n- 跳过: 不需要 `sync-to-wopal.py` 部署\n- 发布: 只有发布时才需要部署",
+    "concepts": [
+      "development",
+      "debugging"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: 压缩对上下文的影响\n- 后果: 压缩后已加载的技能具体内容会丢失（变成\"知道存在但不知道规范\"）\n- 保留: 对话中间决策过程只保留结构化摘要",
+    "concepts": [
+      "context",
+      "compression"
+    ]
+  },
+  {
+    "category": "requirement",
+    "body": "## [用户要求]: 临时文件存储规范\n- 要求: 搜索/抓取产生的临时文件统一放 `.tmp/` 目录\n- 来源: *已沉淀至 AGENTS.md 空间存取规则*",
+    "concepts": [
+      "file-structure",
+      "workflow"
+    ]
+  },
+  {
+    "category": "preference",
+    "body": "## [偏好]: 抓取结果格式\n- 偏好: 搜索和抓取的临时文件用 markdown 格式（人类可读），不要用 json\n- 细节: fc-cli 默认输出 markdown，firecrawl 用 `-o .tmp/xxx.md` 而非 `--json`",
+    "concepts": [
+      "format",
+      "scraping"
+    ]
+  },
+  {
+    "category": "requirement",
+    "body": "## [用户要求]: 技能变更路径红线\n- 要求: 方案文档中**禁止**写修改部署层（`.wopal/`、`.agents/`）\n- 流程: 必须写源码层（`projects/ontology/`）→ 部署命令\n- 检查: 每次都要检查",
+    "concepts": [
+      "workflow",
+      "rule"
+    ]
+  },
+  {
+    "category": "requirement",
+    "body": "## [用户要求]: 技能卸载规范\n- 要求: 使用 `wopal skills remove <name> [--agent <name>] --force`\n- 禁止: 禁止手动 `rm -rf`\n- 原因: 否则 `.skill-lock.json` 不同步",
+    "concepts": [
+      "skill-management",
+      "rule"
+    ]
+  },
+  {
+    "category": "gotcha",
+    "body": "## [避坑方法]: 技能安装路径类型\n### 问题\n相对路径会失败\n### 方案\n`wopal skills install` 必须用绝对路径",
+    "concepts": [
+      "skill-management",
+      "gotcha"
+    ]
+  },
+  {
+    "category": "gotcha",
+    "body": "## [避坑方法]: 规则放置位置有效性\n### 问题\n规则写在 SKILL.md 内部无效（不加载看不到）\n### 方案\n放在 description（触发前可见）或 AGENTS.md（强制规则）才有效",
+    "concepts": [
+      "rule",
+      "configuration",
+      "gotcha"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: OpenCode 非交互权限处理\n- 问题: 非交互模式权限会被 auto-reject\n- 方案: 使用 `OPENCODE_PERMISSION` 环境变量传递",
+    "concepts": [
+      "opencode",
+      "permission"
+    ]
+  },
+  {
+    "category": "requirement",
+    "body": "## [用户要求]: 计划归档时机\n- 要求: 所有优先级都执行完成后才能归档\n- 禁止: 不能中途归档",
+    "concepts": [
+      "workflow",
+      "planning"
+    ]
+  },
+  {
+    "category": "requirement",
+    "body": "## [用户要求]: 历史文档处理原则\n- 原则: P2（docs/products/plans/done/ 等）属于历史记录，不追溯修改",
+    "concepts": [
+      "documentation",
+      "rule"
+    ]
+  },
+  {
+    "category": "gotcha",
+    "body": "## [避坑方法]: wopal-cli git 操作规范\n### 问题\n它是独立 git 仓库\n### 方案\n操作其分支/worktree 必须在项目目录内执行 git 命令",
+    "concepts": [
+      "git",
+      "gotcha"
+    ]
+  },
+  {
+    "category": "gotcha",
+    "body": "## [避坑方法]: ontology 仓库 git 操作规范\n### 问题\nontology 是独立 git 仓库（`wopal-cn/ontology`）\n### 方案\n代码变更必须在 `projects/ontology/` 内执行 git add/commit/push，不能在空间根目录操作",
+    "concepts": [
+      "git",
+      "gotcha"
+    ]
+  },
+  {
+    "category": "gotcha",
+    "body": "## [避坑方法]: 多项目 git 操作规范\n### 问题\nprojects/ 下各项目是独立仓库\n### 方案\ngit 操作必须 `git -C projects/<name>` 或 `cd` 进入项目目录后执行",
+    "concepts": [
+      "git",
+      "gotcha"
+    ]
+  },
+  {
+    "category": "fact",
+    "body": "## [事实]: Space 运行时架构\n- 结论: Space 是运行时实例（壳子），不需要 git 管理\n- 资产: 核心资产在 `projects/` 和 `contents/`，各项目应该是独立的 `.git` 目录",
+    "concepts": [
+      "architecture",
+      "git"
+    ]
+  },
+  {
+    "category": "fact",
+    "body": "## [事实]: 技能优化任务分配\n- 结论: 技能内容优化由 Wopal 自己做\n- 原因: 涉及自身行为的技能（如 fae-collab）不适合委派给 fae，需要深刻上下文\n- 例外: 通用技能（如 youtube-master）可以委派，只要 prompt 足够详细",
+    "concepts": [
+      "task-assignment",
+      "strategy"
+    ]
+  },
+  {
+    "category": "experience",
+    "body": "## [经验]: 开发任务初始化\n- 规则: 涉及 Issue 驱动的开发任务，必须先加载 dev-flow 技能再开始工作\n- 注意: 不能等用户提醒",
+    "concepts": [
+      "workflow",
+      "development"
+    ]
+  },
+  {
+    "category": "fact",
+    "body": "## [事实]: dev-flow 验证结论\n- 结论: Issue → Plan → review → dev → validate → archive 完整走通\n- 优化点:\n  1. Appetite（时间预算）对 AI 无意义 → 改用 Complexity + Confidence\n  2. feature 强制 PRD 要求过于僵化 → 移除强制\n  3. 人工门控可简化：review → validate（执行前后各一个）\n  4. 引入调查清单（参考 OpenShell create-spike）\n- 参考: `labs/research/OpenShell/.agents/skills/create-spike/SKILL.md`",
+    "concepts": [
+      "dev-flow",
+      "process"
+    ]
+  },
+  {
+    "category": "knowledge",
+    "body": "## [知识]: OpenSpace 技能进化研究\n- 方向: 技能质量感知（OpenCode 插件事件流）+ Wopal→Fae 动态技能注入（`promptAsync` 的 `system` 字段）\n- 主文档: `docs/research/openspace-skill-evolution-mechanism.md`\n- 注入研究: `docs/research/sandbox/docker-volume-mount-merge.md`（§8）\n- 源码: `labs/research/OpenSpace/`\n- 参考: `docs/scraped/opencode/`、`labs/ref-repos/opencode/`\n- 状态: 研究结论已纳入 PRD §10（Stage 4-5）和 DESIGN §4.2，待 Stage 4 进入实施",
+    "concepts": [
+      "research",
+      "skill",
+      "evolution"
+    ]
+  }
+]

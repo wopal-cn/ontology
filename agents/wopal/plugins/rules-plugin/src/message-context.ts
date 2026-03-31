@@ -12,7 +12,9 @@ export interface MessageWithInfo {
   role?: string;
   parts?: MessagePartWithSession[];
   info?: {
+    role?: string;
     sessionID?: string;
+    id?: string | number;
   };
 }
 

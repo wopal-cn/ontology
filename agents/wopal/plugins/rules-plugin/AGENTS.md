@@ -8,26 +8,36 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        index.ts (入口)                       │
-│         返回 { tool, event, "chat.message", ... }           │
+│                     index.ts (入口)                         │
+│              返回 { tool, event, hook, ... }               │
 ├─────────────────────────────────────────────────────────────┤
-│  规则注入层                      │  任务委派层               │
-│  ├── runtime.ts                 │  ├── simple-task-manager  │
-│  ├── utils.ts                   │  ├── concurrency-manager  │
-│  ├── message-context.ts         │  ├── stale-detector       │
-│  └── mcp-tools.ts               │  ├── error-classifier     │
-│                                 │  ├── idle-diagnostic      │ ← NEW
-│                                 │  ├── permission-proxy     │ ← NEW
-│                                 │  ├── question-relay       │ ← NEW
-│                                 │  └── tools/               │
-│                                 │      ├── wopal-task       │
-│                                 │      ├── wopal-output     │
-│                                 │      ├── wopal-cancel     │
-│                                 │      └── wopal-reply      │ ← NEW
+│  hooks/ (事件钩子)              │  tasks/ (任务管理)         │
+│  ├── event-handler.ts          │  ├── manager.ts           │
+│  ├── system-transform.ts       │  ├── launcher.ts          │
+│  └── message-transform.ts      │  └── monitor.ts           │
 ├─────────────────────────────────────────────────────────────┤
-│  基础设施: debug.ts, session-store.ts, types.ts              │
+│  rules/ (规则注入)              │  diagnostics/ (状态诊断)  │
+│  ├── discoverer.ts             │  ├── idle.ts              │
+│  ├── matcher.ts                │  ├── stale.ts             │
+│  └── formatter.ts              │  └── stuck.ts             │
+├─────────────────────────────────────────────────────────────┤
+│  memory/ (记忆系统)             │  tools/ (OpenCode 工具)    │
+│  ├── store.ts                  │  ├── wopal-task.ts        │
+│  ├── embedder.ts               │  ├── wopal-output.ts      │
+│  ├── retriever.ts              │  ├── wopal-cancel.ts      │
+│  ├── injector.ts               │  ├── wopal-reply.ts       │
+│  ├── distill.ts                │  ├── distill-session.ts   │
+│  └── llm-client.ts             │  └── memory-manage.ts     │
+├─────────────────────────────────────────────────────────────┤
+│  utils/ (通用工具)                                            │
+│  ├── debug.ts, session-store.ts, concurrency-manager.ts     │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+**数据流**：
+1. **规则注入**：`rules/discoverer` → `rules/matcher` → `hooks/system-transform` → OpenCode
+2. **任务委派**：`tools/wopal-task` → `tasks/launcher` → 子会话 → `diagnostics/idle` → 状态更新
+3. **记忆注入**：`memory/store` → `memory/retriever` → `hooks/system-transform` → OpenCode
 
 **核心流程**：
 - **规则注入**：发现规则文件 → 匹配条件 → 注入系统提示词
@@ -52,34 +62,187 @@
 
 ## 目录结构
 
+### 当前结构（现状）
+
 ```
-src/
-├── index.ts              # 插件入口
-├── types.ts              # 类型定义 (WopalTask, WopalTaskStatus 等)
-├── simple-task-manager.ts # 任务管理器核心
-├── concurrency-manager.ts # 并发控制 (FIFO 队列 + slot 移交)
-├── stale-detector.ts     # Stale 任务检测
-├── error-classifier.ts   # 错误分类
-├── idle-diagnostic.ts    # Idle 状态诊断 (区分 completed/waiting/error)
-├── permission-proxy.ts    # 子会话权限自动代理
-├── question-relay.ts     # Question Tool 事件中继
-├── runtime.ts            # OpenCode 事件钩子
-├── debug.ts              # 调试日志系统
-├── session-store.ts      # 会话状态存储
-├── message-context.ts    # 消息上下文提取
-├── session-messages.ts   # 消息提取 (含 extractFullHistory)
-├── session-cursor.ts     # 消息游标 (避免重复输出)
-├── progress-analyzer.ts  # 进度分析
-├── loop-detector.ts      # 循环检测
-├── mcp-tools.ts          # MCP 工具检测
-├── utils.ts              # 规则发现工具
-└── tools/
-    ├── index.ts          # 工具注册
-    ├── wopal-task.ts     # wopal_task 工具
-    ├── wopal-output.ts   # wopal_output 工具
-    ├── wopal-cancel.ts   # wopal_cancel 工具
-    └── wopal-reply.ts    # wopal_reply 工具 (恢复等待中的任务)
+src/                         # 源码目录
+├── index.ts                 # 入口 ✅
+├── types.ts                 # 类型定义 ✅
+│
+├── runtime.ts               # ⚠️ 784 行，职责过载
+├── simple-task-manager.ts   # ⚠️ 690 行，职责过载
+├── utils.ts                 # ⚠️ 612 行，职责模糊
+│
+├── concurrency-manager.ts   # 并发控制 ✅
+├── stale-detector.ts        # Stale 检测
+├── stuck-detector.ts        # Stuck 检测
+├── error-classifier.ts      # 错误分类
+├── idle-diagnostic.ts       # Idle 诊断
+├── permission-proxy.ts      # 权限代理
+├── question-relay.ts        # 问题中继
+├── debug.ts                 # 调试日志
+├── session-store.ts         # 会话存储
+├── message-context.ts       # 消息上下文
+├── session-messages.ts      # 消息提取
+├── session-cursor.ts        # 消息游标
+├── progress-analyzer.ts     # 进度分析
+├── loop-detector.ts         # 循环检测
+├── mcp-tools.ts             # MCP 工具
+│
+├── memory/                  # ✅ 结构良好
+│   ├── store.ts
+│   ├── embedder.ts
+│   ├── retriever.ts
+│   ├── injector.ts
+│   ├── distill.ts           # ⚠️ 907 行
+│   ├── llm-client.ts
+│   └── index.ts
+│
+└── tools/                   # ✅ 结构良好
+    ├── index.ts
+    ├── wopal-task.ts
+    ├── wopal-output.ts
+    ├── wopal-cancel.ts
+    ├── wopal-reply.ts
+    ├── distill-session.ts
+    └── memory-manage.ts
+
+根目录/                       # ⚠️ 脚本混放
+├── import-memory-md.ts      # CLI 工具
+├── check-memories.ts        # CLI 工具
+├── clean-memories.ts        # CLI 工具
+├── manage-memories.ts       # CLI 工具
+├── migrate-embeddings.ts    # CLI 工具
+├── test-retrieval.ts        # 测试工具
+├── test-retriever-live.ts   # 测试工具
+├── validate-rules-plugin.ts # 验证工具
+├── bun.lock                 # ✅ 主锁文件（保留）
+└── pnpm-lock.yaml          # ⚠️ 冗余锁文件（待删）
 ```
+
+### 规范结构（目标）
+
+```
+src/                         # 源码目录
+├── index.ts                 # 入口
+├── types.ts                 # 类型定义
+│
+├── rules/                   # 规则模块（从 utils.ts 拆分）
+│   ├── discoverer.ts       # 规则发现
+│   ├── matcher.ts          # 条件匹配
+│   └── formatter.ts        # 格式化
+│
+├── hooks/                   # OpenCode 事件钩子（从 runtime.ts 拆分）
+│   ├── event-handler.ts    # 事件路由
+│   ├── system-transform.ts # 规则/记忆注入
+│   └── message-transform.ts # 消息转换
+│
+├── tasks/                   # 任务管理（从 simple-task-manager.ts 拆分）
+│   ├── manager.ts          # 核心状态管理
+│   ├── launcher.ts         # 启动逻辑
+│   └── monitor.ts          # 监控（timeout、stale、stuck）
+│
+├── diagnostics/             # 状态诊断（整合检测器）
+│   ├── idle.ts             # Idle 诊断
+│   ├── stale.ts            # Stale 检测
+│   └── stuck.ts            # Stuck 检测
+│
+├── memory/                  # 记忆子系统（保持）
+│   ├── store.ts
+│   ├── embedder.ts
+│   ├── retriever.ts
+│   ├── injector.ts
+│   ├── distill.ts
+│   └── llm-client.ts
+│
+├── tools/                   # OpenCode 工具（保持）
+│   └── ...
+│
+└── utils/                   # 通用工具
+    ├── debug.ts
+    ├── session-store.ts
+    └── concurrency.ts
+
+scripts/                     # CLI 工具（从根目录移入）
+├── import-memory.ts
+├── check-memories.ts
+├── manage-memories.ts
+├── migrate-embeddings.ts
+└── validate.ts
+
+test/                        # 测试工具（从根目录移入）
+├── test-retrieval.ts
+└── test-retriever-live.ts
+```
+
+### 拆分任务清单
+
+| 当前文件 | 行数 | 拆分为 | 状态 |
+|----------|------|--------|------|
+| `runtime.ts` | 784 | `hooks/event-handler.ts`, `hooks/system-transform.ts`, `hooks/message-transform.ts` | 🔴 待拆 |
+| `simple-task-manager.ts` | 690 | `tasks/manager.ts`, `tasks/launcher.ts`, `tasks/monitor.ts` | 🔴 待拆 |
+| `utils.ts` | 612 | `rules/discoverer.ts`, `rules/matcher.ts`, `rules/formatter.ts` | 🔴 待拆 |
+| `memory/distill.ts` | 907 | 内部拆分或保持 | 🟡 待评估 |
+| 根目录 `*.ts` 脚本 | 7 个 | 移入 `scripts/` 和 `test/` | 🔴 待移 |
+| `pnpm-lock.yaml` | - | 删除（保留 bun.lock） | 🔴 待删 |
+| `pnpm-workspace.yaml` | - | 删除（Bun 不需要） | 🔴 待删 |
+
+---
+
+## 文件规范
+
+### 单文件限制
+
+| 类型 | 最大行数 | 说明 |
+|------|----------|------|
+| 核心逻辑文件 | **300 行** | 超过必须拆分 |
+| 工具定义文件 | **150 行** | 单一职责 |
+| 类型定义文件 | **200 行** | 可适当放宽 |
+
+**触发拆分信号**：
+- 文件超过 300 行
+- 一个类/函数超过 50 行
+- 职责超过 2 个（"和"字出现）
+- 导入超过 15 个模块
+
+### 拆分原则
+
+| 原模块 | 拆分策略 |
+|--------|----------|
+| `runtime.ts` | → `hooks/` 目录：`event-handler.ts`, `system-transform.ts`, `message-transform.ts` |
+| `simple-task-manager.ts` | → `tasks/` 目录：`manager.ts`, `launcher.ts`, `monitor.ts` |
+| `utils.ts` | → `rules/` 目录：`discoverer.ts`, `matcher.ts`, `formatter.ts` |
+
+---
+
+## 目录规范
+
+### 必须遵守
+
+1. **CLI 工具放 `scripts/`**：根目录禁止 `.ts` 脚本，必须移入 `scripts/`
+2. **测试工具放 `test/`**：非 `*.test.ts` 的测试工具放 `test/`
+3. **功能模块按目录组织**：
+   - `rules/` — 规则发现与注入
+   - `hooks/` — OpenCode 事件钩子
+   - `tasks/` — 任务管理
+   - `diagnostics/` — 状态诊断（idle、stale、stuck）
+   - `memory/` — 记忆子系统
+   - `tools/` — OpenCode 工具定义
+
+4. **单一职责**：每个文件只做一件事
+5. **命名规范**：
+   - 文件名使用 kebab-case
+   - 类名使用 PascalCase
+   - 函数/变量使用 camelCase
+
+### 禁止做法
+
+- ❌ 根目录放置 `.ts` 脚本（放 `scripts/`）
+- ❌ 单文件超过 300 行（必须拆分）
+- ❌ 循环依赖（A 导入 B，B 又导入 A）
+- ❌ `utils.ts` 成为垃圾场（职责必须明确）
+- ❌ 使用 npm 或 pnpm（必须用 Bun）
+- ❌ 同时存在多个锁文件（只保留 `bun.lock`）
 
 ---
 
@@ -88,17 +251,33 @@ src/
 ### 开发命令
 
 ```bash
+# 安装依赖
+bun install                    # 使用 Bun（与 OpenCode 宿主一致）
+
 # 测试
-npm run test:run          # 运行所有测试
-npm run test              # 进入 watch 模式
+bun run test:run              # 运行所有测试
+bun run test                  # 进入 watch 模式
 
 # 构建
-npm run build             # tsc 编译到 dist/
+bun run build                 # tsc 编译到 dist/
 
 # 代码检查
-npm run lint              # ESLint
-npm run format:check      # Prettier 检查
+bun run lint                  # ESLint
+bun run format:check          # Prettier 检查
 ```
+
+### 包管理器规范
+
+| 包管理器 | 使用场景 |
+|----------|----------|
+| **Bun** | ✅ 本项目必须使用 Bun |
+| pnpm | ❌ 禁止（会产生冗余锁文件） |
+| npm | ❌ 禁止（与 OpenCode 宿主不一致） |
+
+**原因**：
+- OpenCode 宿主指定 `packageManager: "bun@1.3.11"`
+- Bun 原生支持 TypeScript，无需编译即可运行 `.ts` 文件
+- 插件开发应与宿主环境保持一致
 
 ### 调试日志
 
@@ -111,10 +290,10 @@ WOPAL_PLUGIN_DEBUG=task   # 仅任务模块
 WOPAL_PLUGIN_DEBUG=rules  # 仅规则模块
 
 # 指定日志文件
-WOPAL_PLUGIN_LOG_FILE=/tmp/wopal-plugin.log
+WOPAL_PLUGIN_LOG_FILE=/Users/sam/coding/wopal/wopal-workspace/logs/wopal-plugins-debug.log
 ```
 
-日志默认位置：`tmpdir()/wopal-plugin.log`
+日志位置由 `WOPAL_PLUGIN_LOG_FILE` 环境变量指定，默认 `tmpdir()/wopal-plugin.log`
 
 ### 代码风格
 
@@ -209,7 +388,7 @@ wopal_reply(task_id="wopal-task-xxx", message="继续执行方案 A")
 
 ---
 
-## 部署
+## 部署 （注意：测试验证过程中无需部署）
 
 插件通过 `sync-to-wopal.py` 同步到 `.wopal/` 目录：
 
@@ -219,18 +398,30 @@ python scripts/sync-to-wopal.py -y
 ```
 
 OpenCode 配置 (`opencode.jsonc`)：
+
+### 部署前从源码目录测试
 ```json
 "plugin": [
   "./projects/ontology/agents/wopal/plugins/rules-plugin/src/index.ts"
 ]
 ```
 
+### 部署后从部署层加载
+```json
+"plugin": [
+  "./.wopal/agents/wopal/plugins/rules-plugin/src/index.ts"
+]
+```
+
+
 ---
 
 ## 注意事项
 
 - **禁止 console.log**：使用 `createDebugLog()` 或 `createWarnLog()` 输出日志
+- **日志模块匹配**：`createDebugLog(prefix, module)` 的 `module` 参数决定日志能否被环境变量过滤输出。新增功能的日志**必须**用对应模块的日志函数，禁止混用（如记忆注入相关日志必须用 `"memory"` 模块，不能默认用 `"rules"`）
+- **调试日志禁止截断**：调试日志的唯一目的是排错，必须完整输出内容。禁止使用 `.slice(0, N)` 截断日志内容，禁止省略关键信息。排错时看不到完整内容 = 白打
 - **Bun 原生 TS**：OpenCode 直接运行 `.ts` 文件，无需 `dist/`
-- **测试优先**：修改核心逻辑后运行 `npm run test:run` 验证
+- **测试优先**：修改核心逻辑后运行 `bun run test:run` 验证
 - **子会话无 TUI**：权限请求自动授权，Question Tool 事件中继到父代理
 - **waiting 不释放并发槽**：任务恢复后继续执行，不占用新槽位

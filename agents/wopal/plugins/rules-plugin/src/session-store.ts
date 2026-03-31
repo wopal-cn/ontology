@@ -1,11 +1,16 @@
+import type { MessageWithInfo } from "./message-context.js";
+
 export interface SessionState {
   contextPaths: Set<string>;
   lastUserPrompt?: string;
+  lastInjectedQuery?: string;
   lastUpdated: number;
   isCompacting?: boolean;
   compactingSince?: number;
   seededFromHistory: boolean;
   seedCount?: number;
+  /** Recent messages for short-query context enrichment */
+  recentMessages: MessageWithInfo[];
 }
 
 export interface SessionStoreOptions {
@@ -116,6 +121,7 @@ export class SessionStore {
       lastUpdated: ++this.tick,
       seededFromHistory: false,
       seedCount: 0,
+      recentMessages: [],
     };
   }
 }

@@ -14,7 +14,7 @@
     "format": "prettier --write src/**/*.ts",
     "format:check": "prettier --check src/**/*.ts",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build"
+    "prepublishOnly": "bun run clean && bun run build"
   },
   "keywords": [
     "opencode",
@@ -54,9 +54,17 @@
     "vitest": "^1.6.1"
   },
   "dependencies": {
+    "@lancedb/lancedb": "^0.27.1",
+    "@lancedb/lancedb-darwin-x64": "^0.22.3",
     "@opencode-ai/plugin": "^1.2.14",
     "@opencode-ai/sdk": "^1.2.14",
     "minimatch": "^9.0.5",
+    "openai": "^6.33.0",
     "yaml": "^2.8.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

@@ -1,0 +1,279 @@
+/**
+ * Distill LLM Client for Memory System
+ *
+ * Uses OpenAI-compatible API for memory extraction and deduplication.
+ * Required environment variables: LLM_BASE_URL, LLM_API_KEY
+ */
+
+import OpenAI from "openai";
+import { createDebugLog, createWarnLog } from "../debug.js";
+
+const debugLog = createDebugLog("[wopal-memory]", "memory");
+const warnLog = createWarnLog("[wopal-memory]");
+
+const LLM_TIMEOUT_MS = 120000;
+
+/**
+ * Distill LLM client using OpenAI-compatible API
+ *
+ * Required environment variables:
+ * - WOPAL_LLM_BASE_URL: LLM API endpoint
+ * - WOPAL_LLM_API_KEY: API key for LLM service
+ * - WOPAL_LLM_MODEL: Model name (optional, defaults to gpt-4o-mini)
+ */
+export class DistillLLMClient {
+  private client: OpenAI;
+  private model: string;
+
+  constructor() {
+    const baseURL = process.env.WOPAL_LLM_BASE_URL;
+    const apiKey = process.env.WOPAL_LLM_API_KEY;
+
+    if (!baseURL || !apiKey) {
+      throw new Error(
+        "DistillLLMClient requires WOPAL_LLM_BASE_URL and WOPAL_LLM_API_KEY environment variables"
+      );
+    }
+
+    this.model = process.env.WOPAL_LLM_MODEL ?? "gpt-4o-mini";
+
+    debugLog(`DistillLLMClient initializing: baseURL=${baseURL}, model=${this.model}`);
+
+    this.client = new OpenAI({
+      baseURL,
+      apiKey,
+    });
+
+    debugLog(`DistillLLMClient ready: model=${this.model}`);
+  }
+
+  /**
+   * Complete a prompt and return raw text response
+   *
+   * @param prompt - The prompt to send to the LLM
+   * @returns Raw text response
+   */
+  async complete(prompt: string): Promise<string> {
+    debugLog(`[LLM.complete] ========== PROMPT START (${prompt.length} chars) ==========\n${prompt}\n[LLM.complete] ========== PROMPT END ==========`);
+
+    try {
+      const response = await this.client.chat.completions.create(
+        {
+          model: this.model,
+          messages: [{ role: "user", content: prompt }],
+        },
+        {
+          signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+        }
+      );
+
+      const content = response.choices[0]?.message?.content ?? "";
+
+      debugLog(`[LLM.complete] ========== RESPONSE START (${content.length} chars) ==========\n${content}\n[LLM.complete] ========== RESPONSE END ==========`);
+
+      return content;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnLog(`[LLM.complete] Failed: ${message}`);
+      throw new Error(`LLM complete failed: ${message}`);
+    }
+  }
+
+  /**
+   * Complete a prompt and parse JSON response
+   *
+   * - Extracts first {...} or [...] block from response
+   * - Attempts repair with simple heuristics
+   * - Returns parsed JSON as typed object
+   *
+   * @param prompt - The prompt to send to the LLM
+   * @returns Parsed JSON object
+   */
+  async completeJson<T>(prompt: string): Promise<T> {
+    const rawResponse = await this.complete(prompt);
+
+    const jsonStr = this.extractJson(rawResponse);
+
+    if (!jsonStr) {
+      warnLog(`[LLM.completeJson] No JSON found in response`);
+      warnLog(`[LLM.completeJson] Response first 500 chars:\n${rawResponse.substring(0, 500)}`);
+      throw new Error("No JSON found in LLM response");
+    }
+
+    // Try direct parse
+    try {
+      return JSON.parse(jsonStr) as T;
+    } catch (_parseError) {
+      // fall through to repair
+    }
+
+    // Attempt simple repair
+    const repaired = this.repairJson(jsonStr);
+
+    try {
+      return JSON.parse(repaired) as T;
+    } catch (parseError) {
+      const message = parseError instanceof Error ? parseError.message : String(parseError);
+      warnLog(`[LLM.completeJson] Parse failed: ${message}`);
+      warnLog(`[LLM.completeJson] Failed JSON:\n${repaired.substring(0, 500)}`);
+      throw new Error(`Failed to parse JSON after repair: ${message}`);
+    }
+  }
+
+/**
+   * Extract JSON block from text
+   *
+   * Handles:
+   * - Markdown code blocks (```json ... ``)
+   * - Raw {...} or [...] blocks
+   * - JSON after code blocks
+   */
+  private extractJson(text: string): string | null {
+    // Strategy 1: Find {"memories": ...} with balanced braces
+    const memoriesStart = text.search(/\{\s*"memories"/);
+    if (memoriesStart !== -1) {
+      const jsonStr = this.extractBalancedJson(text, memoriesStart);
+      if (jsonStr) return jsonStr;
+    }
+
+    // Strategy 2: Find JSON in markdown code block
+    const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      const blockContent = codeBlockMatch[1].trim();
+      if (blockContent.startsWith("{") || blockContent.startsWith("[")) {
+        return blockContent;
+      }
+    }
+
+    // Strategy 3: Find {"decision": ...} for dedup prompt
+    const decisionStart = text.indexOf('{"decision"');
+    if (decisionStart !== -1) {
+      const jsonStr = this.extractBalancedJson(text, decisionStart);
+      if (jsonStr) return jsonStr;
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract balanced JSON object starting from given position
+   */
+  private extractBalancedJson(text: string, start: number): string | null {
+    let depth = 0;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = start; i < text.length; i++) {
+      const char = text[i];
+
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        escapeNext = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === "{") depth++;
+        else if (char === "}") {
+          depth--;
+          if (depth === 0) {
+            return text.substring(start, i + 1);
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Simple JSON repair heuristics
+   *
+   * Handles common issues:
+   * - Trailing commas
+   * - Missing closing brackets
+   * - Literal newlines inside strings
+   */
+  private repairJson(jsonStr: string): string {
+    let repaired = jsonStr;
+
+    // Remove trailing commas before } or ]
+    repaired = repaired.replace(/,\s*([}\]])/g, "$1");
+
+    // Fix literal newlines inside JSON strings
+    repaired = this.fixNewlinesInStrings(repaired);
+
+    // Ensure proper closing
+    const openBraces = (repaired.match(/\{/g) ?? []).length;
+    const closeBraces = (repaired.match(/\}/g) ?? []).length;
+    if (openBraces > closeBraces) {
+      repaired += "}".repeat(openBraces - closeBraces);
+    }
+
+    const openBrackets = (repaired.match(/\[/g) ?? []).length;
+    const closeBrackets = (repaired.match(/\]/g) ?? []).length;
+    if (openBrackets > closeBrackets) {
+      repaired += "]".repeat(openBrackets - closeBrackets);
+    }
+
+    return repaired;
+  }
+
+  /**
+   * Fix literal newlines inside JSON string values
+   *
+   * LLMs often output actual newlines inside JSON strings instead of \n.
+   * This walks the string tracking quote/escape state and replaces
+   * literal newlines inside strings with the \n escape sequence.
+   */
+  private fixNewlinesInStrings(jsonStr: string): string {
+    const chars: string[] = [];
+    let inString = false;
+    let escapeNext = false;
+
+    for (const char of jsonStr) {
+      if (escapeNext) {
+        chars.push(char);
+        escapeNext = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        chars.push(char);
+        escapeNext = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        chars.push(char);
+        continue;
+      }
+
+      if (inString && (char === "\n" || char === "\r")) {
+        chars.push(char === "\r" ? "\\r" : "\\n");
+        continue;
+      }
+
+      chars.push(char);
+    }
+
+    return chars.join("");
+  }
+
+  /**
+   * Get current model name
+   */
+  getModel(): string {
+    return this.model;
+  }
+}

@@ -16,12 +16,39 @@ import { createDebugLog, type DebugLog } from "./debug.js";
 import type { SessionStore } from "./session-store.js";
 import type { Model } from "@opencode-ai/sdk";
 import type { SimpleTaskManager } from "./simple-task-manager.js";
+import type { MemoryInjector } from "./memory/index.js";
 import type { IdleDiagnostic } from "./idle-diagnostic.js";
 import type { WopalTask } from "./types.js"
 import { trackActivity } from "./progress-tracker.js";
 
+/** Max recent messages to store for short-query context enrichment */
+const MAX_RECENT_MESSAGES = 10;
+
 interface MessagesTransformOutput {
   messages: MessageWithInfo[];
+}
+
+interface CommandExecuteBeforeInput {
+  command: string;
+  sessionID: string;
+  arguments: string;
+}
+
+interface CommandExecuteBeforeOutput {
+  parts: Array<{ type?: string; text?: string; synthetic?: boolean }>;
+}
+
+interface ToolExecuteAfterInput {
+  tool: string;
+  sessionID: string;
+  callID: string;
+  args: Record<string, unknown>;
+}
+
+interface ToolExecuteAfterOutput {
+  title: string;
+  output: string;
+  metadata: unknown;
 }
 
 interface SystemTransformInput {
@@ -42,6 +69,7 @@ export interface OpenCodeRulesRuntimeOptions {
   debugLog?: DebugLog;
   now?: () => number;
   taskManager?: SimpleTaskManager;
+  memoryInjector?: MemoryInjector | undefined;
 }
 
 export class OpenCodeRulesRuntime {
@@ -54,6 +82,8 @@ export class OpenCodeRulesRuntime {
   private taskDebugLog: DebugLog;
   private now: () => number;
   private taskManager: SimpleTaskManager | undefined;
+  private memoryInjector: MemoryInjector | undefined;
+  private injectDebugLog: DebugLog;
 
   constructor(opts: OpenCodeRulesRuntimeOptions) {
     this.client = opts.client;
@@ -63,13 +93,18 @@ export class OpenCodeRulesRuntime {
     this.sessionStore = opts.sessionStore;
     this.debugLog = opts.debugLog ?? createDebugLog();
     this.taskDebugLog = createDebugLog("[wopal-task]", "task");
+    this.injectDebugLog = createDebugLog("[wopal-memory]", "memory");
     this.now = opts.now ?? (() => Date.now());
     this.taskManager = opts.taskManager ?? undefined;
+    this.memoryInjector = opts.memoryInjector;
   }
 
   createHooks(): Record<string, unknown> {
     return {
+      "command.execute.before": this.onCommandExecuteBefore.bind(this),
       "tool.execute.before": this.onToolExecuteBefore.bind(this),
+      "tool.execute.after": this.onToolExecuteAfter.bind(this),
+      "tool.definition": this.onToolDefinition.bind(this),
       "experimental.chat.messages.transform":
         this.onMessagesTransform.bind(this),
       "chat.message": this.onChatMessage.bind(this),
@@ -77,6 +112,50 @@ export class OpenCodeRulesRuntime {
       "experimental.session.compacting": this.onSessionCompacting.bind(this),
       "event": this.onEvent.bind(this),
     };
+  }
+
+  private async onToolDefinition(
+    input: { toolID: string },
+    output: { description: string; parameters: unknown },
+  ): Promise<void> {
+    if (input.toolID !== "memory_manage") {
+      return;
+    }
+
+    output.description = [
+      "管理 LanceDB 中的长期记忆。子命令: list, stats, search, delete。",
+      "重要：调用本工具后，必须把 output 的完整文本逐字写入用户回复。",
+      "严禁概括、严禁摘要、严禁省略任何一条结果。",
+      "用户使用 list 的目的是逐条审查完整内容，以决定删除或调整哪一条记忆。",
+    ].join(" ");
+  }
+
+  private async onCommandExecuteBefore(
+    input: CommandExecuteBeforeInput,
+    output: CommandExecuteBeforeOutput,
+  ): Promise<void> {
+    if (input.command !== "memory") {
+      return;
+    }
+
+    const first = output.parts.find(
+      (part) => part.type === "text" && typeof part.text === "string",
+    );
+    if (!first?.text) {
+      return;
+    }
+
+    first.text = [
+      "这是一个立即执行命令，不是规则阅读任务。",
+      "你必须立刻调用 memory_manage 工具，不要解释命令，不要复述规则。",
+      "如果是 list，默认使用 limit=100 一次拿完，除非用户显式指定 limit。",
+      "tool 返回值对用户不可见。你必须把工具返回的完整文本逐字写入回复。",
+      "严禁概括、严禁摘要、严禁只汇总结论、严禁省略任意一条记忆。",
+      "因为用户需要逐条审查完整内容，决定删除或调整哪一条。",
+      "如果你没有把完整结果写出来，这次命令就是失败的。",
+      "",
+      first.text,
+    ].join("\n");
   }
 
   private async onToolExecuteBefore(
@@ -122,6 +201,55 @@ export class OpenCodeRulesRuntime {
     }
   }
 
+  private async onToolExecuteAfter(
+    _input: ToolExecuteAfterInput,
+    _output: ToolExecuteAfterOutput,
+  ): Promise<void> {
+    // No-op: memory_manage echo handled via tool return string
+  }
+
+  /**
+   * Check if a session is a child session (has parentID).
+   * Two checks: taskManager (wopal_task) + OpenCode session API (built-in task tool).
+   */
+  private childSessionCache = new Map<string, boolean>();
+
+  private async isChildSession(sessionID: string): Promise<boolean> {
+    const cached = this.childSessionCache.get(sessionID);
+    if (cached !== undefined) return cached;
+
+    // Check 1: wopal_task tracked sessions
+    if (this.taskManager?.findBySession(sessionID)) {
+      this.childSessionCache.set(sessionID, true);
+      return true;
+    }
+
+    // Check 2: OpenCode session API — parentID means child session
+    try {
+      const client = this.client as Record<string, unknown>;
+      const sessionApi = client?.session as Record<string, unknown> | undefined;
+      if (sessionApi?.get && typeof sessionApi.get === "function") {
+        const result = await (sessionApi.get as Function)({ sessionID });
+        const data = (result as Record<string, unknown>)?.data as
+          | Record<string, unknown>
+          | undefined;
+        const hasParent = !!data?.parentID;
+        this.childSessionCache.set(sessionID, hasParent);
+        if (hasParent) {
+          this.debugLog(
+            `Session ${sessionID} is a child session (parentID=${data.parentID}), skipping memory injection`,
+          );
+        }
+        return hasParent;
+      }
+    } catch {
+      // API not available or failed — fall through to not-a-child
+    }
+
+    this.childSessionCache.set(sessionID, false);
+    return false;
+  }
+
   private async onMessagesTransform(
     _input: Record<string, never>,
     output: MessagesTransformOutput,
@@ -143,6 +271,9 @@ export class OpenCodeRulesRuntime {
     );
     const userPrompt = extractLatestUserPrompt(output.messages);
 
+    // Store recent messages for context enrichment (last N messages)
+    const recentMessages = output.messages.slice(-MAX_RECENT_MESSAGES);
+
     this.sessionStore.upsert(sessionID, (state) => {
       for (const p of contextPaths) {
         state.contextPaths.add(normalizeContextPath(p, this.projectDirectory));
@@ -152,6 +283,7 @@ export class OpenCodeRulesRuntime {
       }
       state.seededFromHistory = true;
       state.seedCount = (state.seedCount ?? 0) + 1;
+      state.recentMessages = recentMessages;
     });
 
     if (contextPaths.length > 0) {
@@ -181,6 +313,10 @@ export class OpenCodeRulesRuntime {
     const sessionID = input?.sessionID;
     if (!sessionID) {
       this.debugLog("No sessionID in chat.message hook input");
+      return;
+    }
+
+    if (output?.message?.role === "assistant") {
       return;
     }
 
@@ -243,6 +379,14 @@ export class OpenCodeRulesRuntime {
       }
     }
 
+    if (!output) {
+      output = { system: [] };
+    }
+    if (!output.system) {
+      output.system = [];
+    }
+
+    // Rule injection
     const contextPaths = sessionState
       ? Array.from(sessionState.contextPaths).sort()
       : [];
@@ -257,23 +401,194 @@ export class OpenCodeRulesRuntime {
       availableToolIDs,
     );
 
-    if (!formattedRules) {
+    if (formattedRules) {
+      this.debugLog("Injecting rules into system prompt");
+      output.system.push(formattedRules);
+    } else {
       this.debugLog("No applicable rules for current context");
-      return output ?? { system: [] };
     }
 
-    this.debugLog("Injecting rules into system prompt");
+    // Memory injection (after rules, into same system array)
+    if (sessionID) {
+      await this.injectMemoriesIntoSystem(sessionID, output);
+    }
 
-    if (!output) {
-      return { system: [formattedRules] };
+    return output;
+  }
+
+  /**
+   * Inject relevant memories into system prompt.
+   * All skip decisions (already injected, short/command, child session) are made here
+   * so that repeated system.transform calls (e.g. after tool use) exit immediately.
+   */
+  private async injectMemoriesIntoSystem(
+    sessionID: string,
+    output: SystemTransformOutput,
+  ): Promise<void> {
+    if (!this.memoryInjector) return;
+
+    // Skip entirely if memory store is empty
+    try {
+      if (await this.memoryInjector.isEmpty()) return;
+    } catch {
+      // Store not initialized yet, skip silently
+      return;
+    }
+
+    const state = this.sessionStore.get(sessionID);
+
+    const userQuery = state?.lastUserPrompt;
+    if (!userQuery) {
+      this.injectDebugLog("Skipped memory injection (no user query)");
+      return;
+    }
+
+    // Build enriched query — short messages may need recent context from client
+    let recentMessages = state?.recentMessages || [];
+    if (userQuery.trim().length < 10 && recentMessages.length === 0) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const messages = await (this.client as any).session?.messages?.({ query: { id: sessionID } });
+        if (Array.isArray(messages?.data)) {
+          recentMessages = messages.data.slice(-5);
+        }
+      } catch {
+        // Fallback: no recent messages available
+      }
+    }
+
+    const enrichedQuery = this.buildEnrichedQuery(userQuery, recentMessages);
+    if (!enrichedQuery) {
+      this.injectDebugLog(`Skipped memory injection for short/command input: "${userQuery}"`);
+      return;
+    }
+
+    // Skip if same query already injected this turn
+    if (state?.lastInjectedQuery === enrichedQuery) {
+      this.injectDebugLog("Skipped memory injection (already injected this turn)");
+      return;
+    }
+
+    // Skip child sessions
+    const isChildSession = await this.isChildSession(sessionID);
+    if (isChildSession) {
+      this.injectDebugLog("Skipped memory injection for child session");
+      return;
+    }
+
+    // Execute retrieval + injection with timeout guard
+    try {
+      const injectPromise = this.doInjectMemories(sessionID, output, enrichedQuery);
+      const timeoutPromise = new Promise<"timeout">((resolve) =>
+        setTimeout(() => resolve("timeout"), 8_000)
+      );
+      const result = await Promise.race([injectPromise, timeoutPromise]);
+      if (result === "timeout") {
+        this.injectDebugLog("Memory injection timed out (8s), skipping");
+      }
+      // Suppress unhandled rejection from the loser of Promise.race
+      injectPromise.catch(() => {});
+    } catch (error) {
+      this.injectDebugLog(`Memory injection failed: ${error}`);
+    }
+  }
+
+  /**
+   * Build context-enriched query for short inputs.
+   * If userQuery is short (< 10 chars), try to enrich with recent message context.
+   * Returns null if query should be skipped (no semantic value).
+   */
+  private buildEnrichedQuery(
+    userQuery: string,
+    recentMessages: import("./message-context.js").MessageWithInfo[],
+  ): string | null {
+    const trimmed = userQuery.trim();
+
+    // Skip commands and shell shortcuts
+    if (
+      trimmed[0] === "/" ||
+      trimmed[0] === "!" ||
+      trimmed.startsWith("# /")
+    ) {
+      return null;
+    }
+
+    // Skip common command-like inputs (covers known short commands like "ok")
+    const skipPatterns = /^(ok|compact|continue|exit|好的|继续|退出)$/i;
+    if (skipPatterns.test(trimmed)) {
+      return null;
+    }
+
+    // Short query enrichment (< 10 chars)
+    // Requires at least one complete turn (previous user + assistant) before current message
+    if (trimmed.length < 10 && recentMessages.length > 0) {
+      let foundAssistant = false;
+      let foundPreviousUser = false;
+      const contextParts: string[] = [];
+
+      // Walk backwards: current(short user) → assistant → previous user = one complete turn
+      for (let i = recentMessages.length - 1; i >= 0; i--) {
+        const msg = recentMessages[i];
+        const role = msg.role || msg.info?.role;
+        const parts = msg.parts || [];
+        const texts = parts
+          .filter((p) => p.type === "text" && p.text)
+          .map((p) => p.text!.trim())
+          .filter(Boolean);
+        const joined = texts.join(" ").trim();
+        if (joined.length < 10) continue;
+
+        if (!foundAssistant && role === "assistant") {
+          foundAssistant = true;
+          contextParts.unshift(joined.slice(-300));
+          continue;
+        }
+        if (foundAssistant && role === "user") {
+          foundPreviousUser = true;
+          contextParts.unshift(joined.slice(-300));
+          break;
+        }
+      }
+
+      if (foundAssistant && foundPreviousUser) {
+        return `User: ${contextParts[0]}\nAssistant: ${contextParts[1]}\nFollow-up: ${trimmed}`;
+      }
+    }
+
+    // Return original query if long enough
+    return trimmed.length >= 10 ? trimmed : null;
+  }
+
+  /**
+   * Pure retrieval + injection. All skip decisions are made by the caller.
+   */
+  private async doInjectMemories(
+    sessionID: string,
+    output: SystemTransformOutput,
+    enrichedQuery: string,
+  ): Promise<void> {
+    const injector = this.memoryInjector;
+    if (!injector) return;
+
+    const memoryText = await injector.formatForSystem(enrichedQuery);
+    if (!memoryText) {
+      this.injectDebugLog(`No relevant memories found`);
+      // Mark as injected even when no results, to avoid repeated retrieval
+      this.sessionStore.upsert(sessionID, (state) => {
+        state.lastInjectedQuery = enrichedQuery;
+      });
+      return;
     }
 
     if (!output.system) {
       output.system = [];
     }
+    output.system.push(memoryText);
 
-    output.system.push(formattedRules);
-    return output;
+    // Mark this query as injected
+    this.sessionStore.upsert(sessionID, (state) => {
+      state.lastInjectedQuery = enrichedQuery;
+    });
   }
 
   private async queryAvailableToolIDs(): Promise<string[]> {

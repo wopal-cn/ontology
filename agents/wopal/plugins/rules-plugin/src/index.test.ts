@@ -2804,6 +2804,65 @@ describe("SessionState", () => {
     }
   });
 
+  it("registers memory command/tool hardening hooks", async () => {
+    const { default: plugin } = await import("./index.js");
+    const hooks = await plugin({
+      client: { tool: { ids: vi.fn(async () => ({ data: [] })) } } as any,
+      project: {} as any,
+      directory: testDir,
+      worktree: testDir,
+      $: {} as any,
+      serverUrl: new URL("http://localhost"),
+    });
+
+    expect(typeof hooks["command.execute.before"]).toBe("function");
+    expect(typeof hooks["tool.execute.after"]).toBe("function");
+    expect(typeof hooks["tool.definition"]).toBe("function");
+  });
+
+  it("hardens /memory command prompt before execution", async () => {
+    const { default: plugin } = await import("./index.js");
+    const hooks = await plugin({
+      client: { tool: { ids: vi.fn(async () => ({ data: [] })) } } as any,
+      project: {} as any,
+      directory: testDir,
+      worktree: testDir,
+      $: {} as any,
+      serverUrl: new URL("http://localhost"),
+    });
+
+    const hook = hooks["command.execute.before"] as any;
+    const output = {
+      parts: [{ type: "text", text: "# /memory — 记忆管理命令\n原始内容" }],
+    };
+
+    await hook({ command: "memory", sessionID: "ses_mem", arguments: "" }, output);
+
+    expect(output.parts[0].text).toContain("这是一个立即执行命令");
+    expect(output.parts[0].text).toContain("必须把工具返回的完整文本逐字写入回复");
+    expect(output.parts[0].text).toContain("原始内容");
+  });
+
+  it("hardens memory_manage tool definition", async () => {
+    const { default: plugin } = await import("./index.js");
+    const hooks = await plugin({
+      client: { tool: { ids: vi.fn(async () => ({ data: [] })) } } as any,
+      project: {} as any,
+      directory: testDir,
+      worktree: testDir,
+      $: {} as any,
+      serverUrl: new URL("http://localhost"),
+    });
+
+    const hook = hooks["tool.definition"] as any;
+    const output = { description: "old", parameters: {} };
+
+    await hook({ toolID: "memory_manage" }, output);
+
+    expect(output.description).toContain("必须把 output 的完整文本逐字写入用户回复");
+    expect(output.description).toContain("严禁概括");
+  });
+
   it("does not require messages.transform to inject conditional rules", async () => {
     // Arrange - create conditional rule
     const originalEnv = process.env.XDG_CONFIG_HOME;
