@@ -518,12 +518,6 @@ export class OpenCodeRulesRuntime {
       return null;
     }
 
-    // Skip common command-like inputs (covers known short commands like "ok")
-    const skipPatterns = /^(ok|compact|continue|exit|好的|继续|退出)$/i;
-    if (skipPatterns.test(trimmed)) {
-      return null;
-    }
-
     // Always try to get the most recent complete turn (previous user + assistant)
     if (recentMessages.length > 0) {
       // Find the current user message index (last user message in the list)
