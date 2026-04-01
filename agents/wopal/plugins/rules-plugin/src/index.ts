@@ -115,11 +115,17 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
 
   if (memory) {
     const { createDistillSessionTool } = await import("./tools/distill-session");
+    const { DistillLLMClient } = await import("./memory/llm-client");
+    const { createContextManageTool } = await import("./tools/context-manage");
+
     tools.distill_session = createDistillSessionTool(
       memory.distillEngine,
       memory.store,
       pluginInput.client,
     );
+
+    const distillLLM = new DistillLLMClient();
+    tools.context_manage = createContextManageTool(distillLLM, pluginInput.client);
   }
 
   warnLog(`Returning tools: ${Object.keys(tools).join(", ")}, memory: ${!!memory}`);

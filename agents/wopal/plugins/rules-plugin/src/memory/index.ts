@@ -21,7 +21,6 @@ export {
 export type {
   DistillResult,
   ExtractResult,
-  ExtractionState,
   PreviewCandidate,
 } from "./distill.js";
 export { MemoryRetriever } from "./retriever.js";

@@ -10,9 +10,10 @@ import type { EmbeddingClient } from "./embedder.js";
 import type { DistillLLMClient } from "./llm-client.js";
 import type { SessionMessage } from "../types.js";
 import { createDebugLog, createWarnLog } from "../debug.js";
+import { loadSessionContext, saveSessionContext, clearSessionContext, type SessionContext } from "./session-context.js";
 import { homedir } from "os";
 import { join } from "path";
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 
 const debugLog = createDebugLog("[wopal-memory]", "memory");
 const warnLog = createWarnLog("[wopal-memory]");
@@ -46,9 +47,6 @@ function resolvePromptFilePath(envVar: string): string | null {
 // Prompt file path from environment
 const DISTILL_PROMPT_FILE = resolvePromptFilePath("WOPAL_DISTILL_PROMPT_FILE");
 const DEDUP_PROMPT_FILE = resolvePromptFilePath("WOPAL_DEDUP_PROMPT_FILE");
-
-// State directory for extraction tracking
-const STATE_DIR = join(homedir(), ".wopal", "memory", "state");
 
 // Extraction thresholds
 const MIN_CONVERSATION_LENGTH = 100; // Minimum characters to extract
@@ -102,19 +100,6 @@ export interface ExtractResult {
     concepts: string[];
   }>;
   title?: string;
-}
-
-/**
- * Extraction state stored per session
- */
-export interface ExtractionState {
-  sessionID: string;
-  title: string | null;
-  extractedAt: string;
-  depth: "shallow";
-  messageCount: number;
-  memoriesCreated: number;
-  memoriesMerged: number;
 }
 
 /**
@@ -400,51 +385,17 @@ merge：融入新信息，去重去冗余，保持已有 Markdown 结构，conce
 }
 
 /**
- * Save extraction state to disk
+ * Load extraction state from disk (delegates to SessionContext)
  */
-function saveExtractionState(state: ExtractionState): void {
-  try {
-    if (!existsSync(STATE_DIR)) {
-      mkdirSync(STATE_DIR, { recursive: true });
-    }
-    const filePath = join(STATE_DIR, `${state.sessionID}.json`);
-    writeFileSync(filePath, JSON.stringify(state, null, 2));
-    debugLog(`Saved extraction state: ${filePath}`);
-  } catch (error) {
-    warnLog(`Failed to save extraction state: ${error}`);
-  }
+export function loadExtractionState(sessionID: string): SessionContext | null {
+  return loadSessionContext(sessionID);
 }
 
 /**
- * Load extraction state from disk
- */
-export function loadExtractionState(sessionID: string): ExtractionState | null {
-  try {
-    const filePath = join(STATE_DIR, `${sessionID}.json`);
-    if (!existsSync(filePath)) {
-      return null;
-    }
-    const content = readFileSync(filePath, "utf-8");
-    return JSON.parse(content) as ExtractionState;
-  } catch (error) {
-    debugLog(`Failed to load extraction state: ${error}`);
-    return null;
-  }
-}
-
-/**
- * Clear extraction state for a session (for force re-distillation)
+ * Clear extraction state for a session (delegates to SessionContext)
  */
 export function clearExtractionState(sessionID: string): void {
-  try {
-    const filePath = join(STATE_DIR, `${sessionID}.json`);
-    if (existsSync(filePath)) {
-      unlinkSync(filePath);
-      debugLog(`Cleared extraction state: ${filePath}`);
-    }
-  } catch (error) {
-    debugLog(`Failed to clear extraction state: ${error}`);
-  }
+  clearSessionContext(sessionID);
 }
 
 /**
@@ -486,14 +437,14 @@ export class DistillEngine {
     debugLog(`[distill] session=${sessionID}, project=${project}, messages=${messages.length}`);
 
     const existingState = loadExtractionState(sessionID);
-    if (existingState) {
-      debugLog(`[distill] Already extracted at ${existingState.extractedAt}`);
+    if (existingState?.distill) {
+      debugLog(`[distill] Already extracted at ${existingState.distill.extractedAt}`);
       return {
-        memoriesCreated: existingState.memoriesCreated,
-        memoriesMerged: existingState.memoriesMerged,
+        memoriesCreated: 0, // SessionContext doesn't store these legacy fields
+        memoriesMerged: 0,
         memoriesSkipped: 0,
         title: existingState.title,
-        depth: existingState.depth,
+        depth: "shallow" as const, // Always shallow for now (deep not implemented)
       };
     }
 
@@ -541,16 +492,17 @@ export class DistillEngine {
       });
     }
 
-    const state: ExtractionState = {
+    // Save to SessionContext
+    const ctx: SessionContext = {
       sessionID,
       title: extractResult.title ?? null,
-      extractedAt: new Date().toISOString(),
-      depth: "shallow",
-      messageCount: messages.length,
-      memoriesCreated: dedupResult.create.length,
-      memoriesMerged: dedupResult.merge.length,
+      distill: {
+        messageCount: messages.length,
+        extractedAt: new Date().toISOString(),
+        depth: "shallow",
+      },
     };
-    saveExtractionState(state);
+    saveSessionContext(ctx);
 
     let title = extractResult.title;
 

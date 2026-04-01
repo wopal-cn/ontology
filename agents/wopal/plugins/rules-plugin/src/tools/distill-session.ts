@@ -14,6 +14,13 @@ import { createDebugLog } from "../debug.js";
 
 const debugLog = createDebugLog("[wopal-memory]", "memory");
 
+const ECHO_REMINDER = [
+  "",
+  "重要：调用本工具后，你必须将以上完整蒸馏结果逐字展示给用户。用户无法看到工具内部输出，依赖你主动展示。",
+  "每条候选记忆必须完整展示所有字段（正文、分类、重要性、标签），严禁省略、摘要或概括。",
+  "preview 后必须等用户确认才能执行 confirm，严禁跳过展示直接 confirm。",
+].join("\n");
+
 /**
  * Create distill_session tool
  *
@@ -106,23 +113,11 @@ export function createDistillSessionTool(
         debugLog(`[distill_session] confirmCandidates DONE: ${Date.now() - confirmStart}ms`);
         debugLog(`[distill_session] Result: created=${result.created}, merged=${result.merged}, skipped=${result.skipped}`);
 
-        // Update session title if generated
-        if (pending.title && typeof client?.session?.update === "function") {
-          try {
-            debugLog(`[distill_session] Updating session title: ${pending.title}`);
-            await client.session.update({
-              path: { id: sessionID },
-              body: { title: pending.title },
-            });
-            debugLog(`[distill_session] Session title updated`);
-          } catch (error) {
-            debugLog(`[distill_session] Failed to update session title: ${error}`);
-          }
-        }
+        // Note: title is no longer auto-updated here (moved to context_manage tool)
 
         clearPendingConfirmation(sessionID);
         debugLog(`[distill_session] ========== TOOL END (confirm) ==========`);
-        return formatConfirmReportWithDedup(candidatesToWrite, pending.title, result);
+        return formatConfirmReportWithDedup(candidatesToWrite, pending.title, result) + ECHO_REMINDER;
       }
 
       // Handle preview action
@@ -192,7 +187,7 @@ export function createDistillSessionTool(
 
           // Format preview report
           debugLog(`[distill_session] ========== TOOL END (preview - success) ==========`);
-          return formatPreviewReport(previewResult.candidates, previewResult.title, messages.length);
+          return formatPreviewReport(previewResult.candidates, previewResult.title, messages.length) + ECHO_REMINDER;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           debugLog(`[distill_session] ERROR: ${message}`);
@@ -273,13 +268,16 @@ function formatConfirmReportWithDedup(
   }
 
   lines.push("");
-  lines.push("### Selected Candidates");
+  lines.push("### Written Memories");
+  lines.push("");
+
   selected.forEach((m, i) => {
-    lines.push(`${i + 1}. [${m.category}] ${m.body.split("\n")[0]}`);
+    lines.push(`**[${i}] ${m.category} | 重要性: ${m.importance}/10 | 标签: ${m.concepts.join(", ") || "none"}**`);
+    lines.push(m.body);
+    lines.push("");
   });
 
   if (result.skipped > 0) {
-    lines.push("");
     lines.push(`> ℹ️ ${result.skipped} candidate(s) skipped as duplicates`);
   }
   if (result.merged > 0) {

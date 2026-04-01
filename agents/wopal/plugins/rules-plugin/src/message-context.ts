@@ -6,6 +6,7 @@ export interface MessagePartWithSession {
   text?: string;
   sessionID?: string;
   synthetic?: boolean;
+  ignored?: boolean;
 }
 
 export interface MessageWithInfo {

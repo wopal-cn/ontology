@@ -27,6 +27,7 @@
 │  ├── retriever.ts              │  ├── wopal-cancel.ts      │
 │  ├── injector.ts               │  ├── wopal-reply.ts       │
 │  ├── distill.ts                │  ├── distill-session.ts   │
+│  ├── session-context.ts       │  ├── context-manage.ts    │
 │  └── llm-client.ts             │  └── memory-manage.ts     │
 ├─────────────────────────────────────────────────────────────┤
 │  utils/ (通用工具)                                            │
@@ -38,11 +39,13 @@
 1. **规则注入**：`rules/discoverer` → `rules/matcher` → `hooks/system-transform` → OpenCode
 2. **任务委派**：`tools/wopal-task` → `tasks/launcher` → 子会话 → `diagnostics/idle` → 状态更新
 3. **记忆注入**：`memory/store` → `memory/retriever` → `hooks/system-transform` → OpenCode
+4. **上下文管理**：`tools/context-manage` → `memory/session-context` → `buildEnrichedQuery`
 
 **核心流程**：
 - **规则注入**：发现规则文件 → 匹配条件 → 注入系统提示词
 - **任务委派**：`wopal_task` 启动子会话 → `wopal_output` 查询状态 → `session.idle` 事件触发诊断 → 完成/等待/错误
 - **双向通信**：子会话等待 → `[WOPAL TASK WAITING]` 通知父代理 → `wopal_reply` 恢复执行
+- **上下文管理**：`context_manage summary` 生成摘要 → 存入 SessionContext → `buildEnrichedQuery` 读缓存增强检索
 
 ---
 

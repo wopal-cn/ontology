@@ -20,6 +20,7 @@ import type { MemoryInjector } from "./memory/index.js";
 import type { IdleDiagnostic } from "./idle-diagnostic.js";
 import type { WopalTask } from "./types.js"
 import { trackActivity } from "./progress-tracker.js";
+import { loadSessionContext } from "./memory/session-context.js";
 
 /** Max recent messages to store for short-query context enrichment */
 const MAX_RECENT_MESSAGES = 10;
@@ -443,26 +444,20 @@ export class OpenCodeRulesRuntime {
       return;
     }
 
-    // Build enriched query — always fetch recent messages for context
-    let recentMessages: import("./message-context.js").MessageWithInfo[] = [];
+    // Build enriched query — fetch full session messages for context
+    let allMessages: import("./message-context.js").MessageWithInfo[] = [];
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const messages = await (this.client as any).session?.messages?.({ path: { id: sessionID } });
       if (Array.isArray(messages?.data)) {
-        recentMessages = messages.data.slice(-10);
+        allMessages = messages.data;
       }
-      this.injectDebugLog(`API returned ${Array.isArray(messages?.data) ? messages.data.length : 0} msgs, using last ${recentMessages.length}`);
-      const roles = recentMessages.map((m, i) => {
-        const role = m.role || m.info?.role;
-        const partTypes = (m.parts || []).map((p) => p.type).join(",");
-        return `${i}:${role}[${partTypes}]`;
-      });
-      this.injectDebugLog(`Last 10 roles: ${roles.join(" | ")}`);
+      this.injectDebugLog(`API returned ${allMessages.length} messages for context extraction`);
     } catch {
-      // Fallback: no recent messages available
+      // Fallback: no messages available
     }
 
-    const enrichedQuery = this.buildEnrichedQuery(userQuery, recentMessages);
+    const enrichedQuery = this.buildEnrichedQuery(sessionID, userQuery, allMessages);
     if (!enrichedQuery) {
       this.injectDebugLog(`Skipped memory injection for short/command input: "${userQuery}"`);
       return;
@@ -499,13 +494,16 @@ export class OpenCodeRulesRuntime {
   }
 
   /**
-   * Build context-enriched query for short inputs.
-   * If userQuery is short (< 10 chars), try to enrich with recent message context.
-   * Returns null if query should be skipped (no semantic value).
+   * Build context-enriched query for memory retrieval.
+   *
+   * Strategy: Extract the most recent complete turn from session history
+   * (user → assistant → current user), then prepend session summary.
+   * Searches through ALL messages to find a complete conversation pattern.
    */
   private buildEnrichedQuery(
+    sessionID: string,
     userQuery: string,
-    recentMessages: import("./message-context.js").MessageWithInfo[],
+    messages: import("./message-context.js").MessageWithInfo[],
   ): string | null {
     const trimmed = userQuery.trim();
 
@@ -518,64 +516,102 @@ export class OpenCodeRulesRuntime {
       return null;
     }
 
-    // Always try to get the most recent complete turn (previous user + assistant)
-    if (recentMessages.length > 0) {
-      // Find the current user message index (last user message in the list)
-      let currentUserIdx = -1;
-      for (let i = recentMessages.length - 1; i >= 0; i--) {
-        const msg = recentMessages[i];
-        const role = msg.role || msg.info?.role;
-        if (role === "user") {
-          currentUserIdx = i;
-          break;
-        }
+    // Extract conversation context from message history
+    const conversation = this.extractConversationContext(messages);
+
+    // Load session summary
+    const ctx = loadSessionContext(sessionID);
+    const summaryPrefix = ctx?.summary?.text
+      ? `Session: ${ctx.summary.text}\n`
+      : "";
+
+    if (conversation) {
+      const result = `${summaryPrefix}${conversation}\nFollow-up: ${trimmed}`;
+      this.injectDebugLog(`buildEnrichedQuery: conversation context found (${result.length} chars, summary=${!!summaryPrefix})`);
+      return result;
+    }
+
+    // No conversation found — use summary + raw query or just raw query
+    if (summaryPrefix) {
+      const result = `${summaryPrefix}${trimmed}`;
+      this.injectDebugLog(`buildEnrichedQuery: no conversation, using summary + query (${result.length} chars)`);
+      return result;
+    }
+
+    this.injectDebugLog(`buildEnrichedQuery: no context, using raw query (${trimmed.length} chars)`);
+    return trimmed;
+  }
+
+  /**
+   * Extract the most recent complete conversation turn from messages.
+   * Searches backwards through all messages to find the pattern:
+   *   previous user → assistant (human-facing text only) → current user
+   *
+   * For assistant messages, keeps only parts where:
+   *   type === "text" && !synthetic && !ignored
+   * These are the actual human-facing reply texts, concatenated together.
+   *
+   * Returns null if no complete turn found.
+   */
+  private extractConversationContext(
+    messages: import("./message-context.js").MessageWithInfo[],
+  ): string | null {
+    if (messages.length < 3) return null;
+
+    // Find current user message (last user in the list)
+    let currentUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const role = messages[i]!.role || messages[i]!.info?.role;
+      if (role === "user") {
+        currentUserIdx = i;
+        break;
       }
+    }
+    if (currentUserIdx < 0) return null;
 
-      let foundAssistant = false;
-      let foundPreviousUser = false;
-      const contextParts: string[] = [];
+    // Walk backwards from before current user to find: assistant → previous user
+    let assistantText: string | null = null;
+    let previousUserText: string | null = null;
 
-      // Walk backwards from BEFORE current user to find: assistant → previous user
-      for (let i = currentUserIdx - 1; i >= 0; i--) {
-        const msg = recentMessages[i];
-        const role = msg.role || msg.info?.role;
-        const parts = msg.parts || [];
+    for (let i = currentUserIdx - 1; i >= 0; i--) {
+      const msg = messages[i]!;
+      const role = msg.role || msg.info?.role;
+      const parts = msg.parts || [];
 
-        // Extract clean text: skip synthetic, skip non-text parts
-        const realTexts = parts
-          .filter((p) => !p.synthetic && p.type === "text" && p.text)
+      if (role === "assistant") {
+        // Extract all human-facing text parts, concatenated
+        const textParts = parts
+          .filter((p) => p.type === "text" && p.text && !p.synthetic && !p.ignored)
           .map((p) => p.text!.trim())
           .filter(Boolean);
-        if (realTexts.length === 0) continue;
 
-        // For assistant: only use the LAST text part (the final reply to user)
-        // For user: join all non-synthetic text parts
-        const joined =
-          role === "assistant"
-            ? realTexts[realTexts.length - 1]!
-            : realTexts.join(" ").trim();
-
-        if (joined.length < 10) continue;
-
-        if (!foundAssistant && role === "assistant") {
-          foundAssistant = true;
-          contextParts.unshift(joined.slice(0, 300));
-          continue;
+        if (textParts.length > 0 && !assistantText) {
+          assistantText = textParts.join("\n");
         }
-        if (foundAssistant && role === "user") {
-          foundPreviousUser = true;
-          contextParts.unshift(joined.slice(0, 300));
-          break;
-        }
+        // Skip assistant messages with no human text (tool-only turns)
+        // Keep searching for one with actual text
+        continue;
       }
 
-      if (foundAssistant && foundPreviousUser) {
-        return `User: ${contextParts[0]}\nAssistant: ${contextParts[1]}\nFollow-up: ${trimmed}`;
+      if (role === "user" && assistantText) {
+        // Found the user message before the assistant reply
+        const userTexts = parts
+          .filter((p) => p.type === "text" && p.text && !p.synthetic)
+          .map((p) => p.text!.trim())
+          .filter(Boolean);
+
+        if (userTexts.length > 0) {
+          previousUserText = userTexts.join(" ").slice(0, 500);
+          break;
+        }
       }
     }
 
-    // Fallback: return raw query
-    return trimmed;
+    if (assistantText && previousUserText) {
+      return `User: ${previousUserText}\nAssistant: ${assistantText.slice(0, 500)}`;
+    }
+
+    return null;
   }
 
   /**
