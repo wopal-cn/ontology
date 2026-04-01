@@ -580,8 +580,8 @@ export class OpenCodeRulesRuntime {
       }
     }
 
-    // Fallback: return raw query if long enough
-    return trimmed.length >= 10 ? trimmed : null;
+    // Fallback: return raw query
+    return trimmed;
   }
 
   /**
