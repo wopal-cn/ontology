@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test"
+import { describe, it, expect } from "vitest"
 import { getErrorMessage, extractMessages, extractAssistantContent, extractFullHistory } from "./session-messages.js"
 import type { SessionMessage, MessagesResult } from "./types.js"
 

@@ -30,16 +30,19 @@ function createMockTaskManager(
 describe("wopal_reply", () => {
   const parentSessionID = "parent-session-123"
 
-  const waitingTask: WopalTask = {
-    id: "wopal-task-456",
-    sessionID: "child-session-789",
-    status: "waiting",
-    waitingReason: "question_detected",
-    description: "Test task",
-    agent: "fae",
-    prompt: "Do something",
-    parentSessionID,
-    createdAt: new Date(),
+  function createWaitingTask(overrides?: Partial<WopalTask>): WopalTask {
+    return {
+      id: "wopal-task-456",
+      sessionID: "child-session-789",
+      status: "waiting",
+      waitingReason: "question_detected",
+      description: "Test task",
+      agent: "fae",
+      prompt: "Do something",
+      parentSessionID,
+      createdAt: new Date(),
+      ...overrides,
+    }
   }
 
   it("fails when context session id is missing", async () => {
@@ -66,11 +69,12 @@ describe("wopal_reply", () => {
   })
 
   it("task not owned by current parent session: returns error", async () => {
-    const mockManager = createMockTaskManager(waitingTask)
+    const task = createWaitingTask()
+    const mockManager = createMockTaskManager(task)
     const execute = getExecute(createWopalReplyTool(mockManager as never))
 
     const result = await execute(
-      { task_id: waitingTask.id, message: "test" },
+      { task_id: task.id, message: "test" },
       { sessionID: "different-parent" },
     )
 
@@ -78,7 +82,7 @@ describe("wopal_reply", () => {
   })
 
   it("task status is completed (not waiting): returns error", async () => {
-    const completedTask = { ...waitingTask, status: "completed" as const }
+    const completedTask = createWaitingTask({ status: "completed" })
     const mockManager = createMockTaskManager(completedTask)
     const execute = getExecute(createWopalReplyTool(mockManager as never))
 
@@ -93,7 +97,7 @@ describe("wopal_reply", () => {
   })
 
   it("task status is running (not waiting): returns error", async () => {
-    const runningTask = { ...waitingTask, status: "running" as const }
+    const runningTask = createWaitingTask({ status: "running" })
     const mockManager = createMockTaskManager(runningTask)
     const execute = getExecute(createWopalReplyTool(mockManager as never))
 
@@ -109,29 +113,30 @@ describe("wopal_reply", () => {
 
   it("task status is waiting with valid message: calls promptAsync, status becomes running, returns success", async () => {
     const mockClient = createMockClient()
-    const mockManager = createMockTaskManager(waitingTask, mockClient)
+    const task = createWaitingTask()
+    const mockManager = createMockTaskManager(task, mockClient)
     const execute = getExecute(createWopalReplyTool(mockManager as never))
 
     const result = await execute(
-      { task_id: waitingTask.id, message: "Continue with option A" },
+      { task_id: task.id, message: "Continue with option A" },
       { sessionID: parentSessionID },
     )
 
     expect(result).toEqual({
       success: true,
-      message: `Reply sent to task ${waitingTask.id}. The background task will continue execution.`,
+      message: `Reply sent to task ${task.id}. The background task will continue execution.`,
     })
     expect(mockClient.session.promptAsync).toHaveBeenCalledWith(
       expect.objectContaining({
-        path: { id: waitingTask.sessionID },
+        path: { id: task.sessionID },
       }),
     )
-    expect(waitingTask.status).toBe("running")
-    expect(waitingTask.waitingReason).toBeUndefined()
+    expect(task.status).toBe("running")
+    expect(task.waitingReason).toBeUndefined()
   })
 
   it("task without sessionID: returns error", async () => {
-    const taskWithoutSession = { ...waitingTask, sessionID: undefined }
+    const taskWithoutSession = createWaitingTask({ sessionID: undefined })
     const mockManager = createMockTaskManager(taskWithoutSession)
     const execute = getExecute(createWopalReplyTool(mockManager as never))
 
@@ -146,27 +151,29 @@ describe("wopal_reply", () => {
   it("promptAsync fails: returns error message, status remains waiting", async () => {
     const mockClient = createMockClient()
     mockClient.session.promptAsync.mockRejectedValueOnce(new Error("Network error"))
-    const mockManager = createMockTaskManager(waitingTask, mockClient)
+    const task = createWaitingTask()
+    const mockManager = createMockTaskManager(task, mockClient)
     const execute = getExecute(createWopalReplyTool(mockManager as never))
 
     const result = await execute(
-      { task_id: waitingTask.id, message: "test" },
+      { task_id: task.id, message: "test" },
       { sessionID: parentSessionID },
     )
 
     expect(result).toEqual({ error: "Failed to send reply: Network error" })
-    expect(waitingTask.status).toBe("waiting")
+    expect(task.status).toBe("waiting")
   })
 
   it("promptAsync unavailable: returns error", async () => {
     const mockClient = {
       session: {},
     }
-    const mockManager = createMockTaskManager(waitingTask, mockClient as never)
+    const task = createWaitingTask()
+    const mockManager = createMockTaskManager(task, mockClient as never)
     const execute = getExecute(createWopalReplyTool(mockManager as never))
 
     const result = await execute(
-      { task_id: waitingTask.id, message: "test" },
+      { task_id: task.id, message: "test" },
       { sessionID: parentSessionID },
     )
 

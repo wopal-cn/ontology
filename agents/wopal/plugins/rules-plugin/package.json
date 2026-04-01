@@ -56,8 +56,8 @@
   "dependencies": {
     "@lancedb/lancedb": "^0.27.1",
     "@lancedb/lancedb-darwin-x64": "^0.22.3",
-    "@opencode-ai/plugin": "^1.2.14",
-    "@opencode-ai/sdk": "^1.2.14",
+    "@opencode-ai/plugin": "^1.3.13",
+    "@opencode-ai/sdk": "^1.3.13",
     "minimatch": "^9.0.5",
     "openai": "^6.33.0",
     "yaml": "^2.8.2"

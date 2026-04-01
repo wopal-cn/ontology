@@ -17,23 +17,23 @@ export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition
       debugLog(`wopal_reply called: task_id=${task_id}`)
 
       if (!context.sessionID) {
-        return "Current session ID is unavailable; cannot reply to task."
+        return { error: "Current session ID is unavailable; cannot reply to task." }
       }
 
       // Verify task exists and belongs to current parent session
       const task = manager.getTaskForParent(task_id, context.sessionID)
       if (!task) {
-        return "Task not found or not owned by this session"
+        return { error: "Task not found or not owned by this session" }
       }
 
       // Verify task status is waiting
       if (task.status !== "waiting") {
-        return `Task is ${task.status}, not waiting. Only waiting tasks can receive replies.`
+        return { error: `Task is ${task.status}, not waiting. Only waiting tasks can receive replies.` }
       }
 
       // Verify task has sessionID
       if (!task.sessionID) {
-        return "Task has no active session"
+        return { error: "Task has no active session" }
       }
 
       // Get client
@@ -42,7 +42,7 @@ export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition
       const clientAny = client as any
 
       if (typeof clientAny?.session?.promptAsync !== "function") {
-        return "session.promptAsync is unavailable"
+        return { error: "session.promptAsync is unavailable" }
       }
 
       try {
@@ -59,10 +59,13 @@ export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition
         delete task.waitingReason
         debugLog(`task ${task_id} resumed`)
 
-        return `Reply sent to task ${task_id}. The background task will continue execution.`
+        return {
+          success: true,
+          message: `Reply sent to task ${task_id}. The background task will continue execution.`,
+        }
       } catch (err) {
         debugLog(`wopal_reply error: ${err}`)
-        return `Failed to send reply: ${err instanceof Error ? err.message : String(err)}`
+        return { error: `Failed to send reply: ${err instanceof Error ? err.message : String(err)}` }
       }
     },
   })
