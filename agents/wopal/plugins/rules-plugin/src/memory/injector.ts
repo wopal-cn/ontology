@@ -24,7 +24,7 @@ export class MemoryInjector {
 
   /**
    * Format memories for system prompt injection.
-   * Returns formatted string or undefined if no memories found.
+   * Returns formatted string + memory IDs, or undefined if no memories found.
    */
   async formatForSystem(userQuery: string): Promise<string | undefined> {
     try {
@@ -39,7 +39,7 @@ export class MemoryInjector {
       const tokens = Math.ceil(
         memories.reduce((sum, m) => sum + m.text.length, 0) / 4
       );
-      debugLog(`[inject] ${memories.length} memories (${tokens} tokens) injected`);
+      debugLog(`[inject] ${memories.length} memories (${tokens} tokens): ${memories.map(m => m.id.slice(0, 8)).join(", ")}`);
 
       return formatted;
     } catch (error) {

@@ -8,6 +8,7 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin";
 import type { MemoryStore, MemoryCategory } from "../memory/store.js";
 import type { EmbeddingClient } from "../memory/embedder.js";
+import type { SessionStore } from "../session-store.js";
 
 const ECHO_REMINDER = [
   "",
@@ -38,16 +39,16 @@ function formatTime(ts: number): string {
   return `${d.getFullYear()}-${padTime(d.getMonth() + 1)}-${padTime(d.getDate())} ${padTime(d.getHours())}:${padTime(d.getMinutes())}:${padTime(d.getSeconds())}`;
 }
 
-export function createMemoryManageTool(store: MemoryStore, embedder?: EmbeddingClient): ToolDefinition {
+export function createMemoryManageTool(store: MemoryStore, embedder?: EmbeddingClient, sessionStore?: SessionStore): ToolDefinition {
   return tool({
     description:
-      "管理 LanceDB 中的长期记忆。子命令: list（列出全部）, stats（统计）, search（搜索）, delete（删除）, add（添加单条）, update（更新单条）。 " +
+      "管理 LanceDB 中的长期记忆。子命令: list（列出全部）, stats（统计）, search（搜索）, delete（删除）, add（添加单条）, update（更新单条）, injected（查看当前上下文注入的记忆）。 " +
       "list 支持 --category 和 --limit 过滤。delete 使用记忆 ID 前缀，多个用逗号分隔。" +
       "add 需要提供 text（记忆正文，至少 20 字符）和 category（分类）。" +
       "update 需要提供 id（记忆 ID 前缀），只传需要修改的字段，未传的字段保持不变。text 变更时会自动重新计算向量。",
     args: {
       command: tool.schema
-        .enum(["list", "stats", "search", "delete", "add", "update"])
+        .enum(["list", "stats", "search", "delete", "add", "update", "injected"])
         .describe("子命令"),
       query: tool.schema
         .string()
@@ -108,6 +109,8 @@ export function createMemoryManageTool(store: MemoryStore, embedder?: EmbeddingC
           if (concepts !== undefined) updateOpts.concepts = concepts.split(",").map(s => s.trim()).filter(Boolean);
           return (await updateMemory(store, embedder, query ?? "", updateOpts)) + ECHO_REMINDER;
         }
+        case "injected":
+          return (await formatInjected(sessionStore, context.sessionID)) + ECHO_REMINDER;
         default:
           return `未知命令: ${command}`;
       }
@@ -409,4 +412,22 @@ async function updateMemory(
     const message = error instanceof Error ? error.message : String(error);
     return `更新失败：${message}`;
   }
+}
+
+async function formatInjected(
+  sessionStore: SessionStore | undefined,
+  sessionID: string | undefined,
+): Promise<string> {
+  if (!sessionStore || !sessionID) {
+    return "无法获取注入记忆：缺少会话信息";
+  }
+
+  const state = sessionStore.snapshot(sessionID);
+  const rawText = state?.injectedRawText;
+
+  if (!rawText) {
+    return "当前会话未注入任何记忆";
+  }
+
+  return rawText;
 }

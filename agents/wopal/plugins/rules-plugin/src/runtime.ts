@@ -443,18 +443,23 @@ export class OpenCodeRulesRuntime {
       return;
     }
 
-    // Build enriched query — short messages may need recent context from client
-    let recentMessages = state?.recentMessages || [];
-    if (userQuery.trim().length < 10 && recentMessages.length === 0) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const messages = await (this.client as any).session?.messages?.({ query: { id: sessionID } });
-        if (Array.isArray(messages?.data)) {
-          recentMessages = messages.data.slice(-5);
-        }
-      } catch {
-        // Fallback: no recent messages available
+    // Build enriched query — always fetch recent messages for context
+    let recentMessages: import("./message-context.js").MessageWithInfo[] = [];
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const messages = await (this.client as any).session?.messages?.({ path: { id: sessionID } });
+      if (Array.isArray(messages?.data)) {
+        recentMessages = messages.data.slice(-10);
       }
+      this.injectDebugLog(`API returned ${Array.isArray(messages?.data) ? messages.data.length : 0} msgs, using last ${recentMessages.length}`);
+      const roles = recentMessages.map((m, i) => {
+        const role = m.role || m.info?.role;
+        const partTypes = (m.parts || []).map((p) => p.type).join(",");
+        return `${i}:${role}[${partTypes}]`;
+      });
+      this.injectDebugLog(`Last 10 roles: ${roles.join(" | ")}`);
+    } catch {
+      // Fallback: no recent messages available
     }
 
     const enrichedQuery = this.buildEnrichedQuery(userQuery, recentMessages);
@@ -519,33 +524,53 @@ export class OpenCodeRulesRuntime {
       return null;
     }
 
-    // Short query enrichment (< 10 chars)
-    // Requires at least one complete turn (previous user + assistant) before current message
-    if (trimmed.length < 10 && recentMessages.length > 0) {
+    // Always try to get the most recent complete turn (previous user + assistant)
+    if (recentMessages.length > 0) {
+      // Find the current user message index (last user message in the list)
+      let currentUserIdx = -1;
+      for (let i = recentMessages.length - 1; i >= 0; i--) {
+        const msg = recentMessages[i];
+        const role = msg.role || msg.info?.role;
+        if (role === "user") {
+          currentUserIdx = i;
+          break;
+        }
+      }
+
       let foundAssistant = false;
       let foundPreviousUser = false;
       const contextParts: string[] = [];
 
-      // Walk backwards: current(short user) → assistant → previous user = one complete turn
-      for (let i = recentMessages.length - 1; i >= 0; i--) {
+      // Walk backwards from BEFORE current user to find: assistant → previous user
+      for (let i = currentUserIdx - 1; i >= 0; i--) {
         const msg = recentMessages[i];
         const role = msg.role || msg.info?.role;
         const parts = msg.parts || [];
-        const texts = parts
-          .filter((p) => p.type === "text" && p.text)
+
+        // Extract clean text: skip synthetic, skip non-text parts
+        const realTexts = parts
+          .filter((p) => !p.synthetic && p.type === "text" && p.text)
           .map((p) => p.text!.trim())
           .filter(Boolean);
-        const joined = texts.join(" ").trim();
+        if (realTexts.length === 0) continue;
+
+        // For assistant: only use the LAST text part (the final reply to user)
+        // For user: join all non-synthetic text parts
+        const joined =
+          role === "assistant"
+            ? realTexts[realTexts.length - 1]!
+            : realTexts.join(" ").trim();
+
         if (joined.length < 10) continue;
 
         if (!foundAssistant && role === "assistant") {
           foundAssistant = true;
-          contextParts.unshift(joined.slice(-300));
+          contextParts.unshift(joined.slice(0, 300));
           continue;
         }
         if (foundAssistant && role === "user") {
           foundPreviousUser = true;
-          contextParts.unshift(joined.slice(-300));
+          contextParts.unshift(joined.slice(0, 300));
           break;
         }
       }
@@ -555,7 +580,7 @@ export class OpenCodeRulesRuntime {
       }
     }
 
-    // Return original query if long enough
+    // Fallback: return raw query if long enough
     return trimmed.length >= 10 ? trimmed : null;
   }
 
@@ -573,9 +598,9 @@ export class OpenCodeRulesRuntime {
     const memoryText = await injector.formatForSystem(enrichedQuery);
     if (!memoryText) {
       this.injectDebugLog(`No relevant memories found`);
-      // Mark as injected even when no results, to avoid repeated retrieval
       this.sessionStore.upsert(sessionID, (state) => {
         state.lastInjectedQuery = enrichedQuery;
+        state.injectedRawText = undefined;
       });
       return;
     }
@@ -585,9 +610,9 @@ export class OpenCodeRulesRuntime {
     }
     output.system.push(memoryText);
 
-    // Mark this query as injected
     this.sessionStore.upsert(sessionID, (state) => {
       state.lastInjectedQuery = enrichedQuery;
+      state.injectedRawText = memoryText;
     });
   }
 

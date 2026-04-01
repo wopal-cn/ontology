@@ -111,7 +111,7 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
 
   const hooks = runtime.createHooks();
 
-  const tools = createWopalTools(taskManager, memory?.store, memory?.embedder);
+  const tools = createWopalTools(taskManager, memory?.store, memory?.embedder, sessionStore);
 
   if (memory) {
     const { createDistillSessionTool } = await import("./tools/distill-session");

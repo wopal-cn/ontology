@@ -11,6 +11,8 @@ export interface SessionState {
   seedCount?: number;
   /** Recent messages for short-query context enrichment */
   recentMessages: MessageWithInfo[];
+  /** Raw text injected via system-reminder in the most recent system.transform cycle */
+  injectedRawText?: string | undefined;
 }
 
 export interface SessionStoreOptions {

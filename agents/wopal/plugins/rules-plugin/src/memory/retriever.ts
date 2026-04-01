@@ -1,8 +1,10 @@
 /**
- * Memory Retriever - Hybrid Search with Ranking
+ * Memory Retriever - Vector Search with Dynamic Threshold
  *
- * Combines vector search, FTS, and LIKE fallback with similarity-based
- * ranking, recency/importance boosts, deduplication, and budget control.
+ * Uses vector similarity as the sole recall path (FTS/LIKE removed —
+ * ineffective for Chinese). Applies dynamic threshold based on
+ * similarity distribution (top-quartile cutoff) so only truly
+ * relevant memories are injected, regardless of total memory count.
  */
 
 import type { MemoryStore, Memory } from "./store.js";
@@ -11,28 +13,14 @@ import { createDebugLog } from "../debug.js";
 
 const debugLog = createDebugLog("[wopal-memory]", "memory");
 
-// Retrieval budget: ranking handles relevance, these control cost
 const DEFAULT_LIMIT = 8;
-const MAX_RESULTS = 15;
 
-// Minimum similarity threshold (L2 distance → similarity: 1/(1+d))
-// 0.35 = floor for same-domain recall (current min ≈ 0.39)
-// Cross-domain noise typically falls below 0.30
-const MIN_SIMILARITY = 0.35;
-
-// Weibull decay factor (slow decay)
 const DECAY_FACTOR = 0.005;
 
-/**
- * Retrieval options
- */
 export interface RetrieveOptions {
   limit?: number;
 }
 
-/**
- * Memory with computed score for ranking
- */
 interface MemoryWithScore extends Memory {
   score: number;
   similarityScore: number;
@@ -40,9 +28,6 @@ interface MemoryWithScore extends Memory {
   importanceScore: number;
 }
 
-/**
- * Memory Retriever - Hybrid search with ranking
- */
 export class MemoryRetriever {
   private store: MemoryStore;
   private embedder: EmbeddingClient;
@@ -66,65 +51,78 @@ export class MemoryRetriever {
    *
    * Steps:
    * 1. Embed query → vector
-   * 2. Parallel searches: vector + FTS + LIKE
+   * 2. Vector search only (limit * 2 for recall buffer)
    * 3. Rank by similarity (primary) + recency/importance (boost)
    * 4. Deduplicate by id
-   * 5. Token budget truncation
+   * 5. Dynamic threshold: top-quartile similarity as cutoff
    * 6. Hard limit on result count
    */
   async retrieve(
     query: string,
-    options?: RetrieveOptions
+    options?: RetrieveOptions,
   ): Promise<Memory[]> {
     const limit = options?.limit ?? DEFAULT_LIMIT;
 
     debugLog(`Retrieving memories for query:\n${query}`);
 
     const queryVector = this.embedder.toFloat32Array(
-      await this.embedder.embedSingle(query)
+      await this.embedder.embedSingle(query),
     );
 
-    const searchPromises = Promise.allSettled([
-      this.store.search(queryVector, limit * 3),
-      this.store.searchByQuery(query, limit * 3, "fts", ["text"]),
-      this.store.searchByQuery(query, limit, "like", ["text"]),
-    ]);
+    const vectorResults = await this.store.search(queryVector, limit * 2);
 
-    const [vectorResult, ftsResult, likeResult] = await searchPromises;
-
-    const allMemories: Memory[] = [];
-
-    if (vectorResult.status === "fulfilled") {
-      allMemories.push(...vectorResult.value);
-    }
-    if (ftsResult.status === "fulfilled") {
-      allMemories.push(...ftsResult.value);
-    }
-    if (likeResult.status === "fulfilled") {
-      allMemories.push(...likeResult.value);
-    }
-
-    if (allMemories.length === 0) {
+    if (vectorResults.length === 0) {
+      debugLog("No vector search results");
       return [];
     }
 
-    const scoredMemories = this.rankMemories(allMemories);
+    const scoredMemories = this.rankMemories(vectorResults);
     const deduplicated = this.deduplicateById(scoredMemories);
-    const filtered = deduplicated.filter(m => m.similarityScore >= MIN_SIMILARITY);
 
-    return filtered.slice(0, MAX_RESULTS);
+    const threshold = this.computeDynamicThreshold(deduplicated);
+    const filtered = deduplicated.filter(m => m.similarityScore >= threshold);
+
+    debugLog(
+      `Vector: ${vectorResults.length}, After dedup: ${deduplicated.length}, ` +
+      `Threshold: ${threshold.toFixed(3)}, Passed: ${filtered.length}, ` +
+      `Similarities: [${deduplicated.map(m => m.similarityScore.toFixed(3)).join(", ")}]`,
+    );
+
+    return filtered.slice(0, limit);
   }
 
   /**
-   * Rank memories using vector similarity as primary signal,
-   * with recency and importance as secondary boosts.
+   * Compute dynamic threshold from similarity distribution.
    *
-   * score = similarity_score + recency_boost + importance_boost
+   * Strategy: top-quartile (Q3) of similarity scores.
+   * - If only 1-2 memories, require them to be highly similar (0.6+)
+   * - If 3+ memories, use the median as floor, but never below 0.35
+   * - If 6+ memories, use top-quartile (Q3)
    *
-   * similarity_score = 1 / (1 + distance)
-   * recency_boost = 0.05 / (1 + decay_factor * hours_since_creation)
-   * importance_boost = importance * 0.05
+   * This ensures only the most relevant cluster is returned,
+   * adapting to both sparse and dense memory stores.
    */
+  private computeDynamicThreshold(memories: MemoryWithScore[]): number {
+    const similarities = memories
+      .map(m => m.similarityScore)
+      .sort((a, b) => a - b);
+
+    const n = similarities.length;
+
+    if (n <= 2) {
+      return 0.6;
+    }
+
+    if (n <= 5) {
+      const median = similarities[Math.floor(n / 2)];
+      return Math.max(median, 0.35);
+    }
+
+    // Top quartile (Q3): 75th percentile index
+    const q3Index = Math.ceil(n * 0.75) - 1;
+    return Math.max(similarities[q3Index], 0.35);
+  }
+
   private rankMemories(memories: Memory[]): MemoryWithScore[] {
     const now = Date.now();
     const hoursSinceCreation = (createdAt: number) =>
@@ -151,9 +149,6 @@ export class MemoryRetriever {
     });
   }
 
-  /**
-   * Deduplicate memories by id, keeping highest score
-   */
   private deduplicateById(memories: MemoryWithScore[]): MemoryWithScore[] {
     const byId = new Map<string, MemoryWithScore>();
 
