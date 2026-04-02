@@ -22,6 +22,29 @@ import type { WopalTask } from "./types.js"
 import { trackActivity } from "./progress-tracker.js";
 import { loadSessionContext } from "./memory/session-context.js";
 
+/** 
+ * 为 Embedding 清洗并截断嘈杂文本
+ * 抛弃代码块、系统日志，并掐头去尾压缩到指定长度。
+ */
+function cleanAndTruncateForEmbedding(text: string, maxLen = 300): string {
+  // 1. 无脑移除 Markdown 代码块
+  let result = text.replace(/```[\s\S]*?```/g, "<code_omitted>");
+  
+  // 2. 移除典型的日志干扰行 (如 [WARN]..., [INFO]..., [Pasted...])
+  result = result.replace(/^\[(WARN|INFO|DEBUG|ERROR|Pasted).*?\][^\n]*/gm, "");
+
+  // 3. 压缩多余的换行
+  result = result.replace(/\n{3,}/g, "\n\n").trim();
+
+  // 4. 掐头去尾保留核心信息
+  if (result.length > maxLen) {
+    const half = Math.floor(maxLen / 2);
+    return `${result.slice(0, half)}\n...<omitted>...\n${result.slice(-half)}`;
+  }
+  
+  return result;
+}
+
 /** Max recent messages to store for short-query context enrichment */
 const MAX_RECENT_MESSAGES = 10;
 
@@ -282,6 +305,7 @@ export class OpenCodeRulesRuntime {
       if (userPrompt && !state.lastUserPrompt) {
         state.lastUserPrompt = userPrompt;
       }
+      state.needsMemoryInjection = true;
       state.seededFromHistory = true;
       state.seedCount = (state.seedCount ?? 0) + 1;
       state.recentMessages = recentMessages;
@@ -348,6 +372,7 @@ export class OpenCodeRulesRuntime {
       if (userPrompt) {
         this.sessionStore.upsert(sessionID, (state) => {
           state.lastUserPrompt = userPrompt;
+          state.needsMemoryInjection = true;
         });
 
         this.debugLog(
@@ -428,18 +453,33 @@ export class OpenCodeRulesRuntime {
   ): Promise<void> {
     if (!this.memoryInjector) return;
 
-    // Skip entirely if memory store is empty
-    try {
-      if (await this.memoryInjector.isEmpty()) return;
-    } catch {
-      // Store not initialized yet, skip silently
+    const state = this.sessionStore.get(sessionID);
+
+    // Gate: only proceed when flagged by chat.message or history seed
+    if (!state?.needsMemoryInjection) {
       return;
     }
 
-    const state = this.sessionStore.get(sessionID);
+    // Consume the flag immediately — tool-use re-enters will skip entirely
+    this.sessionStore.upsert(sessionID, (s) => {
+      s.needsMemoryInjection = false;
+    });
 
-    const userQuery = state?.lastUserPrompt;
+    // Skip entirely if memory store is empty
+    try {
+      if (await this.memoryInjector.isEmpty()) {
+        this.clearInjectedMemory(sessionID);
+        return;
+      }
+    } catch {
+      // Store not initialized yet, skip silently
+      this.clearInjectedMemory(sessionID);
+      return;
+    }
+
+    const userQuery = state.lastUserPrompt;
     if (!userQuery) {
+      this.clearInjectedMemory(sessionID);
       this.injectDebugLog("Skipped memory injection (no user query)");
       return;
     }
@@ -459,36 +499,36 @@ export class OpenCodeRulesRuntime {
 
     const enrichedQuery = this.buildEnrichedQuery(sessionID, userQuery, allMessages);
     if (!enrichedQuery) {
+      this.clearInjectedMemory(sessionID);
       this.injectDebugLog(`Skipped memory injection for short/command input: "${userQuery}"`);
-      return;
-    }
-
-    // Skip if same query already injected this turn
-    if (state?.lastInjectedQuery === enrichedQuery) {
-      this.injectDebugLog("Skipped memory injection (already injected this turn)");
       return;
     }
 
     // Skip child sessions
     const isChildSession = await this.isChildSession(sessionID);
     if (isChildSession) {
+      this.clearInjectedMemory(sessionID);
       this.injectDebugLog("Skipped memory injection for child session");
       return;
     }
 
     // Execute retrieval + injection with timeout guard
     try {
-      const injectPromise = this.doInjectMemories(sessionID, output, enrichedQuery);
+      let timedOut = false;
+      const injectPromise = this.doInjectMemories(sessionID, output, enrichedQuery, () => timedOut);
       const timeoutPromise = new Promise<"timeout">((resolve) =>
         setTimeout(() => resolve("timeout"), 8_000)
       );
       const result = await Promise.race([injectPromise, timeoutPromise]);
       if (result === "timeout") {
+        timedOut = true;
+        this.clearInjectedMemory(sessionID);
         this.injectDebugLog("Memory injection timed out (8s), skipping");
       }
       // Suppress unhandled rejection from the loser of Promise.race
       injectPromise.catch(() => {});
     } catch (error) {
+      this.clearInjectedMemory(sessionID);
       this.injectDebugLog(`Memory injection failed: ${error}`);
     }
   }
@@ -521,19 +561,19 @@ export class OpenCodeRulesRuntime {
 
     // Load session summary
     const ctx = loadSessionContext(sessionID);
-    const summaryPrefix = ctx?.summary?.text
-      ? `Session: ${ctx.summary.text}\n`
+    const summaryText = ctx?.summary?.text
+      ? `近期背景 (Session): ${ctx.summary.text}\n`
       : "";
 
     if (conversation) {
-      const result = `${summaryPrefix}${conversation}\nFollow-up: ${trimmed}`;
-      this.injectDebugLog(`buildEnrichedQuery: conversation context found (${result.length} chars, summary=${!!summaryPrefix})`);
+      const result = `当前意图: ${trimmed}\n---\n${summaryText}${conversation}`;
+      this.injectDebugLog(`buildEnrichedQuery: conversation context found (${result.length} chars)`);
       return result;
     }
 
     // No conversation found — use summary + raw query or just raw query
-    if (summaryPrefix) {
-      const result = `${summaryPrefix}${trimmed}`;
+    if (summaryText) {
+      const result = `当前意图: ${trimmed}\n---\n${summaryText}`;
       this.injectDebugLog(`buildEnrichedQuery: no conversation, using summary + query (${result.length} chars)`);
       return result;
     }
@@ -601,14 +641,16 @@ export class OpenCodeRulesRuntime {
           .filter(Boolean);
 
         if (userTexts.length > 0) {
-          previousUserText = userTexts.join(" ").slice(0, 500);
+          previousUserText = userTexts.join(" ");
           break;
         }
       }
     }
 
     if (assistantText && previousUserText) {
-      return `User: ${previousUserText}\nAssistant: ${assistantText.slice(0, 500)}`;
+      const cleanUser = cleanAndTruncateForEmbedding(previousUserText, 250);
+      const cleanAsst = cleanAndTruncateForEmbedding(assistantText, 250);
+      return `上一轮 User: ${cleanUser}\n上一轮 Assistant: ${cleanAsst}`;
     }
 
     return null;
@@ -621,28 +663,36 @@ export class OpenCodeRulesRuntime {
     sessionID: string,
     output: SystemTransformOutput,
     enrichedQuery: string,
+    isCancelled?: () => boolean,
   ): Promise<void> {
     const injector = this.memoryInjector;
     if (!injector) return;
 
     const memoryText = await injector.formatForSystem(enrichedQuery);
     if (!memoryText) {
+      this.clearInjectedMemory(sessionID);
       this.injectDebugLog(`No relevant memories found`);
-      this.sessionStore.upsert(sessionID, (state) => {
-        state.lastInjectedQuery = enrichedQuery;
-        state.injectedRawText = undefined;
-      });
+      return;
+    }
+
+    if (isCancelled?.()) {
       return;
     }
 
     if (!output.system) {
       output.system = [];
     }
+
     output.system.push(memoryText);
 
     this.sessionStore.upsert(sessionID, (state) => {
-      state.lastInjectedQuery = enrichedQuery;
       state.injectedRawText = memoryText;
+    });
+  }
+
+  private clearInjectedMemory(sessionID: string): void {
+    this.sessionStore.upsert(sessionID, (state) => {
+      state.injectedRawText = undefined;
     });
   }
 

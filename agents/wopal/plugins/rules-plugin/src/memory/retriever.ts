@@ -25,7 +25,7 @@ interface MemoryWithScore extends Memory {
   score: number;
   similarityScore: number;
   recencyScore: number;
-  importanceScore: number;
+  conceptBoost: number;
 }
 
 export class MemoryRetriever {
@@ -76,8 +76,9 @@ export class MemoryRetriever {
       return [];
     }
 
-    const scoredMemories = this.rankMemories(vectorResults);
-    const deduplicated = this.deduplicateById(scoredMemories);
+    const queryTerms = this.extractEnglishTerms(query);
+    const scoredMemories = this.rankMemories(vectorResults, queryTerms);
+    const deduplicated = this.deduplicateByContent(this.deduplicateById(scoredMemories));
 
     const threshold = this.computeDynamicThreshold(deduplicated);
     const filtered = deduplicated.filter(m => m.similarityScore >= threshold);
@@ -92,59 +93,63 @@ export class MemoryRetriever {
   }
 
   /**
-   * Compute dynamic threshold from similarity distribution.
+   * Compute dynamic threshold using adaptive gap strategy.
    *
-   * Strategy: top-quartile (Q3) of similarity scores.
-   * - If only 1-2 memories, require them to be highly similar (0.6+)
-   * - If 3+ memories, use the median as floor, but never below 0.35
-   * - If 6+ memories, use top-quartile (Q3)
+   * Strategy: topSimilarity - 0.15, with absolute floor 0.20.
+   * - If topSimilarity < 0.15 → return 1.0 (inject nothing)
+   * - Otherwise: return Math.max(0.20, topSimilarity - 0.15)
    *
-   * This ensures only the most relevant cluster is returned,
-   * adapting to both sparse and dense memory stores.
+   * This ensures low-similarity queries inject few/no memories,
+   * while high-similarity queries get relevant results.
    */
   private computeDynamicThreshold(memories: MemoryWithScore[]): number {
-    const similarities = memories
-      .map(m => m.similarityScore)
-      .sort((a, b) => a - b);
-
-    const n = similarities.length;
-
-    if (n <= 2) {
-      return 0.6;
-    }
-
-    if (n <= 5) {
-      const median = similarities[Math.floor(n / 2)];
-      return Math.max(median, 0.35);
-    }
-
-    // Top quartile (Q3): 75th percentile index
-    const q3Index = Math.ceil(n * 0.75) - 1;
-    return Math.max(similarities[q3Index], 0.35);
+    const topSimilarity = Math.max(...memories.map(m => m.similarityScore));
+    if (topSimilarity < 0.15) return 1.0;
+    return Math.max(0.15, topSimilarity - 0.20);
   }
 
-  private rankMemories(memories: Memory[]): MemoryWithScore[] {
+  private extractEnglishTerms(query: string): string[] {
+    const terms = query.match(/[a-zA-Z][\w-]*/g) ?? [];
+    return terms.filter(t => t.length >= 3);
+  }
+
+  private computeConceptBoost(memory: Memory, queryTerms: string[]): number {
+    const concepts = memory.metadata?.concepts;
+    if (!Array.isArray(concepts)) return 0;
+
+    const matchCount = queryTerms.filter(term =>
+      concepts.some((c: string) =>
+        c.toLowerCase().includes(term.toLowerCase())
+      )
+    ).length;
+
+    return Math.min(matchCount * 0.05, 0.15);
+  }
+
+  private rankMemories(memories: Memory[], queryTerms?: string[]): MemoryWithScore[] {
     const now = Date.now();
     const hoursSinceCreation = (createdAt: number) =>
       (now - createdAt) / (1000 * 60 * 60);
 
+    const terms = queryTerms ?? [];
+
     return memories.map((memory) => {
       const distance = typeof memory._distance === "number" ? memory._distance : 1.0;
-      const similarityScore = 1 / (1 + distance);
+      const similarityScore = 1 - (distance * distance) / 2;
 
       const hours = hoursSinceCreation(memory.created_at);
       const recencyScore = 0.05 / (1 + DECAY_FACTOR * hours);
 
-      const importanceScore = memory.importance * 0.05;
+      const conceptBoost = this.computeConceptBoost(memory, terms);
 
-      const score = similarityScore + recencyScore + importanceScore;
+      const score = similarityScore + conceptBoost + memory.importance * 0.03 + recencyScore;
 
       return {
         ...memory,
         score,
         similarityScore,
         recencyScore,
-        importanceScore,
+        conceptBoost,
       };
     });
   }
@@ -160,5 +165,19 @@ export class MemoryRetriever {
     }
 
     return Array.from(byId.values()).sort((a, b) => b.score - a.score);
+  }
+
+  private deduplicateByContent(memories: MemoryWithScore[]): MemoryWithScore[] {
+    const byContent = new Map<string, MemoryWithScore>();
+
+    for (const memory of memories) {
+      const key = `${memory.category}\u0000${String(memory.text).trim()}`;
+      const existing = byContent.get(key);
+      if (!existing || memory.score > existing.score) {
+        byContent.set(key, memory);
+      }
+    }
+
+    return Array.from(byContent.values()).sort((a, b) => b.score - a.score);
   }
 }

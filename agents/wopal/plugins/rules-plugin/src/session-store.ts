@@ -3,7 +3,7 @@ import type { MessageWithInfo } from "./message-context.js";
 export interface SessionState {
   contextPaths: Set<string>;
   lastUserPrompt?: string;
-  lastInjectedQuery?: string;
+  needsMemoryInjection?: boolean;
   lastUpdated: number;
   isCompacting?: boolean;
   compactingSince?: number;

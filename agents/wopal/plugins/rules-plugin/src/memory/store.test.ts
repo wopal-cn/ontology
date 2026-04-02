@@ -86,6 +86,27 @@ describe("MemoryStore", () => {
       expect(typeof retrieved!.access_count).toBe("number");
       expect(retrieved!.metadata).toEqual(input.metadata);
     });
+
+    it("should be idempotent for exact duplicate memory in same session", async () => {
+      const input: MemoryInput = {
+        text: "## 完整重复记忆测试: 这是一个用于验证同 session 同分类同正文不会重复写入的测试记忆",
+        vector: createVector(),
+        category: "knowledge" as MemoryCategory,
+        project: "test-project",
+        session_id: "test-session",
+        importance: 0.5,
+        metadata: { key: "value" },
+      };
+
+      const first = await store.add(input);
+      const second = await store.add({
+        ...input,
+        vector: createVector(),
+      });
+
+      expect(second.id).toBe(first.id);
+      expect(await store.count()).toBe(1);
+    });
   });
 
   describe("update non-existent id", () => {

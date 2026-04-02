@@ -36,10 +36,12 @@ export class MemoryInjector {
       }
 
       const formatted = this.formatMemories(memories);
-      const tokens = Math.ceil(
-        memories.reduce((sum, m) => sum + m.text.length, 0) / 4
+      const injected = this.countInjectedMemories(formatted);
+      const tokens = Math.ceil(formatted.length / 4);
+      debugLog(
+        `[inject] retrieved=${memories.length}, injected=${injected}, ` +
+        `tokens=${tokens}: ${memories.slice(0, injected).map(m => m.id.slice(0, 8)).join(", ")}`
       );
-      debugLog(`[inject] ${memories.length} memories (${tokens} tokens): ${memories.map(m => m.id.slice(0, 8)).join(", ")}`);
 
       return formatted;
     } catch (error) {
@@ -125,5 +127,12 @@ export class MemoryInjector {
 
   private wrapLines(lines: string[]): string {
     return `<system-reminder>\n${lines.join("\n")}\n</system-reminder>`;
+  }
+
+  private countInjectedMemories(text: string): number {
+    return text
+      .split("\n")
+      .filter((line) => line.startsWith("- "))
+      .length;
   }
 }

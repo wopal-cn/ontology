@@ -90,9 +90,9 @@ function writeLog(prefix: string, message: string): void {
   }
 
   const timestamp = formatCSTTimestamp();
-  // Escape newlines in message to keep each log entry on a single line
-  const sanitized = message.replace(/\n/g, "\\n");
-  const logMessage = `${timestamp} ${prefix} ${sanitized}\n`;
+  const header = `${timestamp} ${prefix} `;
+  const lines = message.split('\n');
+  const logMessage = lines.map((line, i) => i === 0 ? `${header}${line}` : `  ${line}`).join('\n') + '\n\n';
 
   try {
     appendFileSync(logFile, logMessage, "utf-8");

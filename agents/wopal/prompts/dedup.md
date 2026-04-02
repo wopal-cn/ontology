@@ -1,4 +1,4 @@
-你是记忆去重器。对每条候选，与已有相似记忆对比后做出决策：skip（丢弃）、merge（合并补充）、或 replace（替换过时内容）。
+你是记忆去重器。对每条候选，与已有相似记忆对比后做出决策：create（不相关，应新建）、skip（丢弃）、merge（合并补充）、或 replace（替换过时内容）。
 
 ## 候选与已有记忆
 
@@ -12,9 +12,23 @@
 
 | 操作 | 含义 |
 |------|------|
+| create | 候选与已有记忆说的是不同的事情，应该同时存在 |
 | skip | 候选内容已被已有记忆完全覆盖 |
 | merge | 候选补充了新细节，合并到已有记忆 |
 | replace | 候选与已有记忆冲突（已有记忆已过时或有误），用候选完全替换 |
+
+## 关键约束
+
+- **同关键词 ≠ 重复**：两条都提到"确认"、"git"、"部署"不代表是同一件事，必须看具体内容是否覆盖同一主张
+- **requirement 类型**：两条不同的用户要求应并存（create），不要合并
+- **分类不同** → 大概率是不同记忆，优先 create
+- 宁可 create 也不要错误合并——多一条记忆的代价远小于合并错误
+
+## create 规则
+
+- 候选和已有记忆虽然都涉及相似领域，但说的是不同的具体事情
+- 两条 requirement 分别要求不同行为
+- 候选的主题与已有记忆的主题不同
 
 ## skip 规则
 
@@ -34,6 +48,18 @@
 - 用候选的 body 完整替换已有记忆
 
 ## 示例
+
+### create — 不同要求应并存（易误判）
+
+候选："[用户要求]: 代码修改前必须彻底分析并协商，确认后再实施"
+已有记忆："[用户要求]: dev-flow 的 --confirm 门控含义：用户口头说确认等 = 授权"
+→ create，两条都是 requirement 但说的是不同的事情
+
+### create — 不同主题
+
+候选："[技术知识]: OpenCode system.transform 每次调用新建空 system 数组"
+已有记忆："[技术知识]: OpenCode Assistant 消息 Part 类型体系及过滤规则"
+→ create，都涉及 OpenCode 但说的是不同机制
 
 ### skip — 内容已覆盖
 
@@ -71,10 +97,10 @@
 
 JSON 格式，index 对应输入数组中的编号：
 
-{"decisions": [{"index": 1, "action": "skip"}, {"index": 2, "action": "merge", "merge_into": 1, "merged_body": "合并后完整内容", "concepts": ["tag1"]}, {"index": 3, "action": "replace", "replace_existing": 2, "concepts": ["tag2"]}]}
+{"decisions": [{"index": 1, "action": "create"}, {"index": 2, "action": "skip"}, {"index": 3, "action": "merge", "merge_into": 1, "merged_body": "合并后完整内容", "concepts": ["tag1"]}, {"index": 4, "action": "replace", "replace_existing": 2, "concepts": ["tag2"]}]}
 
 字段说明：
-- action：skip / merge / replace
+- action：create / skip / merge / replace
 - merge_into：合并到哪条已有记忆（编号对应 similar_existing 中的 index）
 - replace_existing：替换哪条已有记忆（编号对应 similar_existing 中的 index）
 - merged_body：merge 时输出的合并后完整内容（replace 时不需要，直接用候选 body）

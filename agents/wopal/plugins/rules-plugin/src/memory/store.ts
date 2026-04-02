@@ -111,6 +111,23 @@ export class MemoryStore {
   private readonly dbPath: string;
   private readonly tableName = "memories";
 
+  private async findExactDuplicate(
+    text: string,
+    category: MemoryCategory,
+    sessionId: string,
+  ): Promise<Memory | null> {
+    if (!this.table) return null;
+
+    await this.table.checkoutLatest();
+    const rows = this.parseMemories(
+      await this.table.query().where(`session_id = '${sessionId}'`).toArray(),
+    );
+
+    return rows.find(
+      (row) => row.category === category && String(row.text).trim() === text,
+    ) ?? null;
+  }
+
   constructor(dbPath?: string) {
     this.dbPath =
       dbPath ?? join(homedir(), ".wopal", "memory", "lancedb");
@@ -229,10 +246,20 @@ export class MemoryStore {
       );
     }
 
+    const existing = await this.findExactDuplicate(
+      body,
+      input.category,
+      input.session_id,
+    );
+    if (existing) {
+      debugLog(`Skipped exact duplicate memory: ${existing.id} (${existing.category})`);
+      return existing;
+    }
+
     const now = Date.now();
     const memory: Memory = {
       id: randomUUID(),
-      text: input.text,
+      text: body,
       vector: input.vector,
       category: input.category,
       project: input.project,

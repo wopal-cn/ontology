@@ -8,14 +8,13 @@
 import type { PluginInput, Hooks } from "@opencode-ai/plugin";
 import { discoverRuleFiles } from "./utils.js";
 import { OpenCodeRulesRuntime } from "./runtime.js";
-import { createSessionStore, type SessionState } from "./session-store.js";
+import { sessionStore } from "./session-store-instance.js";
 import { createDebugLog, createWarnLog } from "./debug.js";
 import { SimpleTaskManager } from "./simple-task-manager.js";
 import { createWopalTools } from "./tools/index.js";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
-const sessionStore = createSessionStore();
 
 const debugLog = createDebugLog();
 const warnLog = createWarnLog("[wopal-plugin]");
@@ -47,6 +46,7 @@ let _memorySystem: {
   distillEngine: import("./memory/distill").DistillEngine;
   store: import("./memory/store").MemoryStore;
   embedder: import("./memory/embedder").EmbeddingClient;
+  llm: import("./memory/llm-client").DistillLLMClient;
 } | null = null;
 
 async function ensureMemorySystem(
@@ -72,7 +72,7 @@ async function ensureMemorySystem(
     const retriever = new MemoryRetriever(store, embedder);
     const injector = new MemoryInjector(retriever);
 
-    _memorySystem = { injector, distillEngine, store, embedder };
+    _memorySystem = { injector, distillEngine, store, embedder, llm };
     debugLog("Memory system initialized (LanceDB + Embedding + LLM)");
     return _memorySystem;
   } catch (error) {
@@ -89,7 +89,7 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
 
   const ruleFiles = await discoverRuleFiles(pluginInput.directory);
   debugLog(`Discovered ${ruleFiles.length} rule file(s)`);
-    debugLog(`Tools registered: wopal_task, wopal_output, wopal_cancel, distill_session, memory_manage`);
+    debugLog(`Tools registered: wopal_task, wopal_output, wopal_cancel, wopal_reply, memory_manage, context_manage`);
 
   const taskManager = new SimpleTaskManager(
     pluginInput.client,
@@ -114,21 +114,17 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
   const tools = createWopalTools(taskManager, memory?.store, memory?.embedder, sessionStore);
 
   if (memory) {
-    const { createDistillSessionTool } = await import("./tools/distill-session");
-    const { DistillLLMClient } = await import("./memory/llm-client");
     const { createContextManageTool } = await import("./tools/context-manage");
 
-    tools.distill_session = createDistillSessionTool(
+    tools.context_manage = createContextManageTool(
+      memory.llm,
+      pluginInput.client,
       memory.distillEngine,
       memory.store,
-      pluginInput.client,
     );
-
-    const distillLLM = new DistillLLMClient();
-    tools.context_manage = createContextManageTool(distillLLM, pluginInput.client);
   }
 
-  warnLog(`Returning tools: ${Object.keys(tools).join(", ")}, memory: ${!!memory}`);
+  debugLog(`Plugin initialized: tools=[${Object.keys(tools).join(", ")}], memory=${!!memory}`);
 
   return {
     ...hooks,
@@ -136,37 +132,7 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
   };
 };
 
-/**
- * Test-only exports for accessing internal state and functions.
- * @internal - Test utilities only. Not part of public API.
- */
-// NOTE: OpenCode's plugin loader calls every named export as a plugin initializer.
-// To avoid runtime crashes, __testOnly must be callable.
-const __testOnly = Object.freeze(
-  Object.assign(async () => ({}), {
-    setSessionStateLimit: (limit: number): void => {
-      sessionStore.setMax(limit);
-    },
-    getSessionStateIDs: (): string[] => {
-      return sessionStore.ids();
-    },
-    getSessionStateSnapshot: (sessionID: string): SessionState | undefined => {
-      return sessionStore.snapshot(sessionID);
-    },
-    upsertSessionState: (
-      sessionID: string,
-      mutator: (state: SessionState) => void,
-    ): void => {
-      sessionStore.upsert(sessionID, mutator);
-    },
-    resetSessionState: (): void => {
-      sessionStore.reset();
-    },
-    getSeedCount: (sessionID: string): number => {
-      return sessionStore.get(sessionID)?.seedCount ?? 0;
-    },
-  }),
-);
-
-export default openCodeRulesPlugin;
-export { __testOnly };
+export default {
+  id: "wopal-rules-plugin",
+  server: openCodeRulesPlugin,
+};

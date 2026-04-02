@@ -177,12 +177,12 @@ function loadPromptTemplate(): string {
 | 中文标签 | 英文 category | 定义 |
 |---------|--------------|------|
 | 用户画像 | profile | 用户身份、静态属性 |
-| 用户偏好 | preference | 用户习惯、倾向、风格 |
-| 技术知识 | knowledge | 调研结果、技术事实 |
-| 项目事实 | fact | 调研结论、项目决策 |
-| 避坑方法 | gotcha | 历史错误、预防措施 |
+| 用户偏好 | preference | 用户习惯、倾向、风格（非强制） |
+| 技术知识 | knowledge | 本空间/项目特有的技术理解、内部机制 |
+| 项目事实 | fact | 本空间/项目特有的客观事实、路径约定 |
+| 避坑方法 | gotcha | 历史错误、预防措施（必须有踩坑经历） |
 | 实践经验 | experience | 可复用流程、方法论 |
-| 用户要求 | requirement | 明确约束、规则 |
+| 用户要求 | requirement | 用户明确要求必须遵守的规则/行为 |
 
 # 输出格式
 
@@ -371,17 +371,23 @@ function buildBatchDedupPrompt(
   }
 
   // Fallback: inline prompt
-  return `你是记忆去重器。对每条候选，判断它是已有记忆的重复还是补充。
+  return `你是记忆去重器。对每条候选，与已有相似记忆对比后做出决策。
 
 输入：
 ${JSON.stringify(input, null, 2)}
 
-操作：skip（重复）/ merge（补充新细节，输出 merged_body 和 concepts）/ supersede（事实已变化）
-约束：fact 和 gotcha 只允许 skip
-merge：融入新信息，去重去冗余，保持已有 Markdown 结构，concepts 取并集
+操作：create（不相关，应新建）/ skip（重复）/ merge（补充新细节）/ replace（事实已变化）
+
+关键约束：
+- 同关键词 ≠ 重复：两条都提到"确认"不代表是同一条要求
+- requirement 类型：两条不同的用户要求应并存（create），不要合并
+- create：候选与已有记忆说的是不同的事情，应该同时存在
+- skip：候选的所有关键信息都已在已有记忆中
+- merge：候选补充了已有记忆没有的新细节，输出 merged_body 和 concepts
+- replace：候选与已有记忆冲突（旧的对新的错），用候选替换
 
 输出 JSON：
-{"decisions": [{"index": 1, "action": "skip"}, {"index": 2, "action": "merge", "merge_into": 1, "merged_body": "合并后完整内容", "concepts": ["tag1"]}]}`;
+{"decisions": [{"index": 1, "action": "create"}, {"index": 2, "action": "skip"}, {"index": 3, "action": "merge", "merge_into": 1, "merged_body": "合并后完整内容", "concepts": ["tag1"]}]}`;
 }
 
 /**
@@ -568,8 +574,8 @@ export class DistillEngine {
    * Two-stage deduplication (Phase 1.5: per-candidate LLM decision with merge)
    *
    * 1. Vector pre-filter: embed new memories → search similar
-   * 2. Per-candidate LLM decision: ask LLM to decide create/merge/skip/supersede
-   * 3. For merge/supersede: call LLM merge prompt
+   * 2. Per-candidate LLM decision: ask LLM to decide create/merge/skip/replace
+   * 3. For merge/replace: call LLM merge prompt
    */
   private async deduplicate(
     newMemories: ExtractResult["memories"],
@@ -585,6 +591,7 @@ export class DistillEngine {
     }>;
     merge: Array<{
       existingId: string;
+      existingBody: string;
       body: string;
       vector: Float32Array;
       metadata: Record<string, unknown>;
@@ -601,6 +608,7 @@ export class DistillEngine {
       }>,
       merge: [] as Array<{
         existingId: string;
+        existingBody: string;
         body: string;
         vector: Float32Array;
         metadata: Record<string, unknown>;
@@ -623,12 +631,21 @@ export class DistillEngine {
       body: v.body,
     }));
 
+    // Maximum L2 distance to consider "similar" for dedup purposes.
+    // Based on similarityScore = 1 - (distance^2)/2, a distance of 1.0
+    // gives similarityScore ≈ 0.5 which is well below retrieval threshold.
+    const DEDUP_MAX_DISTANCE = 1.0;
+
     const existingByCandidate = new Map<number, Array<{ index: number; body: string; id: string; metadata: Record<string, unknown> }>>();
     for (let i = 0; i < validated.length; i++) {
       const vector = this.embedder.toFloat32Array(embeddings[i]);
-      const similar = await this.store.search(vector, 3);
-      if (similar.length > 0) {
-        existingByCandidate.set(i + 1, similar.map((m, idx) => ({
+      const similar = await this.store.search(vector, 5);
+      const filtered = similar.filter((m) => {
+        const dist = typeof m._distance === "number" ? m._distance : Infinity;
+        return dist <= DEDUP_MAX_DISTANCE;
+      });
+      if (filtered.length > 0) {
+        existingByCandidate.set(i + 1, filtered.map((m, idx) => ({
           index: idx + 1,
           body: m.text,
           id: m.id,
@@ -706,8 +723,11 @@ export class DistillEngine {
 
       if (dec.action === "skip") {
         result.skip.push({ reason: "duplicate" });
-      } else if ((dec.action === "merge" || dec.action === "supersede") && (dec.merge_into !== undefined || dec.replace_existing !== undefined)) {
-        const matchIdx = (dec.action === "supersede" ? dec.replace_existing : dec.merge_into)!;
+      } else if (dec.action === "create") {
+        // LLM decided candidate is unrelated to existing memories — create as new
+        result.create.push({ text: body, vector, category, importance, metadata });
+      } else if ((dec.action === "merge" || dec.action === "replace") && (dec.merge_into !== undefined || dec.replace_existing !== undefined)) {
+        const matchIdx = dec.action === "replace" ? dec.replace_existing! : dec.merge_into!;
         const existingList = existingByCandidate.get(dec.index);
         const matchedExisting = existingList?.[matchIdx - 1];
         if (!matchedExisting) {
@@ -716,8 +736,8 @@ export class DistillEngine {
           continue;
         }
 
-        // supersede: use candidate body as-is; merge: use LLM merged_body
-        const mergedBody = dec.action === "supersede" ? body : (dec.merged_body ?? body);
+        // replace: use candidate body as-is; merge: use LLM merged_body
+        const mergedBody = dec.action === "replace" ? body : (dec.merged_body ?? body);
         const mergedConcepts = Array.from(
           new Set([
             ...((matchedExisting.metadata?.concepts as string[]) ?? []),
@@ -730,6 +750,7 @@ export class DistillEngine {
 
         result.merge.push({
           existingId: matchedExisting.id,
+          existingBody: matchedExisting.body,
           body: mergedBody,
           vector: mergedVector,
           metadata: { concepts: mergedConcepts },
@@ -777,9 +798,14 @@ export class DistillEngine {
     created: number;
     merged: number;
     skipped: number;
+    mergeDetails: Array<{
+      existingId: string;
+      existingPreview: string;
+      mergedPreview: string;
+    }>;
   }> {
     if (candidates.length === 0) {
-      return { created: 0, merged: 0, skipped: 0 };
+      return { created: 0, merged: 0, skipped: 0, mergeDetails: [] };
     }
 
     debugLog(`[confirm] Starting dedup for ${candidates.length} candidates`);
@@ -818,6 +844,11 @@ export class DistillEngine {
       created: dedupResult.create.length,
       merged: dedupResult.merge.length,
       skipped: dedupResult.skip.length,
+      mergeDetails: dedupResult.merge.map((m) => ({
+        existingId: m.existingId,
+        existingPreview: m.existingBody.split("\n")[0].slice(0, 80),
+        mergedPreview: m.body.split("\n")[0].slice(0, 80),
+      })),
     };
   }
 }
