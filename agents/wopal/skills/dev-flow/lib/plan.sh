@@ -4,15 +4,20 @@
 # Usage: source this file to use functions
 #   source lib/plan.sh
 #
-# Functions:
-#   resolve_plan_dir()    - Resolve Plan directory path
-#   resolve_plan_file()   - Resolve Plan file path
-#   create_plan()         - Create Plan file from template
-#   get_plan_status()     - Read Plan status
-#   set_plan_status()     - Set Plan status
-#   link_prd()            - Link PRD to Plan
-#   archive_plan()        - Archive Plan (move to done/)
-#   validate_plan_name()  - Validate Plan naming convention
+# Provides:
+#   - Plan file CRUD operations
+#   - Plan metadata accessors (status, type, project, issues)
+#   - Plan directory resolution
+#   - Acceptance Criteria validation
+#
+# Dependencies: common.sh
+# Guard: DEV_FLOW_PLAN_LOADED
+
+# Prevent duplicate loading
+if [[ -n "${DEV_FLOW_PLAN_LOADED:-}" ]]; then
+    return 0
+fi
+readonly DEV_FLOW_PLAN_LOADED=1
 
 set -e
 
@@ -452,6 +457,52 @@ get_plan_metadata() {
     echo "issue=${issue:-}"
     echo "created=${created:-}"
     echo "mode=${mode:-lite}"
+}
+
+# ============================================
+# Unified Metadata Accessors
+# ============================================
+
+# Get a specific field from Plan metadata
+# Usage: get_plan_field <plan_file> <field_name>
+# Output: field value or empty string
+get_plan_field() {
+    local plan_file="$1"
+    local field_name="$2"
+
+    if [[ ! -f "$plan_file" ]]; then
+        return 1
+    fi
+
+    local value
+    value=$(grep -m1 "^\- \*\*${field_name}\*\*:" "$plan_file" 2>/dev/null | sed 's/^.*: //' || true)
+    echo "$value"
+}
+
+# Get Plan Type (normalized lowercase)
+# Usage: get_plan_type <plan_file>
+# Output: type value (feature/fix/refactor/docs/chore/test) or empty
+get_plan_type() {
+    local plan_file="$1"
+    local type
+    type=$(get_plan_field "$plan_file" "Type")
+    echo "$type" | tr '[:upper:]' '[:lower:]'
+}
+
+# Get Plan Target Project
+# Usage: get_plan_project <plan_file>
+# Output: project name or empty
+get_plan_project() {
+    local plan_file="$1"
+    get_plan_field "$plan_file" "Target Project"
+}
+
+# Get Plan Status (uses existing get_plan_status for compatibility)
+# Usage: get_plan_status_value <plan_file>
+# Output: status value or "draft"
+get_plan_status_value() {
+    local plan_file="$1"
+    get_plan_status "$plan_file"
 }
 
 # ============================================

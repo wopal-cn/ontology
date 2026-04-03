@@ -4,40 +4,52 @@
 # Usage: source this file to use functions
 #   source lib/check-doc.sh
 #
-# Functions:
-#   check_doc_plan() - Check Plan document completeness
+# Provides:
+#   - Plan document completeness validation
+#   - Placeholder detection
+#   - Required section verification
+#
+# Dependencies: common.sh, plan.sh, labels.sh
+# Guard: DEV_FLOW_CHECK_DOC_LOADED
+
+# Prevent duplicate loading
+if [[ -n "${DEV_FLOW_CHECK_DOC_LOADED:-}" ]]; then
+    return 0
+fi
+readonly DEV_FLOW_CHECK_DOC_LOADED=1
 
 set -e
 
-# Load shared utilities
+# Load dependencies
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 source "$SKILL_DIR/lib/common.sh"
+source "$SKILL_DIR/lib/plan.sh"
+source "$SKILL_DIR/lib/labels.sh"
 
 # ============================================
 # Helper Functions
 # ============================================
 
 # Extract plan type from metadata (priority) or filename (fallback)
+# Uses shared helpers from plan.sh and labels.sh
 # Usage: _extract_plan_type <plan_file>
 # Output: plan type (feature/fix/enhance/refactor/docs/test) or empty string
 _extract_plan_type() {
     local plan_file="$1"
     
-    # Priority 1: Read from metadata "- **Type**:"
-    local type_line
-    type_line="$(grep -m1 '^\- \*\*Type\*\*:' "$plan_file" 2>/dev/null || true)"
-    if [[ -n "$type_line" ]]; then
-        # Extract type value
-        local type_value
-        type_value=$(echo "$type_line" | sed 's/^\- \*\*Type\*\*: *//' | tr '[:upper:]' '[:lower:]')
-        # Validate against known types
-        case "$type_value" in
-            feature|fix|enhance|refactor|docs|chore|test)
-                echo "$type_value"
-                return 0
-                ;;
-        esac
+    # Priority 1: Read from metadata using shared accessor
+    local type_value
+    type_value=$(get_plan_type "$plan_file" 2>/dev/null || true)
+    
+    if [[ -n "$type_value" ]]; then
+        # Normalize using shared helper
+        local normalized
+        normalized=$(normalize_plan_type "$type_value" 2>/dev/null || true)
+        if [[ -n "$normalized" ]]; then
+            echo "$normalized"
+            return 0
+        fi
     fi
     
     # Priority 2: Extract from filename

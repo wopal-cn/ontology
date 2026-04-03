@@ -27,13 +27,14 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Load shared utilities first
+# Load libraries in correct dependency order:
+# common -> plan -> labels -> issue -> plan-sync -> state-machine -> check-doc
 source "$SKILL_DIR/lib/common.sh"
-
-# Load libraries
-source "$SKILL_DIR/lib/state-machine.sh"
-source "$SKILL_DIR/lib/issue.sh"
 source "$SKILL_DIR/lib/plan.sh"
+source "$SKILL_DIR/lib/labels.sh"
+source "$SKILL_DIR/lib/issue.sh"
+source "$SKILL_DIR/lib/plan-sync.sh"
+source "$SKILL_DIR/lib/state-machine.sh"
 source "$SKILL_DIR/lib/check-doc.sh"
 
 # ============================================
@@ -114,11 +115,6 @@ _resolve_plan_type_from_issue() {
     done < <(echo "$issue_info" | jq -r '.labels[].name' 2>/dev/null || true)
 
     echo "feature"
-}
-
-_project_from_plan() {
-    local plan_file="$1"
-    grep -m1 '^\- \*\*Target Project\*\*:' "$plan_file" 2>/dev/null | sed 's/^.*: //' || true
 }
 
 _create_phase_issue() {
@@ -534,16 +530,11 @@ cmd_plan() {
 cmd_approve() {
     local issue_number=""
     local confirm=false
-    local update_issue=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --confirm)
                 confirm=true
-                shift
-                ;;
-            --update-issue)
-                update_issue=true
                 shift
                 ;;
             -*)
@@ -561,7 +552,7 @@ cmd_approve() {
 
     if [[ -z "$issue_number" ]]; then
         log_error "Issue number required"
-        echo "Usage: flow.sh approve <issue> [--confirm] [--update-issue]"
+        echo "Usage: flow.sh approve <issue> [--confirm]"
         exit 1
     fi
 
@@ -614,22 +605,15 @@ cmd_approve() {
     # Update status
     set_plan_status "$plan_file" "approved"
 
-    # Sync approved plan to Issue (only when --update-issue is set)
+    # Sync approved plan to Issue body
     local repo
     repo=$(get_space_repo)
-    if [[ "$update_issue" == true ]]; then
-        log_step "Syncing approved plan to Issue..."
-        sync_plan_to_issue "$issue_number" "$plan_file" "$repo"
-    else
-        log_info "Skipping Issue update (use --update-issue to sync)"
-    fi
+    log_step "Syncing approved plan to Issue..."
+    sync_plan_to_issue "$issue_number" "$plan_file" "$repo"
     
     # Ensure Issue labels are correct
     log_step "Ensuring Issue labels..."
     ensure_issue_labels "$issue_number" "$plan_file" "$repo"
-
-    # Sync Issue label
-    sync_issue_label "$plan_file" "approved"
 
     echo ""
     log_success "Plan status: approved (user approved)"
@@ -691,17 +675,15 @@ cmd_dev() {
     # Update status
     set_plan_status "$plan_file" "executing"
 
-    # Sync Issue label
-    sync_issue_label "$plan_file" "executing"
+    # Sync Issue status label
+    local status_label
+    status_label=$(plan_status_to_issue_label "executing")
+    sync_status_label_group "$issue_number" "$status_label" "$repo"
 
     # Create worktree if requested
     if [[ "$use_worktree" == true ]]; then
-        local project_line
-        project_line=$(grep -m1 '^\- \*\*Target Project\*\*:' "$plan_file" || true)
-        local project=""
-        if [[ -n "$project_line" ]]; then
-            project=$(echo "$project_line" | sed 's/^.*: //')
-        fi
+        local project
+        project=$(get_plan_project "$plan_file")
 
         if [[ -z "$project" ]]; then
             log_error "Cannot create worktree: no Target Project in plan"
@@ -801,7 +783,7 @@ cmd_complete() {
 
     # Extract Target Project from Plan
     local project
-    project=$(grep -m1 '^\- \*\*Target Project\*\*:' "$plan_file" 2>/dev/null | sed 's/^.*: //' || true)
+    project=$(get_plan_project "$plan_file")
 
     # Two paths: with PR or without PR
     if [[ "$create_pr" == true ]]; then
@@ -889,10 +871,7 @@ cmd_validate() {
     local repo
     repo=$(get_space_repo)
 
-    local issue_labels
-    issue_labels=$(gh issue view "$issue_number" --repo "$repo" --json labels -q '.labels[].name' 2>/dev/null || true)
-
-    if ! echo "$issue_labels" | grep -q "validation/awaiting"; then
+    if ! issue_has_label "$issue_number" "validation/awaiting" "$repo"; then
         log_error "Issue does not have validation/awaiting label"
         echo "This command is for the no-PR validation path."
         echo "If you created a PR, wait for PR merge instead."
@@ -950,16 +929,13 @@ cmd_archive() {
     # Check archive conditions:
     # 1. PR path: pr/opened label and PR is merged
     # 2. No-PR path: validation/passed label
-    local issue_labels
-    issue_labels=$(gh issue view "$issue_number" --repo "$repo" --json labels -q '.labels[].name' 2>/dev/null || true)
-
     local can_archive=false
     local archive_reason=""
 
-    if echo "$issue_labels" | grep -q "validation/passed"; then
+    if issue_has_label "$issue_number" "validation/passed" "$repo"; then
         can_archive=true
         archive_reason="validation/passed label present"
-    elif echo "$issue_labels" | grep -q "pr/opened"; then
+    elif issue_has_label "$issue_number" "pr/opened" "$repo"; then
         # Check if PR is merged - parse PR URL from Issue body
         local pr_url
         pr_url=$(get_pr_url_from_issue "$issue_number" "$repo")

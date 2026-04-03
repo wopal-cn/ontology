@@ -9,13 +9,24 @@
 #   get_current_status()   - Read current status from Plan file
 #   update_plan_status()   - Update Plan file status
 #   sync_issue_label()     - Sync Issue Label with status
+#
+# Dependencies: common.sh, plan.sh, labels.sh
+# Guard: DEV_FLOW_STATE_MACHINE_LOADED
+
+# Prevent duplicate loading
+if [[ -n "${DEV_FLOW_STATE_MACHINE_LOADED:-}" ]]; then
+    return 0
+fi
+readonly DEV_FLOW_STATE_MACHINE_LOADED=1
 
 set -e
 
-# Load shared utilities
+# Load dependencies
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 source "$SKILL_DIR/lib/common.sh"
+source "$SKILL_DIR/lib/plan.sh"
+source "$SKILL_DIR/lib/labels.sh"
 
 # ============================================
 # State Constants (bash 3.x compatible)
@@ -178,50 +189,44 @@ sync_issue_label() {
     local new_status="$2"
 
     if [[ ! -f "$plan_file" ]]; then
-        echo "Warning: Plan file not found, skipping Issue label sync" >&2
+        log_warn "Plan file not found, skipping Issue label sync"
         return 0
     fi
 
     # Extract all Issue numbers from plan metadata (e.g., "#9, #10, #11")
-    local issue_line
-    issue_line="$(grep -m1 '^\- \*\*Issue\*\*:' "$plan_file")"
-    local issue_numbers=()
-    while [[ "$issue_line" =~ \#([0-9]+) ]]; do
-        issue_numbers+=("${BASH_REMATCH[1]}")
-        issue_line="${issue_line#*#${BASH_REMATCH[1]}}"
-    done
+    local issue_numbers
+    issue_numbers=$(extract_plan_issues "$plan_file")
 
-    if [[ ${#issue_numbers[@]} -eq 0 ]]; then
+    if [[ -z "$issue_numbers" ]]; then
         return 0  # No Issue linked, skip
     fi
 
-    # Map plan status to Issue label (5-state model)
-    local label=""
-    case "$new_status" in
-        investigating) label="status/planning" ;;
-        planning)      label="status/planning" ;;
-        approved)      label="status/approved" ;;
-        executing)     label="status/in-progress" ;;
-        done)          label="status/done" ;;
-        *) return 0 ;;
-    esac
+    # Map plan status to Issue label using shared helper
+    local label
+    label=$(plan_status_to_issue_label "$new_status")
+
+    if [[ -z "$label" ]]; then
+        return 0  # Unknown status, skip
+    fi
 
     # Check if gh CLI is available
     if ! command -v gh &> /dev/null; then
-        echo "Warning: gh CLI not available, skipping Issue label sync" >&2
+        log_warn "gh CLI not available, skipping Issue label sync"
         return 0
     fi
 
-    # Update all linked Issues
-    # Only remove 5-state model labels (status/validated and status/blocked are deprecated)
-    local old_labels="status/planning status/approved status/in-progress status/done"
-    for issue_number in "${issue_numbers[@]}"; do
-        for old_label in $old_labels; do
-            gh issue edit "$issue_number" --remove-label "$old_label" 2>/dev/null || true
-        done
-        gh issue edit "$issue_number" --add-label "$label" 2>/dev/null && \
-            echo "Issue #$issue_number label updated: $label" || \
-            echo "Warning: Failed to update Issue #$issue_number label" >&2
+    # Get repo for label operations
+    local repo
+    repo=$(get_space_repo 2>/dev/null || true)
+    if [[ -z "$repo" ]]; then
+        log_warn "Cannot determine repo, skipping Issue label sync"
+        return 0
+    fi
+
+    # Update all linked Issues using shared helper
+    for issue_number in $issue_numbers; do
+        sync_status_label_group "$issue_number" "$label" "$repo"
+        log_info "Issue #$issue_number label updated: $label"
     done
 }
 
