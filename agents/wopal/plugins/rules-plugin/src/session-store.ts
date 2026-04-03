@@ -13,6 +13,10 @@ export interface SessionState {
   recentMessages: MessageWithInfo[];
   /** Raw text injected via system-reminder in the most recent system.transform cycle */
   injectedRawText?: string | undefined;
+  /** Skill names loaded via the `skill` tool in this session */
+  loadedSkills: Set<string>;
+  /** Set to true after compact completes when loadedSkills is non-empty */
+  needsSkillReload?: boolean;
 }
 
 export interface SessionStoreOptions {
@@ -91,39 +95,45 @@ export class SessionStore {
     });
   }
 
-  shouldSkipInjection(
-    sessionID: string,
-    nowMs: number,
-    ttlMs = 30_000,
-  ): boolean {
-    const state = this.stateMap.get(sessionID);
-    if (!state?.isCompacting) return false;
-
-    // Preserve existing behavior: missing timestamp means "still compacting".
-    if (!state.compactingSince) {
-      return true;
-    }
-
-    const expired = nowMs - state.compactingSince > ttlMs;
-    if (!expired) {
-      return true;
-    }
-
-    this.upsert(sessionID, (s) => {
-      s.isCompacting = false;
+  markCompacted(sessionID: string): void {
+    this.upsert(sessionID, (state) => {
+      state.isCompacting = false;
+      delete state.compactingSince;
+      if (state.loadedSkills.size > 0) {
+        state.needsSkillReload = true;
+      }
     });
+  }
 
-    return false;
+  shouldSkipInjection(sessionID: string): boolean {
+    const state = this.stateMap.get(sessionID);
+    return state?.isCompacting === true;
+  }
+
+  recordSkillLoaded(sessionID: string, skillName: string): void {
+    this.upsert(sessionID, (state) => {
+      state.loadedSkills.add(skillName);
+    });
+  }
+
+  consumeSkillReload(sessionID: string): string[] | null {
+    const state = this.stateMap.get(sessionID);
+    if (!state?.needsSkillReload || state.loadedSkills.size === 0) return null;
+    const skills = Array.from(state.loadedSkills);
+    this.upsert(sessionID, (s) => {
+      delete s.needsSkillReload;
+    });
+    return skills;
   }
 
   private createDefaultState(): SessionState {
-    // Match existing semantics: tick increments on creation, then again on upsert.
     return {
       contextPaths: new Set<string>(),
       lastUpdated: ++this.tick,
       seededFromHistory: false,
       seedCount: 0,
       recentMessages: [],
+      loadedSkills: new Set<string>(),
     };
   }
 }

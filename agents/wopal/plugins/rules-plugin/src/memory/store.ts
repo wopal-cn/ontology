@@ -366,14 +366,15 @@ export class MemoryStore {
       throw new Error("MemoryStore not initialized");
     }
 
+    await this.table.checkoutLatest();
+
     const existing = await this.table
       .query()
       .where(`id = '${id}'`)
       .toArray();
 
     if (existing.length === 0) {
-      debugLog(`Memory not found for update: ${id}`);
-      return;
+      throw new Error(`Memory not found for update: ${id}`);
     }
 
     const memory = this.parseMemories(existing)[0];
@@ -414,6 +415,8 @@ export class MemoryStore {
       throw new Error("MemoryStore not initialized");
     }
 
+    await this.table.checkoutLatest();
+
     const results = await this.table
       .query()
       .where(`id = '${id}'`)
@@ -427,6 +430,8 @@ export class MemoryStore {
     if (!this.initialized || !this.table) {
       throw new Error("MemoryStore not initialized");
     }
+
+    await this.table.checkoutLatest();
 
     const results = await this.table
       .query()

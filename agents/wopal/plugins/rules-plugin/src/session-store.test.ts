@@ -1,6 +1,4 @@
 import { describe, it, expect } from "vitest";
-
-// Module does not exist yet; this test should fail first.
 import { SessionStore } from "./session-store.js";
 
 describe("SessionStore", () => {
@@ -17,30 +15,122 @@ describe("SessionStore", () => {
     expect(ids).toContain("ses_3");
   });
 
-  it("skips injection while compacting, but resumes after TTL expiry", () => {
-    const store = new SessionStore({ max: 100 });
+  describe("shouldSkipInjection", () => {
+    it("returns true while compacting", () => {
+      const store = new SessionStore({ max: 100 });
+      store.upsert("ses_c", (s) => {
+        s.isCompacting = true;
+      });
 
-    store.upsert("ses_c", (s) => {
-      s.isCompacting = true;
-      s.compactingSince = 1000;
+      expect(store.shouldSkipInjection("ses_c")).toBe(true);
     });
 
-    // Not expired
-    expect(store.shouldSkipInjection("ses_c", 1000 + 29_000, 30_000)).toBe(
-      true,
-    );
+    it("returns false when not compacting", () => {
+      const store = new SessionStore({ max: 100 });
+      store.upsert("ses_normal", (s) => {
+        s.isCompacting = false;
+      });
 
-    // Expired: should clear flag and allow injection
-    expect(store.shouldSkipInjection("ses_c", 1000 + 31_000, 30_000)).toBe(
-      false,
-    );
-    expect(store.get("ses_c")?.isCompacting).toBe(false);
+      expect(store.shouldSkipInjection("ses_normal")).toBe(false);
+    });
+
+    it("returns false for unknown session", () => {
+      const store = new SessionStore({ max: 100 });
+      expect(store.shouldSkipInjection("unknown")).toBe(false);
+    });
   });
 
-  it("treats missing compactingSince as still compacting", () => {
-    const store = new SessionStore({ max: 100 });
-    store.upsert("ses_missing", (s) => void (s.isCompacting = true));
+  describe("markCompacted", () => {
+    it("clears compacting state and sets needsSkillReload when skills loaded", () => {
+      const store = new SessionStore({ max: 100 });
+      store.upsert("ses_c", (s) => {
+        s.isCompacting = true;
+        s.compactingSince = 1000;
+        s.loadedSkills.add("dev-flow");
+        s.loadedSkills.add("fae-collab");
+      });
 
-    expect(store.shouldSkipInjection("ses_missing", 1234, 30_000)).toBe(true);
+      store.markCompacted("ses_c");
+
+      const state = store.get("ses_c");
+      expect(state?.isCompacting).toBe(false);
+      expect(state?.compactingSince).toBeUndefined();
+      expect(state?.needsSkillReload).toBe(true);
+    });
+
+    it("does not set needsSkillReload when no skills loaded", () => {
+      const store = new SessionStore({ max: 100 });
+      store.upsert("ses_c", (s) => {
+        s.isCompacting = true;
+        s.compactingSince = 1000;
+      });
+
+      store.markCompacted("ses_c");
+
+      const state = store.get("ses_c");
+      expect(state?.isCompacting).toBe(false);
+      expect(state?.needsSkillReload).toBeUndefined();
+    });
+  });
+
+  describe("recordSkillLoaded", () => {
+    it("records skill names", () => {
+      const store = new SessionStore({ max: 100 });
+      store.recordSkillLoaded("ses_1", "dev-flow");
+      store.recordSkillLoaded("ses_1", "fae-collab");
+
+      const state = store.get("ses_1");
+      expect(state?.loadedSkills.has("dev-flow")).toBe(true);
+      expect(state?.loadedSkills.has("fae-collab")).toBe(true);
+    });
+
+    it("deduplicates skill names", () => {
+      const store = new SessionStore({ max: 100 });
+      store.recordSkillLoaded("ses_1", "dev-flow");
+      store.recordSkillLoaded("ses_1", "dev-flow");
+
+      const state = store.get("ses_1");
+      expect(state?.loadedSkills.size).toBe(1);
+    });
+  });
+
+  describe("consumeSkillReload", () => {
+    it("returns skill names and clears needsSkillReload flag", () => {
+      const store = new SessionStore({ max: 100 });
+      store.upsert("ses_c", (s) => {
+        s.loadedSkills.add("dev-flow");
+        s.loadedSkills.add("fae-collab");
+        s.needsSkillReload = true;
+      });
+
+      const result = store.consumeSkillReload("ses_c");
+      expect(result).toEqual(["dev-flow", "fae-collab"]);
+
+      const state = store.get("ses_c");
+      expect(state?.needsSkillReload).toBeUndefined();
+    });
+
+    it("returns null when needsSkillReload is not set", () => {
+      const store = new SessionStore({ max: 100 });
+      store.upsert("ses_c", (s) => {
+        s.loadedSkills.add("dev-flow");
+      });
+
+      expect(store.consumeSkillReload("ses_c")).toBeNull();
+    });
+
+    it("returns null when loadedSkills is empty", () => {
+      const store = new SessionStore({ max: 100 });
+      store.upsert("ses_c", (s) => {
+        s.needsSkillReload = true;
+      });
+
+      expect(store.consumeSkillReload("ses_c")).toBeNull();
+    });
+
+    it("returns null for unknown session", () => {
+      const store = new SessionStore({ max: 100 });
+      expect(store.consumeSkillReload("unknown")).toBeNull();
+    });
   });
 });

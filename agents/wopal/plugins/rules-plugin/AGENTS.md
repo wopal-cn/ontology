@@ -424,6 +424,12 @@ OpenCode 配置 (`opencode.jsonc`)：
 - **禁止 console.log**：使用 `createDebugLog()` 或 `createWarnLog()` 输出日志
 - **日志模块匹配**：`createDebugLog(prefix, module)` 的 `module` 参数决定日志能否被环境变量过滤输出。新增功能的日志**必须**用对应模块的日志函数，禁止混用（如记忆注入相关日志必须用 `"memory"` 模块，不能默认用 `"rules"`）
 - **调试日志禁止截断**：调试日志的唯一目的是排错，必须完整输出内容。禁止使用 `.slice(0, N)` 截断日志内容，禁止省略关键信息。排错时看不到完整内容 = 白打
+- **调试日志格式规范**：日志是给人看的，必须对用户友好
+  - **列表内容换行打印**：多条记录（如记忆 ID、任务列表、错误条目）必须逐行打印，每条一行，禁止用逗号拼接在一行内。用 `items.map((x, i) => `  [${i+1}] ${x}`).join("\n")` 格式
+  - **一条事件一条日志**：`debugLog` 调用对应一个逻辑事件，不要把多条事件的 info 拼成一次调用。但同一事件的摘要和明细可以包含换行
+  - **关键标识可读**：打印 ID 时附带人类可读标识（如记忆 title、任务 description），不能只打印裸 UUID
+  - **反例**：`retrieved=8, injected=19, tokens=451: 6d14ae76, 70e940c5, 44d8d18c, ...`（挤一行、无标题、无序号）
+  - **正例**：`retrieved=8, injected=8, tokens=451\n  [1] 6d14ae76(OpenCode 不支持从其他...)\n  [2] 70e940c5(脚本中 gh CLI 必须...)`
 - **Bun 原生 TS**：OpenCode 直接运行 `.ts` 文件，无需 `dist/`
 - **测试优先**：修改核心逻辑后运行 `bun run test:run` 验证
 - **子会话无 TUI**：权限请求自动授权，Question Tool 事件中继到父代理

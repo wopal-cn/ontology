@@ -35,12 +35,11 @@ export class MemoryInjector {
         return undefined;
       }
 
-      const formatted = this.formatMemories(memories);
-      const injected = this.countInjectedMemories(formatted);
+      const { formatted, injectedCount, injectedIds } = this.formatMemories(memories);
       const tokens = Math.ceil(formatted.length / 4);
+      const idLines = injectedIds.map((id, i) => `  [${i + 1}] ${id}`).join("\n");
       debugLog(
-        `[inject] retrieved=${memories.length}, injected=${injected}, ` +
-        `tokens=${tokens}: ${memories.slice(0, injected).map(m => m.id.slice(0, 8)).join(", ")}`
+        `[inject] retrieved=${memories.length}, injected=${injectedCount}, tokens=${tokens}\n${idLines}`
       );
 
       return formatted;
@@ -50,11 +49,17 @@ export class MemoryInjector {
     }
   }
 
-  private formatMemories(memories: Memory[]): string {
+  private formatMemories(memories: Memory[]): {
+    formatted: string;
+    injectedCount: number;
+    injectedIds: string[];
+  } {
     const TOKEN_BUDGET = 1500;
     const lines: string[] = ["# 相关记忆", ""];
     let totalTokens = 0;
     const tokens = (s: string) => Math.ceil(s.length / 4);
+    let injectedCount = 0;
+    const injectedIds: string[] = [];
 
     const categoryLabels: Record<string, string> = {
       requirement: "约束",
@@ -85,6 +90,16 @@ export class MemoryInjector {
       return true;
     };
 
+    const injectGroup = (group: Memory[]) => {
+      for (const memory of group) {
+        const line = `- ${this.cleanBody(memory.text)}`;
+        if (!tryPush(line)) return;
+        injectedCount++;
+        const title = memory.text.split("\n")[0].slice(0, 40);
+        injectedIds.push(`${memory.id.slice(0, 8)}(${title})`);
+      }
+    };
+
     for (const cat of order) {
       const group = groups.get(cat);
       if (!group) continue;
@@ -92,9 +107,7 @@ export class MemoryInjector {
       if (!tryPush(`## ${categoryLabels[cat] ?? cat}`)) break;
       if (!tryPush("")) break;
 
-      for (const memory of group) {
-        if (!tryPush(`- ${this.cleanBody(memory.text)}`)) break;
-      }
+      injectGroup(group);
       if (!tryPush("")) break;
     }
 
@@ -102,13 +115,12 @@ export class MemoryInjector {
       if (order.includes(cat as MemoryCategory)) continue;
       if (!tryPush(`## ${categoryLabels[cat] ?? cat}`)) break;
       if (!tryPush("")) break;
-      for (const memory of group) {
-        if (!tryPush(`- ${this.cleanBody(memory.text)}`)) break;
-      }
+
+      injectGroup(group);
       if (!tryPush("")) break;
     }
 
-    return this.wrapLines(lines);
+    return { formatted: this.wrapLines(lines), injectedCount, injectedIds };
   }
 
   /**
@@ -127,12 +139,5 @@ export class MemoryInjector {
 
   private wrapLines(lines: string[]): string {
     return `<system-reminder>\n${lines.join("\n")}\n</system-reminder>`;
-  }
-
-  private countInjectedMemories(text: string): number {
-    return text
-      .split("\n")
-      .filter((line) => line.startsWith("- "))
-      .length;
   }
 }

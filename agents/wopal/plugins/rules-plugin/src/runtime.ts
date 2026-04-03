@@ -213,6 +213,14 @@ export class OpenCodeRulesRuntime {
       }
     }
 
+    if (toolName === "skill") {
+      const skillName = args.name;
+      if (typeof skillName === "string" && skillName.length > 0) {
+        this.sessionStore.recordSkillLoaded(sessionID, skillName);
+        this.debugLog(`Recorded loaded skill: ${skillName} for session ${sessionID}`);
+      }
+    }
+
     if (filePath) {
       const normalized = normalizeContextPath(filePath, this.projectDirectory);
       this.sessionStore.upsert(sessionID, (state) => {
@@ -392,11 +400,7 @@ export class OpenCodeRulesRuntime {
       : undefined;
 
     if (sessionID) {
-      const skip = this.sessionStore.shouldSkipInjection(
-        sessionID,
-        this.now(),
-        30_000,
-      );
+      const skip = this.sessionStore.shouldSkipInjection(sessionID);
       if (skip) {
         this.debugLog(
           `Session ${sessionID} is compacting - skipping rule injection`,
@@ -410,6 +414,16 @@ export class OpenCodeRulesRuntime {
     }
     if (!output.system) {
       output.system = [];
+    }
+
+    const skillsToReload = sessionID
+      ? this.sessionStore.consumeSkillReload(sessionID)
+      : null;
+    if (skillsToReload) {
+      output.system.push(
+        `[系统提醒] 上下文已被压缩，之前加载的技能 [${skillsToReload.join(", ")}] 内容已丢失。` +
+        `请重新加载这些技能以恢复完整的指令和工具链。`
+      );
     }
 
     // Rule injection
@@ -847,6 +861,14 @@ export class OpenCodeRulesRuntime {
           this.taskDebugLog(`task ${errorTask.id} error: ${diagnostic.reason}`)
           this.taskManager.notifyParent(errorTask.id).catch(() => {})
         }
+      }
+    }
+
+    if (eventType === "session.compacted") {
+      const sessionID = props?.sessionID as string | undefined;
+      if (sessionID) {
+        this.sessionStore.markCompacted(sessionID);
+        this.debugLog(`Session ${sessionID} compact completed (event-driven)`);
       }
     }
 

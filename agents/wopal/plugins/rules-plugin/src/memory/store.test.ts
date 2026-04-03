@@ -110,13 +110,11 @@ describe("MemoryStore", () => {
   });
 
   describe("update non-existent id", () => {
-    it("should silently return without throwing error", async () => {
-      // Update a non-existent ID
-      await store.update("non-existent-id-12345", { text: "should not throw" });
-
-      // Verify no memory was created
-      const memory = await store.get("non-existent-id-12345");
-      expect(memory).toBeNull();
+    it("should throw error for non-existent id", async () => {
+      // Update a non-existent ID should throw
+      await expect(
+        store.update("non-existent-id-12345", { text: "should throw" })
+      ).rejects.toThrow("Memory not found for update: non-existent-id-12345");
     });
   });
 
