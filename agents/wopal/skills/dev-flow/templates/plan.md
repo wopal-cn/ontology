@@ -4,7 +4,8 @@
 
 {issue_line}
 {type_line}
-{project_line}- **Created**: {date}
+{project_line}
+- **Created**: {date}
 - **Status**: investigating
 
 ## Scope Assessment

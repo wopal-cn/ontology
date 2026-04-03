@@ -41,7 +41,6 @@ source "$SKILL_DIR/lib/check-doc.sh"
 # ============================================
 
 PLAN_PROJECT=""
-DATE=$(date +%Y-%m-%d)
 
 ROOT_DIR="$(find_workspace_root)"
 
@@ -61,10 +60,127 @@ _extract_type_from_title() {
         feature\(*|feature:*) echo "feature" ;;
         enhance\(*|enhance:*) echo "enhance" ;;
         refactor\(*|refactor:*) echo "refactor" ;;
+        chore\(*|chore:*|ci\(*|ci:*) echo "chore" ;;
         docs\(*|docs:*)     echo "docs" ;;
         test\(*|test:*)     echo "test" ;;
         *)                  echo "" ;;
     esac
+}
+
+_ensure_arg() {
+    local name="$1"
+    local value="$2"
+    local message="${3:-$name required}"
+    if [[ -n "$value" ]]; then
+        return 0
+    fi
+    log_error "$message"
+    return 1
+}
+
+_require_plan_file() {
+    local issue_number="$1"
+    find_plan_by_issue "$issue_number" || {
+        log_error "No plan found for Issue #$issue_number"
+        exit 1
+    }
+}
+
+_load_plan_context() {
+    local issue_number="$1"
+    PLAN_FILE=$(_require_plan_file "$issue_number")
+    PLAN_NAME=$(get_plan_name "$PLAN_FILE")
+    PLAN_STATUS=$(get_current_status "$PLAN_FILE")
+}
+
+_resolve_plan_type_from_issue() {
+    local title="$1"
+    local issue_info="$2"
+    local plan_type
+    local label
+
+    plan_type=$(_extract_type_from_title "$title")
+    if [[ -n "$plan_type" ]]; then
+        echo "$plan_type"
+        return 0
+    fi
+
+    while IFS= read -r label; do
+        plan_type=$(issue_label_to_plan_type "$label" 2>/dev/null || true)
+        if [[ -n "$plan_type" ]]; then
+            echo "$plan_type"
+            return 0
+        fi
+    done < <(echo "$issue_info" | jq -r '.labels[].name' 2>/dev/null || true)
+
+    echo "feature"
+}
+
+_project_from_plan() {
+    local plan_file="$1"
+    grep -m1 '^\- \*\*Target Project\*\*:' "$plan_file" 2>/dev/null | sed 's/^.*: //' || true
+}
+
+_create_phase_issue() {
+    local phase_num="$1"
+    local phase_title="$2"
+    local project="$3"
+    local prd_path="$4"
+    local issue_body="## Source
+
+From PRD: [$prd_path](../$prd_path)
+
+## Phase Description
+
+$phase_title
+
+---
+
+This Issue was auto-created by dev-flow decompose-prd."
+
+    create_issue \
+        --title "[Phase $phase_num] $phase_title" \
+        --project "${project:-space}" \
+        --type "feature" \
+        --body "$issue_body" 2>/dev/null | grep -oE '[0-9]+$'
+}
+
+_process_phase_lines() {
+    local input_source="$1"
+    local dry_run="$2"
+    local project="$3"
+    local prd_path="$4"
+    local created_issues=()
+    local line
+
+    while IFS= read -r line; do
+        [[ "$line" =~ ^###\ Phase\ ([0-9]+):?\ (.*) ]] || continue
+
+        local phase_num="${BASH_REMATCH[1]}"
+        local phase_title="${BASH_REMATCH[2]}"
+
+        echo ""
+        echo "Phase $phase_num: $phase_title"
+
+        if [[ "$dry_run" == true ]]; then
+            echo "  Would create Issue: [Phase $phase_num] $phase_title"
+            continue
+        fi
+
+        local issue_num
+        issue_num=$(_create_phase_issue "$phase_num" "$phase_title" "$project" "$prd_path")
+        if [[ -n "$issue_num" ]]; then
+            created_issues+=("#$issue_num")
+            log_success "Issue #$issue_num created: [Phase $phase_num] $phase_title"
+        else
+            log_error "Failed to create Issue for Phase $phase_num"
+        fi
+    done <<< "$input_source"
+
+    if [[ "$dry_run" != true && ${#created_issues[@]} -gt 0 ]]; then
+        echo ""
+        log_success "Created ${#created_issues[@]} Issues: ${created_issues[*]}"
+    fi
 }
 
 # Find Plan file by Issue number
@@ -112,7 +228,6 @@ cmd_start() {
     local issue_number=""
     local project=""
     local prd_path=""
-    local priority="medium"
     local deep_mode=false
 
     while [[ $# -gt 0 ]]; do
@@ -123,10 +238,6 @@ cmd_start() {
                 ;;
             --prd)
                 prd_path="$2"
-                shift 2
-                ;;
-            --priority)
-                priority="$2"
                 shift 2
                 ;;
             --deep)
@@ -147,138 +258,55 @@ cmd_start() {
         esac
     done
 
-    if [[ -z "$issue_number" ]]; then
-        log_error "Issue number required"
+    _ensure_arg "Issue number" "$issue_number" || {
         echo "Usage: flow.sh start <issue> [--project <name>] [--prd <path>]"
         exit 1
-    fi
+    }
 
-    log_info "Starting workflow for Issue #$issue_number"
-
-    # 1. Get Issue information
-    local repo
+    local repo issue_info title plan_type slug plan_name plan_dir plan_file deep_flag plan_rel_path
     repo=$(get_space_repo)
-
-    log_step "Fetching Issue #$issue_number info..."
-    local issue_info
     issue_info=$(get_issue_info "$issue_number" "$repo")
-
-    local title
     title=$(echo "$issue_info" | jq -r '.title')
 
-    log_info "Issue title: $title"
-
-    # 2. Determine project from Issue if not specified
     if [[ -z "$project" ]]; then
         project=$(extract_project "$issue_info")
-
         if [[ -z "$project" ]]; then
             log_error "Cannot determine project from Issue #$issue_number"
             log_error "Please add a 'project/<name>' label to the Issue"
-            log_error "Example: gh issue edit $issue_number --add-label 'project/ontology'"
             return 1
         fi
-
-        log_info "Project: $project (detected from Issue labels)"
     fi
 
     PLAN_PROJECT="$project"
-    log_info "Target project: $project"
 
-    # 3. Extract plan type from Issue title or labels
-    local plan_type
-    plan_type=$(_extract_type_from_title "$title")
-    
-    if [[ -z "$plan_type" ]]; then
-        local labels
-        labels=$(echo "$issue_info" | jq -r '.labels[].name' 2>/dev/null || true)
-        if echo "$labels" | grep -q "type/bug"; then
-            plan_type="fix"
-        elif echo "$labels" | grep -q "type/enhancement"; then
-            plan_type="enhance"
-        elif echo "$labels" | grep -q "type/refactor"; then
-            plan_type="refactor"
-        elif echo "$labels" | grep -q "type/docs"; then
-            plan_type="docs"
-        elif echo "$labels" | grep -q "type/test"; then
-            plan_type="test"
-        else
-            plan_type="feature"
-        fi
-    fi
-
-    # 4. Generate Plan name
-    local slug
+    plan_type=$(_resolve_plan_type_from_issue "$title" "$issue_info")
     slug=$(title_to_slug "$title")
-    slug=$(echo "$slug" | sed -E 's/^(fix|feat|feature|enhance|refactor|docs|test)-//')
-    
-    local plan_name="${project}-${plan_type}-${slug}"
+    slug=$(echo "$slug" | sed -E 's/^(fix|feat|feature|enhance|refactor|docs|chore|test)-//')
 
-    log_info "Generated plan name: $plan_name"
-
-    # 5. Create Plan file
-    local plan_dir
+    plan_name="${project}-${plan_type}-${slug}"
     plan_dir=$(resolve_plan_dir --project "$project")
     mkdir -p "$plan_dir"
 
-    local plan_file="$plan_dir/${plan_name}.md"
+    plan_file="$plan_dir/${plan_name}.md"
 
     if [[ -f "$plan_file" ]]; then
         log_error "Plan already exists: $plan_file"
         exit 1
     fi
 
-    log_step "Creating plan file..."
+    deep_flag=""
+    [[ "$deep_mode" == true ]] && deep_flag="--deep"
 
-    local deep_flag=""
-    if [[ "$deep_mode" == true ]]; then
-        deep_flag="--deep"
-    fi
+    create_plan "$plan_name" --project "$project" --issue "$issue_number" --type "$plan_type" ${prd_path:+--prd "$prd_path"} ${deep_flag} >/dev/null
 
-    create_plan "$plan_name" --project "$project" --issue "$issue_number" --type "$plan_type" ${prd_path:+--prd "$prd_path"} ${deep_flag}
-
-    # 6. Update Issue link
-    log_step "Linking Plan to Issue..."
-    local plan_rel_path="docs/products/${project}/plans/${plan_name}.md"
+    plan_rel_path="docs/products/${project}/plans/${plan_name}.md"
     update_issue_link "$issue_number" "$repo" "plan" "[${plan_name}](../${plan_rel_path})"
 
-    # 7. Ensure Issue has correct labels
-    log_step "Ensuring Issue labels..."
-    ensure_flow_labels_exist "$repo"
-    
-    # Get current labels
-    local current_labels
-    current_labels=$(gh issue view "$issue_number" --repo "$repo" --json labels -q '.labels[].name' 2>/dev/null | tr '\n' ' ' || true)
-    
-    # Add status/planning if missing
-    if ! echo "$current_labels" | grep -qF "status/planning"; then
-        gh issue edit "$issue_number" --repo "$repo" --add-label "status/planning" 2>/dev/null && \
-            log_info "Added label: status/planning"
-    fi
-    
-    # Add type label if missing
-    local type_label="type/${plan_type}"
-    if ! echo "$current_labels" | grep -qF "$type_label"; then
-        ensure_label_exists "$type_label" "$repo"
-        gh issue edit "$issue_number" --repo "$repo" --add-label "$type_label" 2>/dev/null && \
-            log_info "Added label: $type_label"
-    fi
-    
-    # Add project label if missing
-    local project_label="project/${project}"
-    if ! echo "$current_labels" | grep -qF "$project_label"; then
-        ensure_label_exists "$project_label" "$repo"
-        gh issue edit "$issue_number" --repo "$repo" --add-label "$project_label" 2>/dev/null && \
-            log_info "Added label: $project_label"
-    fi
+    ensure_issue_labels "$issue_number" "$plan_file" "$repo"
 
-    echo ""
-    log_success "Plan created: $plan_file"
-    echo "  Issue: #$issue_number"
-    echo "  Project: $project"
-    echo "  Status: investigating"
-    echo ""
-    echo "Next: Investigate and fill the plan, then run: flow.sh plan $issue_number"
+    echo "Plan: $plan_file"
+    echo "Issue: #$issue_number | Project: $project | Status: investigating"
+    echo "Next: flow.sh plan $issue_number"
 }
 
 # cmd_spike: Research/spike phase (stay in investigating)
@@ -1162,53 +1190,7 @@ cmd_decompose_prd() {
     if [[ -z "$phases_section" ]]; then
         log_warn "No '## Implementation Phases' section found in PRD"
         echo "Looking for Phase sections..."
-
-        local created_issues=()
-
-        while IFS= read -r line; do
-            if [[ "$line" =~ ^###\ Phase\ ([0-9]+):?\ (.*) ]]; then
-                local phase_num="${BASH_REMATCH[1]}"
-                local phase_title="${BASH_REMATCH[2]}"
-
-                echo ""
-                echo "Phase $phase_num: $phase_title"
-
-                if [[ "$dry_run" == true ]]; then
-                    echo "  Would create Issue: [Phase $phase_num] $phase_title"
-                else
-                    local issue_body="## Source
-
-From PRD: [$prd_path](../$prd_path)
-
-## Phase Description
-
-$phase_title
-
----
-
-This Issue was auto-created by dev-flow decompose-prd."
-
-                    local issue_num
-                    issue_num=$(create_issue \
-                        --title "[Phase $phase_num] $phase_title" \
-                        --project "${project:-space}" \
-                        --type "feature" \
-                        --body "$issue_body" 2>/dev/null | grep "Issue Number:" | sed 's/Issue Number: #//')
-                    
-                    if [[ -n "$issue_num" ]]; then
-                        created_issues+=("#$issue_num")
-                        log_success "Issue #$issue_num created: [Phase $phase_num] $phase_title"
-                    else
-                        log_error "Failed to create Issue for Phase $phase_num"
-                    fi
-                fi
-            fi
-        done < "$full_prd_path"
-
-        if [[ "$dry_run" != true && ${#created_issues[@]} -gt 0 ]]; then
-            echo ""
-            log_success "Created ${#created_issues[@]} Issues: ${created_issues[*]}"
-        fi
+        _process_phase_lines "$(cat "$full_prd_path")" "$dry_run" "$project" "$prd_path"
     else
         echo ""
         log_info "Found Implementation Phases section"
@@ -1217,50 +1199,7 @@ This Issue was auto-created by dev-flow decompose-prd."
         if [[ "$dry_run" == true ]]; then
             echo "$phases_section"
         else
-            local created_issues=()
-            
-            while IFS= read -r line; do
-                if [[ "$line" =~ ^###\ Phase\ ([0-9]+):?\ (.*) ]]; then
-                    local phase_num="${BASH_REMATCH[1]}"
-                    local phase_title="${BASH_REMATCH[2]}"
-
-                    echo ""
-                    echo "Phase $phase_num: $phase_title"
-
-                    local issue_body="## Source
-
-From PRD: [$prd_path](../$prd_path)
-
-## Phase Description
-
-$phase_title
-
----
-
-This Issue was auto-created by dev-flow decompose-prd."
-
-                    local issue_num
-                    issue_num=$(create_issue \
-                        --title "[Phase $phase_num] $phase_title" \
-                        --project "${project:-space}" \
-                        --type "feature" \
-                        --body "$issue_body" 2>/dev/null | grep "Issue Number:" | sed 's/Issue Number: #//')
-                    
-                    if [[ -n "$issue_num" ]]; then
-                        created_issues+=("#$issue_num")
-                        log_success "Issue #$issue_num created: [Phase $phase_num] $phase_title"
-                    else
-                        log_error "Failed to create Issue for Phase $phase_num"
-                    fi
-                fi
-            done <<< "$phases_section"
-
-            if [[ ${#created_issues[@]} -gt 0 ]]; then
-                echo ""
-                log_success "Created ${#created_issues[@]} Issues: ${created_issues[*]}"
-            else
-                log_warn "No phases found in Implementation Phases section"
-            fi
+            _process_phase_lines "$phases_section" "$dry_run" "$project" "$prd_path"
         fi
     fi
 }
@@ -1365,24 +1304,19 @@ cmd_create() {
     done
     
     # Validate required args
-    if [[ -z "$title" ]]; then
-        log_error "Missing --title"
+    _ensure_arg "--title" "$title" "Missing --title" || {
         echo "Usage: flow.sh create --title \"<title>\" --project <name> --type <type>"
         exit 1
-    fi
-    
-    if [[ -z "$project" ]]; then
-        log_error "Missing --project"
+    }
+    _ensure_arg "--project" "$project" "Missing --project" || {
         echo "Example: --project ontology"
         echo "Optional: --goal, --background, --scope, --out-of-scope, --reference"
         exit 1
-    fi
-    
-    if [[ -z "$type" ]]; then
-        log_error "Missing --type"
-        echo "Available types: feature, fix, refactor, docs, chore"
+    }
+    _ensure_arg "--type" "$type" "Missing --type" || {
+        echo "Available types: feature, fix, refactor, docs, chore, test"
         exit 1
-    fi
+    }
     
     # Validate project name format (allow any valid name)
     case "$project" in
@@ -1395,43 +1329,11 @@ cmd_create() {
             ;;
     esac
     
-    # Validate and normalize type
-    local type_label=""
-    case "$type" in
-        feature|feat)
-            type_label="type/feature"
-            ;;
-        fix|bug)
-            type_label="type/bug"
-            ;;
-        refactor)
-            type_label="type/refactor"
-            ;;
-        docs|documentation)
-            type_label="type/docs"
-            ;;
-        chore|test|ci)
-            type_label="type/chore"
-            ;;
-        *)
-            log_error "Invalid type: $type"
-            echo "Available types: feature, fix, refactor, docs, chore"
-            exit 1
-            ;;
-    esac
-    
-    local repo
-    repo=$(get_space_repo)
-    
-    log_step "Creating Issue..."
-    log_info "Title: $title"
-    log_info "Project: $project"
-    log_info "Type: $type"
-    
-    # Ensure labels exist
-    ensure_flow_labels_exist "$repo"
-    ensure_label_exists "$type_label" "$repo"
-    ensure_label_exists "project/$project" "$repo"
+    normalize_plan_type "$type" >/dev/null 2>&1 || {
+        log_error "Invalid type: $type"
+        echo "Available types: feature, fix, refactor, docs, chore, test"
+        exit 1
+    }
     
     # Build default body from template if not provided
     # Only use template when no body AND no structured params
@@ -1457,7 +1359,7 @@ cmd_create() {
         ${scope:+--scope "$scope"} \
         ${out_of_scope:+--out-of-scope "$out_of_scope"} \
         ${reference:+--reference "$reference"} \
-        2>/dev/null | grep -E "^https://" | head -1)
+        2>/dev/null)
     
     if [[ -z "$issue_url" ]]; then
         log_error "Failed to create Issue"
@@ -1468,14 +1370,7 @@ cmd_create() {
     local issue_number
     issue_number=$(echo "$issue_url" | grep -oE '[0-9]+$')
     
-    echo ""
-    log_success "Issue created: [#${issue_number}]($issue_url)"
-    echo ""
-    echo "Labels added:"
-    echo "  - status/planning"
-    echo "  - $type_label"
-    echo "  - project/$project"
-    echo ""
+    echo "Issue #${issue_number}: $issue_url"
     echo "Next: flow.sh start $issue_number"
 }
 

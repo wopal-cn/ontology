@@ -7,7 +7,6 @@
 # Functions:
 #   get_issue_info()      - Get Issue info (gh issue view wrapper)
 #   extract_project()     - Extract Target Project from Issue body
-#   update_issue_label()  - Update Issue Label
 #   update_issue_link()   - Update Issue body link table
 #   create_issue()        - Create Issue
 #   close_issue()         - Close Issue
@@ -51,16 +50,289 @@ get_space_repo() {
 title_to_slug() {
     local title="$1"
     
-    # Remove conventional commit prefix (type(scope): or type:)
-    title=$(echo "$title" | sed -E 's/^[a-z]+\([^)]+\):? //' | sed -E 's/^[a-z]+: //')
+    # Remove type prefix, keep scope: "feat(scope): title" → "(scope): title" → "scope-title"
+    title=$(echo "$title" | sed -E 's/^([a-z]+)(\([^)]+\))?:\s*/\2/')
+    title=$(echo "$title" | tr -d '()')
     
     # Convert to slug
-    echo "$title" | tr '[:upper:]' '[:lower:]' | \
+    local slug
+    slug=$(echo "$title" | tr '[:upper:]' '[:lower:]' | \
         sed 's/[^a-z0-9]/-/g' | \
         sed 's/--*/-/g' | \
         sed 's/^-//' | \
         sed 's/-$//' | \
-        cut -c1-50
+        cut -c1-50)
+    
+    # If slug is empty or too short, use md5 hash fallback
+    if [[ -z "$slug" || ${#slug} -lt 3 ]]; then
+        slug=$(echo "$1" | md5 | cut -c1-8)
+    fi
+    
+    echo "$slug"
+}
+
+# Resolve repo argument or use space repo
+_resolve_repo() {
+    local repo="${1:-}"
+    if [[ -n "$repo" ]]; then
+        echo "$repo"
+    else
+        get_space_repo
+    fi
+}
+
+# Normalize plan/issue type to canonical value
+# Usage: normalize_plan_type <raw_type>
+# Output: feature|enhance|fix|refactor|docs|chore|test
+normalize_plan_type() {
+    local raw
+    raw=$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')
+
+    case "$raw" in
+        feat|feature)            echo "feature" ;;
+        enhance|enhancement)     echo "enhance" ;;
+        fix|bug)                 echo "fix" ;;
+        refactor)                echo "refactor" ;;
+        docs|doc|documentation)  echo "docs" ;;
+        chore|ci)                echo "chore" ;;
+        test)                    echo "test" ;;
+        *)                       return 1 ;;
+    esac
+}
+
+# Map canonical plan type to GitHub issue label
+# Usage: plan_type_to_issue_label <plan_type>
+plan_type_to_issue_label() {
+    case "$1" in
+        feature|enhance) echo "type/feature" ;;
+        fix)             echo "type/bug" ;;
+        refactor)        echo "type/refactor" ;;
+        docs)            echo "type/docs" ;;
+        chore|test)      echo "type/chore" ;;
+        *)               return 1 ;;
+    esac
+}
+
+# Map GitHub issue label back to canonical plan type
+# Usage: issue_label_to_plan_type <issue_label>
+issue_label_to_plan_type() {
+    case "$1" in
+        type/feature)  echo "feature" ;;
+        type/bug)      echo "fix" ;;
+        type/refactor) echo "refactor" ;;
+        type/docs)     echo "docs" ;;
+        type/chore)    echo "chore" ;;
+        *)             return 1 ;;
+    esac
+}
+
+# Format comma-separated items as markdown list
+_format_issue_list() {
+    local raw_items="$1"
+    local prefix="$2"
+    local fallback="$3"
+    local output=""
+    local item
+
+    if [[ -z "$raw_items" ]]; then
+        printf '%s' "$fallback"
+        return 0
+    fi
+
+    IFS=',' read -ra items <<< "$raw_items"
+    for item in "${items[@]}"; do
+        item=$(echo "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        [[ -z "$item" ]] && continue
+        output+="${prefix}${item}"$'\n'
+    done
+
+    printf '%s' "${output%$'\n'}"
+}
+
+# Build structured issue body from individual fields
+build_structured_issue_body() {
+    local goal="${1:-}"
+    local background="${2:-}"
+    local scope="${3:-}"
+    local out_of_scope="${4:-}"
+    local reference="${5:-}"
+    local in_scope_text
+    local out_of_scope_text
+    local body
+
+    in_scope_text=$(_format_issue_list "$scope" "- [ ] " $'- [ ] 范围项 1\n- [ ] 范围项 2')
+    out_of_scope_text=$(_format_issue_list "$out_of_scope" "- " "- 不做的项（原因）")
+
+    body="## Goal
+
+${goal:-<一句话描述目标>}
+
+## Background
+
+${background:-<背景和问题描述>}
+
+## In Scope
+
+$in_scope_text
+
+## Out of Scope
+
+$out_of_scope_text
+
+## Acceptance Criteria
+
+- [ ] 待 plan 细化后填充
+
+## Related Resources
+
+| Resource | Link |
+|----------|------|"
+
+    if [[ -n "$reference" ]]; then
+        body+=$'\n| Research | '
+        body+="$reference"
+        body+=$' |'
+    fi
+
+    body+=$'\n| Plan | _待关联_ |'
+    printf '%s\n' "$body"
+}
+
+# Extract a markdown section body from a plan file
+_extract_plan_section() {
+    local plan_file="$1"
+    local section="$2"
+    local limit="$3"
+
+    sed -n "/^## $section/,/^##[^#]/{ /^## $section/d; /^##[^#]/d; p; }" "$plan_file" | head -n "$limit"
+}
+
+# Normalize a section value with placeholder fallback
+_issue_section_value() {
+    local value="$1"
+    local placeholder_pattern="$2"
+    local fallback="$3"
+    local require_marker="${4:-}"
+
+    if [[ -n "$require_marker" ]] && ! echo "$value" | grep -qF -- "$require_marker"; then
+        printf '%s\n' "$fallback"
+        return 0
+    fi
+
+    if [[ -z "$value" ]] || echo "$value" | grep -qF -- "$placeholder_pattern"; then
+        printf '%s\n' "$fallback"
+    else
+        printf '%s\n' "$value"
+    fi
+}
+
+# Build normalized issue body from approved plan content
+build_issue_body_from_plan() {
+    local plan_file="$1"
+    local plan_name="$2"
+    local goal background in_scope out_of_scope acceptance_criteria
+
+    goal=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Goal" 5 | sed '/^$/d')" "一句话描述" "<目标描述>")
+    background=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Technical Context" 20 | sed '/^$/d')" "<当前架构" "<背景描述>")
+    in_scope=$(_issue_section_value "$(_extract_plan_section "$plan_file" "In Scope" 15)" "" "- [ ] 范围项 1" "-")
+    out_of_scope=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Out of Scope" 10)" "<本次不做" "- 不做的项（原因）")
+    acceptance_criteria=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Acceptance Criteria" 15)" "" "- [ ] 验收条件 1" "-")
+
+    cat <<EOF
+## Goal
+
+$goal
+
+## Background
+
+$background
+
+## In Scope
+
+$in_scope
+
+## Out of Scope
+
+$out_of_scope
+
+## Acceptance Criteria
+
+$acceptance_criteria
+
+## Related Resources
+
+| Resource | Link |
+|----------|------|
+| Plan | [$plan_name](../docs/products/plans/$plan_name.md) |
+EOF
+}
+
+# Get current labels for an issue
+get_issue_labels() {
+    local issue_number="$1"
+    local repo
+    repo=$(_resolve_repo "${2:-}")
+
+    if ! command -v gh &> /dev/null; then
+        echo ""
+        return 0
+    fi
+
+    gh issue view "$issue_number" --repo "$repo" --json labels -q '.labels[].name' 2>/dev/null | tr '\n' ' ' || true
+}
+
+# Check whether an issue already has a label
+issue_has_label() {
+    local issue_number="$1"
+    local label="$2"
+    local labels
+    labels=$(get_issue_labels "$issue_number" "${3:-}")
+    echo "$labels" | grep -qF "$label"
+}
+
+# Ensure an issue has a specific label
+ensure_issue_label() {
+    local issue_number="$1"
+    local label="$2"
+    local repo
+    repo=$(_resolve_repo "${3:-}")
+
+    ensure_label_exists "$label" "$repo"
+    if issue_has_label "$issue_number" "$label" "$repo"; then
+        return 0
+    fi
+
+    gh issue edit "$issue_number" --repo "$repo" --add-label "$label" >/dev/null 2>/dev/null || {
+        log_warn "Failed to add label to Issue #$issue_number: $label"
+        return 1
+    }
+}
+
+# Remove a label from an issue if present
+remove_issue_label() {
+    local issue_number="$1"
+    local label="$2"
+    local repo
+    repo=$(_resolve_repo "${3:-}")
+
+    gh issue edit "$issue_number" --repo "$repo" --remove-label "$label" >/dev/null 2>/dev/null || true
+}
+
+# Sync a mutually exclusive label group to a single target label
+sync_issue_label_group() {
+    local issue_number="$1"
+    local desired_label="$2"
+    local repo
+    repo=$(_resolve_repo "${3:-}")
+    shift 3
+
+    local label
+    for label in "$@"; do
+        [[ "$label" == "$desired_label" ]] && continue
+        remove_issue_label "$issue_number" "$label" "$repo"
+    done
+
+    [[ -z "$desired_label" ]] || ensure_issue_label "$issue_number" "$desired_label" "$repo"
 }
 
 # Get Issue info
@@ -68,11 +340,8 @@ title_to_slug() {
 # Output: JSON with title, body, number, state, labels
 get_issue_info() {
     local issue_number="$1"
-    local repo="${2:-}"
-
-    if [[ -z "$repo" ]]; then
-        repo=$(get_space_repo)
-    fi
+    local repo
+    repo=$(_resolve_repo "${2:-}")
 
     if ! command -v gh &> /dev/null; then
         log_error "gh CLI not available"
@@ -99,40 +368,6 @@ extract_project() {
     done
     
     echo ""
-}
-
-# Update Issue Label
-# Usage: update_issue_label <issue_number> <action> <label> [repo]
-# Action: add or remove
-update_issue_label() {
-    local issue_number="$1"
-    local action="$2"
-    local label="$3"
-    local repo="${4:-}"
-
-    if [[ -z "$repo" ]]; then
-        repo=$(get_space_repo)
-    fi
-
-    if ! command -v gh &> /dev/null; then
-        log_warn "gh CLI not available, skipping label update"
-        return 0
-    fi
-
-    case "$action" in
-        add)
-            gh issue edit "$issue_number" --repo "$repo" --add-label "$label" 2>/dev/null && \
-                log_success "Issue #$issue_number label added: $label" || \
-                log_warn "Failed to add label to Issue #$issue_number"
-            ;;
-        remove)
-            gh issue edit "$issue_number" --repo "$repo" --remove-label "$label" 2>/dev/null || true
-            ;;
-        *)
-            log_error "Invalid action: $action (use 'add' or 'remove')"
-            return 1
-            ;;
-    esac
 }
 
 # Update Issue body link table
@@ -199,7 +434,7 @@ update_issue_link() {
         new_body="${current_body}${link_section}"
     fi
 
-    gh issue edit "$issue_number" --repo "$repo" --body "$new_body"
+    gh issue edit "$issue_number" --repo "$repo" --body "$new_body" >/dev/null
 }
 
 # Create Issue
@@ -213,6 +448,7 @@ update_issue_link() {
 #   --scope "<items>"       In-scope items, comma-separated (structured)
 #   --out-of-scope "<items>" Out-of-scope items, comma-separated (structured)
 #   --reference "<path>"    Research document path (structured)
+# Output: created issue URL
 create_issue() {
     local title=""
     local project=""
@@ -283,73 +519,32 @@ create_issue() {
     [[ -z "$project" ]] && { log_error "Missing --project"; return 1; }
     [[ -z "$type" ]] && { log_error "Missing --type"; return 1; }
 
+    local plan_type
+    plan_type=$(normalize_plan_type "$type") || {
+        log_error "Invalid --type: $type"
+        return 1
+    }
+
+    local type_label
+    type_label=$(plan_type_to_issue_label "$plan_type") || {
+        log_error "Unsupported type mapping: $plan_type"
+        return 1
+    }
+
     # Build structured body if any structured params provided
     if [[ -n "$goal" || -n "$background" || -n "$scope" || -n "$out_of_scope" || -n "$reference" ]]; then
-        local NL=$'\n'
-
-        # Goal
-        body+="## Goal${NL}${NL}"
-        if [[ -n "$goal" ]]; then
-            body+="$goal${NL}${NL}"
-        else
-            body+="<一句话描述目标>${NL}${NL}"
-        fi
-
-        # Background
-        body+="## Background${NL}${NL}"
-        if [[ -n "$background" ]]; then
-            body+="$background${NL}${NL}"
-        else
-            body+="<背景和问题描述>${NL}${NL}"
-        fi
-
-        # In Scope
-        body+="## In Scope${NL}${NL}"
-        if [[ -n "$scope" ]]; then
-            IFS=',' read -ra items <<< "$scope"
-            for item in "${items[@]}"; do
-                item=$(echo "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                body+="- [ ] ${item}${NL}"
-            done
-        else
-            body+="- [ ] 范围项 1${NL}- [ ] 范围项 2${NL}"
-        fi
-        body+="${NL}"
-
-        # Out of Scope
-        body+="## Out of Scope${NL}${NL}"
-        if [[ -n "$out_of_scope" ]]; then
-            IFS=',' read -ra items <<< "$out_of_scope"
-            for item in "${items[@]}"; do
-                item=$(echo "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                body+="- ${item}${NL}"
-            done
-        else
-            body+="- 不做的项（原因）${NL}"
-        fi
-        body+="${NL}"
-
-        # Acceptance Criteria (always placeholder for plan to fill)
-        body+="## Acceptance Criteria${NL}${NL}- [ ] 待 plan 细化后填充${NL}${NL}"
-
-        # Related Resources
-        body+="## Related Resources${NL}${NL}"
-        body+="| Resource | Link |${NL}"
-        body+="|----------|------|${NL}"
-        if [[ -n "$reference" ]]; then
-            body+="| Research | $reference |${NL}"
-        fi
-        body+="| Plan | _待关联_ |${NL}"
+        body=$(build_structured_issue_body "$goal" "$background" "$scope" "$out_of_scope" "$reference")
     fi
 
     local repo
     repo=$(get_space_repo)
 
-    # Build labels
-    labels+=("status/planning" "type/$type" "project/$project")
+    ensure_flow_labels_exist "$repo"
+    ensure_label_exists "$type_label" "$repo"
+    ensure_label_exists "project/$project" "$repo"
 
-    log_info "Creating Issue: $title"
-    log_info "Project: $project, Type: $type"
+    # Build labels
+    labels+=("status/planning" "$type_label" "project/$project")
 
     # Build gh command arguments array
     local gh_args=()
@@ -364,15 +559,7 @@ create_issue() {
     local issue_url
     issue_url=$(gh issue create "${gh_args[@]}")
 
-    log_success "Issue created: $issue_url"
-
-    # Extract Issue number
-    local issue_number
-    issue_number=$(echo "$issue_url" | grep -oE '[0-9]+$')
-    echo ""
-    echo "Issue Number: #$issue_number"
-
-    echo "$issue_number"
+    echo "$issue_url"
 }
 
 # Close Issue
@@ -411,19 +598,19 @@ close_issue() {
     log_info "Closing Issue #$issue_number..."
 
     if [[ -n "$comment" ]]; then
-        gh issue comment "$issue_number" --repo "$repo" --body "$comment"
+        gh issue comment "$issue_number" --repo "$repo" --body "$comment" >/dev/null
     fi
 
-    gh issue close "$issue_number" --repo "$repo"
+    gh issue close "$issue_number" --repo "$repo" >/dev/null
 
     # Clean up all flow state labels
     for label in "status/planning" "status/approved" "status/in-progress" "status/in-review"; do
-        gh issue edit "$issue_number" --repo "$repo" --remove-label "$label" 2>/dev/null || true
+        remove_issue_label "$issue_number" "$label" "$repo"
     done
     for label in "pr/opened" "validation/awaiting" "validation/passed"; do
-        gh issue edit "$issue_number" --repo "$repo" --remove-label "$label" 2>/dev/null || true
+        remove_issue_label "$issue_number" "$label" "$repo"
     done
-    gh issue edit "$issue_number" --repo "$repo" --add-label "status/done" 2>/dev/null || true
+    ensure_issue_label "$issue_number" "status/done" "$repo"
 
     log_success "Issue #$issue_number closed"
 }
@@ -547,27 +734,8 @@ EOF
     log_success "PR created: $pr_url"
 
     # Update Issue in space repo
-    gh issue edit "$issue_number" --repo "$space_repo" --add-label "status/in-review" 2>/dev/null || true
+    gh issue edit "$issue_number" --repo "$space_repo" --add-label "status/in-review" >/dev/null 2>/dev/null || true
     update_issue_link "$issue_number" "$space_repo" "pr" "$pr_url"
-}
-
-# Check if gh CLI is available
-# Usage: check_gh_cli
-check_gh_cli() {
-    if ! command -v gh &> /dev/null; then
-        log_error "gh CLI is required but not installed"
-        log_info "Install: brew install gh"
-        return 1
-    fi
-
-    # Check if authenticated
-    if ! gh auth status &> /dev/null; then
-        log_error "gh CLI is not authenticated"
-        log_info "Run: gh auth login"
-        return 1
-    fi
-
-    return 0
 }
 
 # ============================================
@@ -576,32 +744,32 @@ check_gh_cli() {
 
 # Get label properties: color and description
 # Usage: _get_label_props <label_name>
-# Output: "color:description"
+# Output: tab-separated "color<TAB>description"
 _get_label_props() {
     local label_name="$1"
     case "$label_name" in
         # Status labels (main)
-        status/planning)    echo "fbca04:Planning or investigating" ;;
-        status/approved)    echo "0e8a16:Plan approved, ready to execute" ;;
-        status/in-progress) echo "1d76db:Currently in progress" ;;
-        status/done)        echo "5319e7:Completed" ;;
+        status/planning)    printf 'fbca04\tPlanning or investigating\n' ;;
+        status/approved)    printf '0e8a16\tPlan approved, ready to execute\n' ;;
+        status/in-progress) printf '1d76db\tCurrently in progress\n' ;;
+        status/done)        printf '5319e7\tCompleted\n' ;;
         # Validation sub-labels
-        validation/awaiting) echo "fef2c0:Awaiting user validation" ;;
-        validation/passed)   echo "c2e0c6:User validation passed" ;;
+        validation/awaiting) printf 'fef2c0\tAwaiting user validation\n' ;;
+        validation/passed)   printf 'c2e0c6\tUser validation passed\n' ;;
         # PR sub-labels
-        pr/opened)          echo "bfdadc:PR created, awaiting review" ;;
+        pr/opened)          printf 'bfdadc\tPR created, awaiting review\n' ;;
         # Type labels
-        type/feature)       echo "1d76db:New feature" ;;
-        type/bug)           echo "d73a4a:Bug fix" ;;
-        type/refactor)      echo "cfd3d0:Code refactoring" ;;
-        type/docs)          echo "0075ca:Documentation" ;;
-        type/chore)         echo "f9d0c4:Chore/maintenance" ;;
+        type/feature)       printf '1d76db\tNew feature\n' ;;
+        type/bug)           printf 'd73a4a\tBug fix\n' ;;
+        type/refactor)      printf 'cfd3d0\tCode refactoring\n' ;;
+        type/docs)          printf '0075ca\tDocumentation\n' ;;
+        type/chore)         printf 'f9d0c4\tChore/maintenance\n' ;;
         # Project labels
-        project/ontology) echo "5319e7:ontology project" ;;
-        project/wopal-cli)   echo "1d76db:wopal-cli project" ;;
-        project/space)       echo "0e8a16:space-level changes" ;;
+        project/ontology)    printf '5319e7\tontology project\n' ;;
+        project/wopal-cli)   printf '1d76db\twopal-cli project\n' ;;
+        project/space)       printf '0e8a16\tspace-level changes\n' ;;
         # Unknown label - generic color
-        *)                  echo "dddddd:" ;;
+        *)                  printf 'dddddd\t\n' ;;
     esac
 }
 
@@ -635,11 +803,9 @@ ensure_label_exists() {
     # Get label definition
     local label_def
     label_def=$(_get_label_props "$label_name")
-    local color="${label_def%%:*}"
-    local description="${label_def#*:}"
+    local color description
+    IFS=$'\t' read -r color description <<< "$label_def"
 
-    # Only log when creating
-    log_info "Creating label: $label_name"
     gh label create "$label_name" --repo "$repo" --color "$color" --description "$description" 2>/dev/null || true
 
     return 0
@@ -654,15 +820,11 @@ ensure_flow_labels_exist() {
         repo=$(get_space_repo)
     fi
 
-    log_info "Ensuring dev-flow labels exist in $repo..."
-
     local label_names
     label_names=$(_get_flow_label_names)
     for label_name in $label_names; do
         ensure_label_exists "$label_name" "$repo"
     done
-
-    log_success "All dev-flow labels ready"
 }
 
 # Add validation label to issue
@@ -671,41 +833,35 @@ ensure_flow_labels_exist() {
 add_validation_label() {
     local issue_number="$1"
     local label_type="$2"
-    local repo="${3:-}"
+    local repo
+    repo=$(_resolve_repo "${3:-}")
 
-    if [[ -z "$repo" ]]; then
-        repo=$(get_space_repo)
-    fi
+    case "$label_type" in
+        awaiting|passed) ;;
+        *)
+            log_error "Invalid validation label type: $label_type"
+            return 1
+            ;;
+    esac
 
     local label="validation/$label_type"
-    ensure_label_exists "$label" "$repo"
     
     # Remove other validation labels first
-    gh issue edit "$issue_number" --repo "$repo" --remove-label "validation/awaiting" 2>/dev/null || true
-    gh issue edit "$issue_number" --repo "$repo" --remove-label "validation/passed" 2>/dev/null || true
+    remove_issue_label "$issue_number" "validation/awaiting" "$repo"
+    remove_issue_label "$issue_number" "validation/passed" "$repo"
     
     # Add new label
-    gh issue edit "$issue_number" --repo "$repo" --add-label "$label" 2>/dev/null && \
-        log_success "Issue #$issue_number label added: $label" || \
-        log_warn "Failed to add label to Issue #$issue_number"
+    ensure_issue_label "$issue_number" "$label" "$repo"
 }
 
 # Add PR label to issue
 # Usage: add_pr_label <issue_number> [repo]
 add_pr_label() {
     local issue_number="$1"
-    local repo="${2:-}"
+    local repo
+    repo=$(_resolve_repo "${2:-}")
 
-    if [[ -z "$repo" ]]; then
-        repo=$(get_space_repo)
-    fi
-
-    local label="pr/opened"
-    ensure_label_exists "$label" "$repo"
-    
-    gh issue edit "$issue_number" --repo "$repo" --add-label "$label" 2>/dev/null && \
-        log_success "Issue #$issue_number label added: $label" || \
-        log_warn "Failed to add label to Issue #$issue_number"
+    ensure_issue_label "$issue_number" "pr/opened" "$repo"
 }
 
 # ============================================
@@ -780,11 +936,8 @@ is_pr_merged() {
 sync_plan_to_issue() {
     local issue_number="$1"
     local plan_file="$2"
-    local repo="${3:-}"
-    
-    if [[ -z "$repo" ]]; then
-        repo=$(get_space_repo)
-    fi
+    local repo
+    repo=$(_resolve_repo "${3:-}")
     
     if [[ ! -f "$plan_file" ]]; then
         log_warn "Plan file not found: $plan_file"
@@ -798,116 +951,13 @@ sync_plan_to_issue() {
     
     log_info "Syncing approved plan to Issue #$issue_number..."
     
-    # Extract sections from Plan
-    local goal technical_context in_scope out_of_scope acceptance_criteria
-    
-    # Extract Goal
-    goal=$(sed -n '/^## Goal/,/^##[^#]/{ /^## Goal/d; /^##[^#]/d; p; }' "$plan_file" | sed '/^$/d' | head -5)
-    
-    # Extract Technical Context as Background
-    technical_context=$(sed -n '/^## Technical Context/,/^##[^#]/{ /^## Technical Context/d; /^##[^#]/d; p; }' "$plan_file" | sed '/^$/d' | head -20)
-    
-    # Extract In Scope
-    in_scope=$(sed -n '/^## In Scope/,/^##[^#]/{ /^## In Scope/d; /^##[^#]/d; p; }' "$plan_file" | head -15)
-    
-    # Extract Out of Scope
-    out_of_scope=$(sed -n '/^## Out of Scope/,/^##[^#]/{ /^## Out of Scope/d; /^##[^#]/d; p; }' "$plan_file" | head -10)
-    
-    # Extract Acceptance Criteria
-    acceptance_criteria=$(sed -n '/^## Acceptance Criteria/,/^##[^#]/{ /^## Acceptance Criteria/d; /^##[^#]/d; p; }' "$plan_file" | head -15)
-    
-    # Get plan name for Related Resources
     local plan_name
     plan_name=$(basename "$plan_file" .md)
-    
-    # Build normalized Issue body (English headers, Chinese content preserved)
-    local new_body=""
-    
-    # Goal section
-    if [[ -n "$goal" ]] && ! echo "$goal" | grep -qF "一句话描述"; then
-        new_body+="## Goal
-
-$goal
-
-"
-    else
-        new_body+="## Goal
-
-<目标描述>
-
-"
-    fi
-    
-    # Background section (from Technical Context)
-    if [[ -n "$technical_context" ]] && ! echo "$technical_context" | grep -qF "<当前架构"; then
-        new_body+="## Background
-
-$technical_context
-
-"
-    else
-        new_body+="## Background
-
-<背景描述>
-
-"
-    fi
-    
-    # In Scope section
-    if [[ -n "$in_scope" ]] && echo "$in_scope" | grep -qF '-'; then
-        new_body+="## In Scope
-
-$in_scope
-
-"
-    else
-        new_body+="## In Scope
-
-- [ ] 范围项 1
-
-"
-    fi
-    
-    # Out of Scope section
-    if [[ -n "$out_of_scope" ]] && ! echo "$out_of_scope" | grep -qF "<本次不做"; then
-        new_body+="## Out of Scope
-
-$out_of_scope
-
-"
-    else
-        new_body+="## Out of Scope
-
-- 不做的项（原因）
-
-"
-    fi
-    
-    # Acceptance Criteria section
-    if [[ -n "$acceptance_criteria" ]] && echo "$acceptance_criteria" | grep -qF '-'; then
-        new_body+="## Acceptance Criteria
-
-$acceptance_criteria
-
-"
-    else
-        new_body+="## Acceptance Criteria
-
-- [ ] 验收条件 1
-
-"
-    fi
-    
-    # Related Resources section
-    new_body+="## Related Resources
-
-| Resource | Link |
-|----------|------|
-| Plan | [$plan_name](../docs/products/plans/$plan_name.md) |
-"
+    local new_body
+    new_body=$(build_issue_body_from_plan "$plan_file" "$plan_name")
     
     # Update Issue body (replace entire body)
-    gh issue edit "$issue_number" --repo "$repo" --body "$new_body" && \
+    gh issue edit "$issue_number" --repo "$repo" --body "$new_body" >/dev/null && \
         log_success "Issue #$issue_number updated with approved plan" || \
         log_warn "Failed to update Issue #$issue_number"
 }
@@ -918,11 +968,8 @@ $acceptance_criteria
 ensure_issue_labels() {
     local issue_number="$1"
     local plan_file="$2"
-    local repo="${3:-}"
-    
-    if [[ -z "$repo" ]]; then
-        repo=$(get_space_repo)
-    fi
+    local repo
+    repo=$(_resolve_repo "${3:-}")
     
     if [[ ! -f "$plan_file" ]]; then
         log_warn "Plan file not found: $plan_file"
@@ -934,8 +981,6 @@ ensure_issue_labels() {
         return 0
     fi
     
-    log_info "Ensuring Issue #$issue_number labels are correct..."
-    
     # Extract metadata from Plan
     local plan_type plan_project plan_status
     
@@ -943,82 +988,52 @@ ensure_issue_labels() {
     plan_project=$(grep -m1 '^\- \*\*Target Project\*\*:' "$plan_file" | sed 's/^.*: //')
     plan_status=$(grep -m1 '^\- \*\*Status\*\*:' "$plan_file" | sed 's/^.*: //')
     
-    # Get current labels
-    local current_labels
-    current_labels=$(gh issue view "$issue_number" --repo "$repo" --json labels -q '.labels[].name' 2>/dev/null | tr '\n' ' ')
-    
-    # Labels to add
-    local labels_to_add=()
+    local status_label=""
+    local type_label=""
+    local project_label=""
     
     # Status label based on plan status
     case "$plan_status" in
         investigating|planning)
-            labels_to_add+=("status/planning")
+            status_label="status/planning"
             ;;
         approved)
-            labels_to_add+=("status/approved")
+            status_label="status/approved"
             ;;
         executing)
-            labels_to_add+=("status/in-progress")
+            status_label="status/in-progress"
             ;;
         done)
-            labels_to_add+=("status/done")
+            status_label="status/done"
             ;;
     esac
     
     # Type label
     if [[ -n "$plan_type" ]]; then
-        case "$plan_type" in
-            feature|enhance)
-                labels_to_add+=("type/feature")
-                ;;
-            fix)
-                labels_to_add+=("type/bug")
-                ;;
-            refactor)
-                labels_to_add+=("type/refactor")
-                ;;
-            docs)
-                labels_to_add+=("type/docs")
-                ;;
-            test|chore)
-                labels_to_add+=("type/chore")
-                ;;
-        esac
+        local normalized_type
+        normalized_type=$(normalize_plan_type "$plan_type" 2>/dev/null || true)
+        if [[ -n "$normalized_type" ]]; then
+            type_label=$(plan_type_to_issue_label "$normalized_type")
+        fi
     fi
     
     # Project label
     if [[ -n "$plan_project" ]]; then
         case "$plan_project" in
             ontology|wopal-cli|space)
-                labels_to_add+=("project/$plan_project")
+                project_label="project/$plan_project"
                 ;;
         esac
     fi
-    
-    # Ensure labels exist and add them
-    local added_count=0
-    for label in "${labels_to_add[@]}"; do
-        # Ensure label exists
-        ensure_label_exists "$label" "$repo"
-        
-        # Check if already has this label
-        if echo "$current_labels" | grep -qF "$label"; then
-            continue
-        fi
-        
-        # Add label
-        if gh issue edit "$issue_number" --repo "$repo" --add-label "$label" 2>/dev/null; then
-            log_success "Added label: $label"
-            ((added_count++))
-        fi
-    done
-    
-    if [[ $added_count -eq 0 ]]; then
-        log_info "All labels already correct"
-    else
-        log_success "Updated $added_count labels on Issue #$issue_number"
-    fi
+
+    sync_issue_label_group "$issue_number" "$status_label" "$repo" \
+        "status/planning" "status/approved" "status/in-progress" "status/done"
+
+    sync_issue_label_group "$issue_number" "$type_label" "$repo" \
+        "type/feature" "type/bug" "type/refactor" "type/docs" "type/chore"
+
+    sync_issue_label_group "$issue_number" "$project_label" "$repo" \
+        "project/ontology" "project/wopal-cli" "project/space"
 }
 
 # Export functions for use in other scripts

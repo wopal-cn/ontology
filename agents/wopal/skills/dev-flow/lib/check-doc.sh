@@ -33,7 +33,7 @@ _extract_plan_type() {
         type_value=$(echo "$type_line" | sed 's/^\- \*\*Type\*\*: *//' | tr '[:upper:]' '[:lower:]')
         # Validate against known types
         case "$type_value" in
-            feature|fix|enhance|refactor|docs|test)
+            feature|fix|enhance|refactor|docs|chore|test)
                 echo "$type_value"
                 return 0
                 ;;

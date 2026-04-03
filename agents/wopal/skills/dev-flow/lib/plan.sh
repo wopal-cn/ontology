@@ -131,18 +131,18 @@ resolve_plan_file() {
 # Validate Plan naming convention
 # Usage: validate_plan_name <name>
 # Naming: <component>-<type>-<description>.md
-# Types: feature, enhance, fix, refactor, docs, test
+# Types: feature, enhance, fix, refactor, docs, chore, test
 validate_plan_name() {
     local name="$1"
 
-    if [[ ! "$name" =~ ^([a-z0-9-]+)-(feature|enhance|fix|refactor|docs|test)-([a-z0-9-]+)$ ]]; then
+    if [[ ! "$name" =~ ^([a-z0-9-]+)-(feature|enhance|fix|refactor|docs|chore|test)-([a-z0-9-]+)$ ]]; then
         log_error "Invalid plan name: $name"
         echo ""
         echo "Plan naming convention:"
         echo "  <component>-<type>-<description>.md"
         echo ""
         echo "Components: plan-master, fae, wopal-cli, ontology, etc."
-        echo "Types: feature, enhance, fix, refactor, docs, test"
+        echo "Types: feature, enhance, fix, refactor, docs, chore, test"
         echo "  - feature: new functionality"
         echo "  - enhance: improvement/optimization"
         echo "  - fix: bug fix"
@@ -166,7 +166,7 @@ validate_plan_name() {
 #   --global            Space-level plan
 #   --prd <path>        Link to PRD file
 #   --issue <N>         Link to Issue number (can be used multiple times)
-#   --type <type>       Plan type (fix/feature/enhance/refactor/docs/test)
+#   --type <type>       Plan type (fix/feature/enhance/refactor/docs/chore/test)
 #   --deep              Deep analysis mode
 create_plan() {
     local plan_name="$1"
@@ -270,7 +270,7 @@ create_plan() {
         # Extract type from plan name prefix (e.g., "fix-xxx" -> "fix")
         plan_type=$(echo "$plan_name" | sed -E 's/^([a-z]+)-.*/\1/')
         case "$plan_type" in
-            fix|feature|enhance|refactor|docs|test)
+            fix|feature|enhance|refactor|docs|chore|test)
                 ;;
             *)
                 plan_type="feature"  # Default
@@ -292,24 +292,6 @@ create_plan() {
     # macOS sed requires -i '' while Linux uses -i alone
     sed -i '' '/^$/N;/^\n$/D' "$plan_file" 2>/dev/null || \
     sed -i '/^$/N;/^\n$/D' "$plan_file"
-
-    log_success "Created plan: $plan_file"
-
-    if [[ ${#issue_numbers[@]} -gt 0 ]]; then
-        local linked_issues=""
-        for issue in "${issue_numbers[@]}"; do
-            if [[ -n "$linked_issues" ]]; then
-                linked_issues+=", #${issue}"
-            else
-                linked_issues="#${issue}"
-            fi
-        done
-        echo "Linked to Issue: ${linked_issues}"
-    fi
-
-    if [[ "$deep_mode" == true ]]; then
-        echo "Deep mode: continue filling this file using the analysis checklist"
-    fi
 
     echo "$plan_file"
 }
