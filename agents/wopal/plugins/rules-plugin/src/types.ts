@@ -70,6 +70,7 @@ export interface SessionMessage {
     tool?: string
     callID?: string
     content?: string | Array<{ type: string; text?: string }>
+    synthetic?: boolean
   }>
 }
 

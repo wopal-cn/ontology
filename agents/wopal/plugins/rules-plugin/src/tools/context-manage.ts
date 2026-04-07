@@ -76,10 +76,11 @@ export function createContextManageTool(
   return tool({
     description:
       "管理会话上下文状态。子命令: summary（生成摘要 + 更新 session title）, status（查看状态 + 过时判断）。" +
-      "summary 会调用 LLM 分析用户消息并生成不超过 50 字的会话核心意图摘要。" +
+      "summary 是内部基础设施：调用 LLM 生成 ≤50 字核心意图，用于 session title 管理和语义检索增强。不是会话回顾工具。" +
       "status 显示当前摘要内容、title、以及是否过时（超过 20 条新消息则提示重新生成）。" +
       "Distill current session: Step 1 - Preview candidates for review. Step 2 - Confirm to write. " +
-      "Use action='distill' to extract without writing, action='confirm' to write pending candidates, action='cancel' to discard.",
+      "Use action='distill' to extract without writing, action='confirm' to write pending candidates, action='cancel' to discard." +
+      "\n\n⚠️ Agent 禁止主动生成长格式会话摘要——那是 OpenCode compact 的职责，不是本工具的用途。",
     args: {
       action: tool.schema
         .enum(["summary", "status", "distill", "confirm", "cancel"] as const)
@@ -249,11 +250,16 @@ async function handleSummary(
     const userTexts: string[] = [];
     for (const msg of messages) {
       if (msg.info?.role !== "user") continue;
-      if (msg.parts) {
-        for (const part of msg.parts) {
-          if (part.type === "text" && part.text) {
-            userTexts.push(part.text);
-          }
+      if (!msg.parts) continue;
+
+      // Skip compaction messages
+      if (msg.parts.some((p) => p.type === "compaction")) continue;
+
+      for (const part of msg.parts) {
+        if (part.type === "text" && part.text) {
+          // Skip synthetic parts (system notifications injected as user text)
+          if (part.synthetic) continue;
+          userTexts.push(part.text);
         }
       }
     }
@@ -263,10 +269,13 @@ async function handleSummary(
     }
 
     const combinedText = userTexts.join("\n\n---\n\n");
+    const truncatedText = combinedText.length > 3000
+      ? combinedText.slice(-3000)
+      : combinedText;
     const prompt = `根据以下用户消息，用一句话概括本次会话的核心意图，不超过 50 字。
 
 用户消息：
-${combinedText.slice(0, 3000)}
+${truncatedText}
 
 要求：
 - 用简洁的一句话描述用户想要做什么
