@@ -57,6 +57,9 @@ cmd_validate() {
     # Add validation/passed label
     add_validation_label "$issue_number" "passed" "$repo" >/dev/null 2>&1
 
+    # Sync Plan's checked AC to Issue body
+    sync_plan_to_issue "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
+
     echo ""
     log_success "Validation passed"
     echo ""
@@ -132,6 +135,9 @@ cmd_archive() {
         echo "Or wait for PR to be merged."
         exit 1
     fi
+
+    # Sync Plan's checked AC to Issue body before archiving
+    sync_plan_to_issue "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
 
     # Update status to done
     set_plan_status "$plan_file" "done" >/dev/null 2>&1
