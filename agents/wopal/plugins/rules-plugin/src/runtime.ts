@@ -261,7 +261,7 @@ export class OpenCodeRulesRuntime {
       const client = this.client as Record<string, unknown>;
       const sessionApi = client?.session as Record<string, unknown> | undefined;
       if (sessionApi?.get && typeof sessionApi.get === "function") {
-        const result = await (sessionApi.get as Function)({ sessionID });
+        const result = await (sessionApi.get as Function)({ path: { id: sessionID } });
         const data = (result as Record<string, unknown>)?.data as
           | Record<string, unknown>
           | undefined;
@@ -479,6 +479,14 @@ export class OpenCodeRulesRuntime {
       s.needsMemoryInjection = false;
     });
 
+    // Skip child sessions — check early to avoid wasted retrieval work
+    const isChild = await this.isChildSession(sessionID);
+    if (isChild) {
+      this.clearInjectedMemory(sessionID);
+      this.injectDebugLog("Skipped memory injection for child session");
+      return;
+    }
+
     // Skip entirely if memory store is empty
     try {
       if (await this.memoryInjector.isEmpty()) {
@@ -515,14 +523,6 @@ export class OpenCodeRulesRuntime {
     if (!enrichedQuery) {
       this.clearInjectedMemory(sessionID);
       this.injectDebugLog(`Skipped memory injection for short/command input: "${userQuery}"`);
-      return;
-    }
-
-    // Skip child sessions
-    const isChildSession = await this.isChildSession(sessionID);
-    if (isChildSession) {
-      this.clearInjectedMemory(sessionID);
-      this.injectDebugLog("Skipped memory injection for child session");
       return;
     }
 

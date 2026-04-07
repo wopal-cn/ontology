@@ -94,4 +94,46 @@ describe('OpenCodeRulesRuntime memory injection state', () => {
     expect(result.system).toEqual(['Base prompt.']);
     expect(sessionStore.get('ses_3')?.injectedRawText).toBeUndefined();
   });
+
+  it('skips memory injection for child sessions (task tool)', async () => {
+    const formatForSystem = vi.fn().mockResolvedValue('<memory>');
+    const { runtime, sessionStore } = createRuntime({
+      formatForSystem,
+      isChildSession: vi.fn().mockResolvedValue(true),
+    });
+
+    sessionStore.upsert('ses_child', (state) => {
+      state.lastUserPrompt = 'do something';
+      state.needsMemoryInjection = true;
+    });
+
+    const result = await (runtime as any).onSystemTransform(
+      { sessionID: 'ses_child', model: { providerID: 'test', modelID: 'test' } },
+      { system: ['Base prompt.'] },
+    );
+
+    expect(result.system).toEqual(['Base prompt.']);
+    expect(formatForSystem).not.toHaveBeenCalled();
+    expect(sessionStore.get('ses_child')?.injectedRawText).toBeUndefined();
+  });
+
+  it('does not call buildEnrichedQuery for child sessions', async () => {
+    const { runtime, sessionStore } = createRuntime({
+      isChildSession: vi.fn().mockResolvedValue(true),
+    });
+
+    const buildEnrichedQuery = vi.spyOn(runtime as any, 'buildEnrichedQuery');
+
+    sessionStore.upsert('ses_child2', (state) => {
+      state.lastUserPrompt = 'hello';
+      state.needsMemoryInjection = true;
+    });
+
+    await (runtime as any).onSystemTransform(
+      { sessionID: 'ses_child2', model: { providerID: 'test', modelID: 'test' } },
+      { system: ['Base prompt.'] },
+    );
+
+    expect(buildEnrichedQuery).not.toHaveBeenCalled();
+  });
 });
