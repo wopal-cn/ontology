@@ -35,6 +35,8 @@ export interface WopalTask {
   // Idle diagnostic fields
   waitingReason?: string
   lastAssistantMessage?: string
+  // Question tool pending request ID (for resolving question Deferred)
+  pendingQuestionID?: string
   // Stuck detection
   stuckNotified?: boolean
   stuckNotifiedAt?: Date

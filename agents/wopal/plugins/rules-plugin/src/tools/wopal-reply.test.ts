@@ -11,12 +11,17 @@ function createMockClient() {
     session: {
       promptAsync: vi.fn().mockResolvedValue(undefined),
     },
+    question: {
+      reply: vi.fn().mockResolvedValue(undefined),
+    },
   }
 }
 
 function createMockTaskManager(
   task?: WopalTask,
   client?: ReturnType<typeof createMockClient>,
+  v2Client?: { question?: { reply?: ReturnType<typeof vi.fn> } },
+  serverUrl?: URL,
 ) {
   const mockClient = client ?? createMockClient()
   return {
@@ -24,6 +29,8 @@ function createMockTaskManager(
       task && task.id === id && task.parentSessionID === parentID ? task : undefined,
     ),
     getClient: vi.fn(() => mockClient),
+    getV2Client: vi.fn(() => v2Client),
+    getServerUrl: vi.fn(() => serverUrl),
   }
 }
 
@@ -51,9 +58,7 @@ describe("wopal_reply", () => {
 
     const result = await execute({ task_id: "wopal-task-456", message: "test" }, {})
 
-    expect(result).toEqual({
-      error: "Current session ID is unavailable; cannot reply to task.",
-    })
+    expect(result).toBe("Error: Current session ID is unavailable; cannot reply to task.")
   })
 
   it("task_id not found: returns error", async () => {
@@ -65,20 +70,7 @@ describe("wopal_reply", () => {
       { sessionID: parentSessionID },
     )
 
-    expect(result).toEqual({ error: "Task not found or not owned by this session" })
-  })
-
-  it("task not owned by current parent session: returns error", async () => {
-    const task = createWaitingTask()
-    const mockManager = createMockTaskManager(task)
-    const execute = getExecute(createWopalReplyTool(mockManager as never))
-
-    const result = await execute(
-      { task_id: task.id, message: "test" },
-      { sessionID: "different-parent" },
-    )
-
-    expect(result).toEqual({ error: "Task not found or not owned by this session" })
+    expect(result).toBe("Error: Task not found or not owned by this session")
   })
 
   it("task status is completed (not waiting): returns error", async () => {
@@ -91,9 +83,7 @@ describe("wopal_reply", () => {
       { sessionID: parentSessionID },
     )
 
-    expect(result).toEqual({
-      error: "Task is completed, not waiting. Only waiting tasks can receive replies.",
-    })
+    expect(result).toBe("Error: Task is completed, not waiting. Only waiting tasks can receive replies.")
   })
 
   it("task status is running (not waiting): returns error", async () => {
@@ -106,9 +96,7 @@ describe("wopal_reply", () => {
       { sessionID: parentSessionID },
     )
 
-    expect(result).toEqual({
-      error: "Task is running, not waiting. Only waiting tasks can receive replies.",
-    })
+    expect(result).toBe("Error: Task is running, not waiting. Only waiting tasks can receive replies.")
   })
 
   it("task status is waiting with valid message: calls promptAsync, status becomes running, returns success", async () => {
@@ -122,10 +110,7 @@ describe("wopal_reply", () => {
       { sessionID: parentSessionID },
     )
 
-    expect(result).toEqual({
-      success: true,
-      message: `Reply sent to task ${task.id}. The background task will continue execution.`,
-    })
+    expect(result).toBe(`Reply sent to task ${task.id}. The background task will continue execution.`)
     expect(mockClient.session.promptAsync).toHaveBeenCalledWith(
       expect.objectContaining({
         path: { id: task.sessionID },
@@ -133,6 +118,67 @@ describe("wopal_reply", () => {
     )
     expect(task.status).toBe("running")
     expect(task.waitingReason).toBeUndefined()
+  })
+
+  it("task with pendingQuestionID: calls question.reply to resolve Deferred", async () => {
+    const mockClient = createMockClient()
+    const mockV2Client = {
+      question: {
+        reply: vi.fn().mockResolvedValue(undefined),
+      },
+    }
+    const task = createWaitingTask({ pendingQuestionID: "question-req-123" })
+    const mockManager = createMockTaskManager(task, mockClient, mockV2Client)
+    const execute = getExecute(createWopalReplyTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: task.id, message: "ok" },
+      { sessionID: parentSessionID },
+    )
+
+    expect(result).toBe(`Reply sent to task ${task.id}. The background task will continue execution.`)
+    expect(mockV2Client.question.reply).toHaveBeenCalledWith({
+      requestID: "question-req-123",
+      answers: [["ok"]],
+    })
+    expect(mockClient.question.reply).not.toHaveBeenCalled()
+    expect(mockClient.session.promptAsync).not.toHaveBeenCalled()
+    expect(task.status).toBe("running")
+    expect(task.pendingQuestionID).toBeUndefined()
+  })
+
+  it("task with pendingQuestionID but no v2 client: returns error", async () => {
+    const mockClient = createMockClient()
+    mockClient.question = {} as never
+    const task = createWaitingTask({ pendingQuestionID: "question-req-456" })
+    const mockManager = createMockTaskManager(task, mockClient)
+    const execute = getExecute(createWopalReplyTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: task.id, message: "ok" },
+      { sessionID: parentSessionID },
+    )
+
+    expect(result).toBe("Failed to send reply: question.reply is unavailable")
+    expect(task.status).toBe("waiting")
+    expect(task.pendingQuestionID).toBe("question-req-456")
+  })
+
+  it("task with pendingQuestionID but no SDK or serverUrl: returns error", async () => {
+    const mockClient = createMockClient()
+    mockClient.question = {} as never
+    const task = createWaitingTask({ pendingQuestionID: "question-req-789" })
+    const mockManager = createMockTaskManager(task, mockClient)
+    const execute = getExecute(createWopalReplyTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: task.id, message: "ok" },
+      { sessionID: parentSessionID },
+    )
+
+    expect(result).toBe("Failed to send reply: question.reply is unavailable")
+    expect(task.status).toBe("waiting")
+    expect(task.pendingQuestionID).toBe("question-req-789")
   })
 
   it("task without sessionID: returns error", async () => {
@@ -145,7 +191,7 @@ describe("wopal_reply", () => {
       { sessionID: parentSessionID },
     )
 
-    expect(result).toEqual({ error: "Task has no active session" })
+    expect(result).toBe("Error: Task has no active session")
   })
 
   it("promptAsync fails: returns error message, status remains waiting", async () => {
@@ -160,7 +206,7 @@ describe("wopal_reply", () => {
       { sessionID: parentSessionID },
     )
 
-    expect(result).toEqual({ error: "Failed to send reply: Network error" })
+    expect(result).toBe("Failed to send reply: Network error")
     expect(task.status).toBe("waiting")
   })
 
@@ -177,6 +223,6 @@ describe("wopal_reply", () => {
       { sessionID: parentSessionID },
     )
 
-    expect(result).toEqual({ error: "session.promptAsync is unavailable" })
+    expect(result).toBe("Error: session.promptAsync is unavailable")
   })
 })

@@ -4,75 +4,20 @@ import { createDebugLog } from "./debug.js"
 const debugLog = createDebugLog("[wopal-task]", "task")
 
 export interface IdleDiagnostic {
-  verdict: "completed" | "waiting" | "error"
+  verdict: "completed" | "error"
   reason: string
   lastMessage?: string
 }
 
 /**
- * Detect if text contains question patterns.
- * Matches both Chinese and English question patterns.
- */
-export function detectQuestionPattern(text: string): boolean {
-  if (!text || text.trim().length === 0) {
-    return false
-  }
-
-  const trimmedText = text.trim()
-
-  // Check for question marks at the end (excluding URL ?)
-  // Find ? or ? that are not part of a URL
-  const questionMarkMatch = /[？?]/
-  const match = trimmedText.match(questionMarkMatch)
-  if (match && match.index !== undefined) {
-    // Check if the ? is part of a URL
-    const beforeQuestion = trimmedText.slice(0, match.index)
-    const isUrlQuestion = /https?:\/\/[^?\s]*$/.test(beforeQuestion) || /\/[^?\s]*$/.test(beforeQuestion)
-    if (!isUrlQuestion) {
-      return true
-    }
-  }
-
-  // Chinese question keywords
-  const chinesePatterns = [
-    /应该/,
-    /如何/,
-    /是否/,
-    /要不要/,
-    /需要.*吗/,
-    /请确认/,
-    /请选择/,
-  ]
-
-  for (const pattern of chinesePatterns) {
-    if (pattern.test(trimmedText)) {
-      return true
-    }
-  }
-
-  // Numbered option pattern: 1) xxx\n2) xxx or 1. xxx\n2. xxx
-  const numberedOptionPattern = /\d[).]\s*.+\n\s*\d[).]\s*.+/
-  if (numberedOptionPattern.test(trimmedText)) {
-    return true
-  }
-
-  // Letter option pattern: A. xxx\nB. xxx
-  const letterOptionPattern = /[A-Z][).]\s*.+\n\s*[A-Z][).]\s*.+/
-  if (letterOptionPattern.test(trimmedText)) {
-    return true
-  }
-
-  return false
-}
-
-/**
  * Extract text content from an assistant message.
+ * Excludes reasoning parts and synthetic text parts.
  */
 function extractAssistantText(message: SessionMessage): string {
   const texts: string[] = []
 
   for (const part of message.parts ?? []) {
-    if ((part.type === "text" || part.type === "reasoning") && part.text) {
+    if (part.type === "text" && part.text && !(part as any).synthetic) {
       texts.push(part.text)
     }
   }
@@ -102,6 +47,11 @@ function getFinishReason(message: SessionMessage): string | undefined {
 /**
  * Diagnose the idle state based on session messages.
  *
+ * After removing detectQuestionPattern, this function always returns "completed"
+ * for finish=stop with text content. The parent AI is responsible for judging
+ * whether the sub-agent's output contains a question and using wopal_reply if needed.
+ * Real question detection is handled by question-relay.ts via the question.asked event.
+ *
  * @param messages - Session messages to analyze
  * @returns Diagnostic result with verdict, reason, and optional last message
  */
@@ -110,56 +60,40 @@ export function diagnoseIdle(messages: SessionMessage[]): IdleDiagnostic {
 
   // 1. Empty messages or no assistant message
   if (!messages || messages.length === 0) {
-    debugLog(`[diagnoseIdle] no messages, verdict: error, reason: no_response`)
     return { verdict: "error", reason: "no_response" }
   }
 
   const lastAssistant = getLastAssistantMessage(messages)
   if (!lastAssistant) {
-    debugLog(`[diagnoseIdle] no assistant message, verdict: error, reason: no_response`)
     return { verdict: "error", reason: "no_response" }
   }
 
   const finishReason = getFinishReason(lastAssistant)
   const text = extractAssistantText(lastAssistant)
 
-  debugLog(`[diagnoseIdle] finish_reason: ${finishReason ?? "undefined"}, text length: ${text.length}`)
-
   // 2. Analyze based on finish_reason
   if (finishReason === "stop") {
-    const hasQuestion = detectQuestionPattern(text)
-    if (hasQuestion) {
-      debugLog(`[diagnoseIdle] stop + question, verdict: waiting, reason: question_detected`)
-      return { verdict: "waiting", reason: "question_detected", lastMessage: text }
-    }
-    debugLog(`[diagnoseIdle] stop + no question, verdict: completed, reason: normal_completion`)
+    debugLog(`[diagnoseIdle] verdict=completed finish=stop text_length=${text.length}`)
     return { verdict: "completed", reason: "normal_completion", lastMessage: text }
   }
 
   if (finishReason === "length") {
-    debugLog(`[diagnoseIdle] finish_reason: length, verdict: error, reason: finish_length`)
+    debugLog(`[diagnoseIdle] verdict=error finish=length`)
     return { verdict: "error", reason: "finish_length" }
   }
 
   if (finishReason === "content_filter") {
-    debugLog(`[diagnoseIdle] finish_reason: content_filter, verdict: error, reason: finish_content_filter`)
+    debugLog(`[diagnoseIdle] verdict=error finish=content_filter`)
     return { verdict: "error", reason: "finish_content_filter" }
   }
 
-  // No finish_reason
+  // No finish_reason but has text → completed
   if (text.length > 0) {
-    const hasQuestion = detectQuestionPattern(text)
-    if (!hasQuestion) {
-      debugLog(`[diagnoseIdle] no finish_reason + text + no question, verdict: completed, reason: normal_completion`)
-      return { verdict: "completed", reason: "normal_completion", lastMessage: text }
-    }
-    // Has question but no finish_reason - still waiting
-    debugLog(`[diagnoseIdle] no finish_reason + question, verdict: waiting, reason: question_detected`)
-    return { verdict: "waiting", reason: "question_detected", lastMessage: text }
+    debugLog(`[diagnoseIdle] verdict=completed finish=undefined text_length=${text.length}`)
+    return { verdict: "completed", reason: "normal_completion", lastMessage: text }
   }
 
-  // No finish_reason and no text
-  debugLog(`[diagnoseIdle] no finish_reason + no text, verdict: error, reason: no_response`)
+  debugLog(`[diagnoseIdle] verdict=error finish=undefined text_length=0`)
   return { verdict: "error", reason: "no_response" }
 }
 
@@ -184,7 +118,6 @@ export function buildContextSummary(messages: SessionMessage[], maxLength = 800)
   }
 
   if (toolCalls.length === 0) {
-    // No tool calls, try to extract last assistant text
     const lastAssistant = getLastAssistantMessage(messages)
     if (lastAssistant) {
       const text = extractAssistantText(lastAssistant)
@@ -196,7 +129,6 @@ export function buildContextSummary(messages: SessionMessage[], maxLength = 800)
     return ""
   }
 
-  // Format tool calls
   const lines: string[] = []
   for (let i = 0; i < toolCalls.length; i++) {
     const tc = toolCalls[i]

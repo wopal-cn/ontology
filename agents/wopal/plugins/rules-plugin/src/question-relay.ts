@@ -5,9 +5,11 @@ const defaultDebugLog = createDebugLog("[wopal-task]", "task")
 
 export interface QuestionAskedEvent {
   sessionID: string
+  requestID?: string
   question: {
     header?: string
-    options?: Array<{ label: string; value: string }>
+    question?: string
+    options?: Array<{ label: string; description: string }>
     [key: string]: unknown
   }
 }
@@ -29,7 +31,7 @@ export async function handleQuestionAsked(
 ): Promise<boolean> {
   const log = debugLog ?? defaultDebugLog
 
-  const { sessionID, question } = event
+  const { sessionID, requestID, question } = event
 
   // 检查是否是子会话（任务）
   const task = taskManager.findBySession(sessionID)
@@ -39,7 +41,16 @@ export async function handleQuestionAsked(
     return false
   }
 
-  // 子会话，向父代理发送通知
+  // 子会话，设置 waiting 状态（让 wopal_reply 能找到此任务）
+  if (task.status === "running") {
+    task.status = "waiting"
+    task.waitingReason = "question_tool"
+    if (requestID) {
+      task.pendingQuestionID = requestID
+    }
+    log(`[question] set task ${task.id} to waiting (question_tool), requestID=${requestID ?? "N/A"}`)
+  }
+
   log(`[question] child session, relaying to parent: taskID=${task.id}`)
 
   try {
@@ -68,10 +79,11 @@ async function notifyParentQuestion(
 
   // 构造通知消息
   const header = question.header ?? "Question from background task"
+  const body = question.question ?? header
   let optionsText = ""
   if (question.options && question.options.length > 0) {
     const formattedOptions = question.options
-      .map((opt, i) => `  ${i + 1}. ${opt.label} (${opt.value})`)
+      .map((opt, i) => `  ${i + 1}. ${opt.label} — ${opt.description}`)
       .join("\n")
     optionsText = `\n**Options:**\n${formattedOptions}`
   }
@@ -80,7 +92,7 @@ async function notifyParentQuestion(
 [WOPAL TASK QUESTION]
 **Task ID:** \`${taskId}\`
 **Description:** ${task.description}
-**Question:** ${header}${optionsText}
+**Question:** ${body}${optionsText}
 
 This question requires your attention. The background task is waiting.
 </system-reminder>`

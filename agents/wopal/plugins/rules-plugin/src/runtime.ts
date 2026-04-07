@@ -806,8 +806,8 @@ export class OpenCodeRulesRuntime {
     const eventType = input.event.type
     const props = input.event.properties
 
-    const NOISY_EVENTS = new Set(["message.part.delta", "message.part.updated"])
-    if (!NOISY_EVENTS.has(eventType)) {
+    const ACTIONABLE_EVENTS = new Set(["session.idle"])
+    if (ACTIONABLE_EVENTS.has(eventType)) {
       this.taskDebugLog(`[onEvent] received event: ${eventType}`)
     }
 
@@ -908,14 +908,19 @@ export class OpenCodeRulesRuntime {
     // 问题请求事件
     if (eventType === "question.asked") {
       const sessionID = props?.sessionID as string | undefined
+      const requestID = props?.id as string | undefined
 
-      if (sessionID && props?.question) {
+      if (sessionID && props?.questions) {
         const { handleQuestionAsked } = await import("./question-relay.js")
-        await handleQuestionAsked(
-          { sessionID, question: props.question as { header?: string; options?: Array<{ label: string; value: string }> } },
-          this.taskManager!,
-          this.taskDebugLog
-        )
+        const questions = props.questions as Array<{ header?: string; question?: string; options?: Array<{ label: string; description: string }> }>
+        const firstQuestion = questions[0]
+        if (firstQuestion) {
+          await handleQuestionAsked(
+            { sessionID, requestID, question: firstQuestion },
+            this.taskManager!,
+            this.taskDebugLog
+          )
+        }
       }
     }
   }

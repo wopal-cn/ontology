@@ -60,6 +60,9 @@ export class SimpleTaskManager {
   private sessionToTask = new Map<string, string>()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private client: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private v2Client: any
+  private serverUrl?: URL
   private directory: string
   private debugLog: DebugLog
   private timeoutTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -72,11 +75,16 @@ export class SimpleTaskManager {
   constructor(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     client: any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    v2Client: any,
     directory: string,
+    serverUrl?: URL,
     debugLog?: DebugLog,
   ) {
     this.client = client
+    this.v2Client = v2Client
     this.directory = directory
+    this.serverUrl = serverUrl
     this.debugLog = debugLog ?? defaultManagerLog
 
     // Setup automatic cleanup interval
@@ -127,6 +135,15 @@ export class SimpleTaskManager {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getClient(): any {
     return this.client
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getV2Client(): any {
+    return this.v2Client
+  }
+
+  getServerUrl(): URL | undefined {
+    return this.serverUrl
   }
 
   /** Dispose of all timers and cleanup resources */

@@ -3,9 +3,9 @@
 **必须输出 JSON 格式。禁止输出 `<system-reminder>` 或其他格式。**
 
 输出模板：
-{"title": "简短标题（不超过20字）", "memories": [{"category": "knowledge", "body": "标题\n\n核心内容...", "concepts": ["tag"]}]}
+{"memories": [{"category": "knowledge", "body": "标题\n\n核心内容...", "concepts": ["tag"]}]}
 
-如果无记忆可提取，输出：{"title": "无内容", "memories": []}
+如果无记忆可提取，输出：{"memories": []}
 
 ---
 
@@ -129,11 +129,12 @@
 
 ## 核心原则
 
-1. **直接描述**：第一行直接写核心内容，不要 `## [类别]:` 前缀（类别由 category 字段标识）
-2. **格式简洁**：用普通文本，不要 `**粗体标签**：` 格式，需要标注时用 `标签：` 即可
-3. **背景必要**：必须包含"为什么这很重要"或"在什么场景下有用"
-4. **内容完整**：保留必要的代码/路径/命令，不要过度精简
-5. **不截断**：保持完整，但去除冗余描述
+1. **结论前置**：第一行必须是结论/规则/核心内容（"是什么"、"必须怎么做"），背景和细节放后面。embedding 第一句语义权重最高，首行直接决定检索命中率
+2. **直接描述**：不要 `## [类别]:` 前缀（类别由 category 字段标识）
+3. **格式简洁**：用普通文本，不要 `**粗体标签**：` 格式，需要标注时用 `标签：` 即可
+4. **背景必要**：包含"为什么这很重要"或"在什么场景下有用"，但放在结论之后
+5. **内容完整**：保留必要的代码/路径/命令，不要过度精简
+6. **不截断**：保持完整，但去除冗余描述
 
 ## 格式模板
 
@@ -150,7 +151,7 @@
 {"category": "fact", "body": "<发现/决策>\n\n<结论和细节>", "concepts": ["how-it-works"]}
 
 ### 避坑方法
-{"category": "gotcha", "body": "<问题描述>\n\n问题：...\n方案：...\n适用：...", "concepts": ["gotcha", "problem-solution"]}
+{"category": "gotcha", "body": "<结论/正确做法>\n\n问题：...\n方案：...\n适用：...", "concepts": ["gotcha", "problem-solution"]}
 
 ### 实践经验
 {"category": "experience", "body": "<流程/模式描述>\n\n流程：...\n原因：...", "concepts": ["pattern"]}
@@ -165,7 +166,7 @@
 用户说："我之前用 tail -f 监控日志，界面卡死了，以后都用 tail -n 30"
 
 输出：
-{"memories": [{"category": "gotcha", "body": "tail -f 导致界面卡死\n\n问题：tail -f 监控日志会导致 OpenCode 界面挂起\n方案：使用 tail -n 30 代替，或定期读取文件内容\n适用：OpenCode 插件开发调试时监控日志", "concepts": ["gotcha"]}]}
+{"memories": [{"category": "gotcha", "body": "不要用 tail -f 监控日志，用 tail -n 30 代替\n\n问题：tail -f 监控日志会导致 OpenCode 界面挂起\n方案：使用 tail -n 30 代替，或定期读取文件内容\n适用：OpenCode 插件开发调试时监控日志", "concepts": ["gotcha"]}]}
 
 用户说："以后代码提交前先让我评审"
 

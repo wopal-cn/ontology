@@ -20,7 +20,7 @@ export function checkStuckTasks(args: {
   const results: StuckResult[] = []
 
   for (const task of tasks) {
-    if (task.status !== "running") continue
+    if (task.status !== "running" && task.status !== "waiting") continue
     if (!task.startedAt || !task.sessionID) continue
     if (task.stuckNotified) continue
 

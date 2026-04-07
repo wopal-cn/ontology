@@ -33,7 +33,7 @@ export function checkAndInterruptStaleTasks(args: {
   const now = Date.now()
 
   for (const task of tasks) {
-    if (task.status !== "running") continue
+    if (task.status !== "running" && task.status !== "waiting") continue
     if (!task.startedAt || !task.sessionID) continue
 
     const sessionStatus = sessionStatuses?.[task.sessionID]?.type

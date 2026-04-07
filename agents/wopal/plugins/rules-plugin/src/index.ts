@@ -6,6 +6,7 @@
  */
 
 import type { PluginInput, Hooks } from "@opencode-ai/plugin";
+import { createOpencodeClient as createV2OpencodeClient } from "@opencode-ai/sdk/v2";
 import { discoverRuleFiles } from "./utils.js";
 import { OpenCodeRulesRuntime } from "./runtime.js";
 import { sessionStore } from "./session-store-instance.js";
@@ -91,9 +92,22 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
   debugLog(`Discovered ${ruleFiles.length} rule file(s)`);
     debugLog(`Tools registered: wopal_task, wopal_output, wopal_cancel, wopal_reply, memory_manage, context_manage`);
 
+  // Extract the internal fetch from v1 client (which uses Server.Default().fetch
+  // to route requests to the in-process Hono server, bypassing real HTTP).
+  // We must pass it to v2 client so question.reply reaches the Question service.
+  const internalFetch = (pluginInput.client as any)?._client?.getConfig?.()?.fetch ?? globalThis.fetch;
+
+  const v2Client = createV2OpencodeClient({
+    baseUrl: pluginInput.serverUrl.toString(),
+    directory: pluginInput.directory,
+    fetch: internalFetch,
+  });
+
   const taskManager = new SimpleTaskManager(
     pluginInput.client,
+    v2Client,
     pluginInput.directory,
+    pluginInput.serverUrl,
   );
 
   const memory = await ensureMemorySystem(pluginInput.client, taskManager);
