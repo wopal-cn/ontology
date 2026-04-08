@@ -144,7 +144,7 @@ find_plan_by_issue() {
 # Extract slug from plan name (last segment)
 extract_slug() {
     local plan_name="$1"
-    echo "$plan_name" | sed -E 's/.*-[a-z]+-([a-z0-9-]+)$/\1/'
+    echo "$plan_name" | sed -E 's/^[0-9]+-[a-z]+-([a-z0-9-]+)$/\1/'
 }
 
 # Get plan name from file path

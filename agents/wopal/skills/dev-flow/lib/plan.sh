@@ -135,29 +135,28 @@ resolve_plan_file() {
 
 # Validate Plan naming convention
 # Usage: validate_plan_name <name>
-# Naming: <component>-<type>-<description>.md
+# Naming: <issue_number>-<type>-<slug>.md
 # Types: feature, enhance, fix, refactor, docs, chore, test
 validate_plan_name() {
     local name="$1"
 
-    if [[ ! "$name" =~ ^([a-z0-9-]+)-(feature|enhance|fix|refactor|docs|chore|test)-([a-z0-9-]+)$ ]]; then
+    if [[ ! "$name" =~ ^([0-9]+)-(feature|enhance|fix|refactor|docs|chore|test)-([a-z0-9-]+)$ ]]; then
         log_error "Invalid plan name: $name"
         echo ""
         echo "Plan naming convention:"
-        echo "  <component>-<type>-<description>.md"
+        echo "  <issue_number>-<type>-<slug>.md"
         echo ""
-        echo "Components: plan-master, fae, wopal-cli, ontology, etc."
         echo "Types: feature, enhance, fix, refactor, docs, chore, test"
         echo "  - feature: new functionality"
         echo "  - enhance: improvement/optimization"
         echo "  - fix: bug fix"
         echo "  - refactor: code refactoring"
-        echo "Description: short lowercase with hyphens"
+        echo "Slug: short lowercase with hyphens"
         echo ""
         echo "Examples:"
-        echo "  fae-fix-task-wait-bug"
-        echo "  wopal-cli-feature-session-messages"
-        echo "  plan-master-enhance-validate-phase"
+        echo "  42-fix-task-wait-bug"
+        echo "  15-feature-session-messages"
+        echo "  7-enhance-validate-phase"
         return 1
     fi
 
@@ -273,7 +272,7 @@ create_plan() {
     # Build Type line (extract from plan_name if not provided)
     if [[ -z "$plan_type" ]]; then
         # Extract type from plan name prefix (e.g., "fix-xxx" -> "fix")
-        plan_type=$(echo "$plan_name" | sed -E 's/^([a-z]+)-.*/\1/')
+        plan_type=$(echo "$plan_name" | sed -E 's/^[0-9]+-([a-z]+)-.*/\1/')
         case "$plan_type" in
             fix|feature|enhance|refactor|docs|chore|test)
                 ;;
@@ -403,7 +402,9 @@ archive_plan() {
 
     local plan_name
     plan_name=$(basename "$plan_file")
-    local archived_file="$done_dir/$plan_name"
+    local archive_date
+    archive_date=$(date '+%Y%m%d')
+    local archived_file="$done_dir/${archive_date}-${plan_name}"
     mv "$plan_file" "$archived_file"
 
     log_success "Plan archived: $archived_file"
@@ -509,10 +510,14 @@ get_plan_status_value() {
 # Acceptance Criteria Validation
 # ============================================
 
-# Check if all Acceptance Criteria are completed
+# Check if all Acceptance Criteria are completed (Agent Verification only)
 # Usage: check_acceptance_criteria <plan_file>
 # Returns: 0 if all completed or no criteria found, 1 if incomplete
 # Output: incomplete items (if any)
+#
+# Behavior:
+#   - If `### Agent Verification` sub-section exists: only check that section
+#   - If no sub-section: fallback to checking entire `## Acceptance Criteria` (backward compat)
 check_acceptance_criteria() {
     local plan_file="$1"
     
@@ -521,13 +526,26 @@ check_acceptance_criteria() {
         return 1
     fi
     
-    # Extract Acceptance Criteria section
+    # First, try to extract `### Agent Verification` sub-section
+    local agent_ac_section
+    agent_ac_section=$(awk '/^### Agent Verification/{found=1;next} /^###{1,2}[^#]/{found=0} found{print}' "$plan_file")
+    
     local ac_section
-    ac_section=$(sed -n '/^## Acceptance Criteria/,/^##[^#]/{ /^## Acceptance Criteria/d; /^##[^#]/d; p; }' "$plan_file")
+    local section_name
+    
+    # Check if `### Agent Verification` exists and has content
+    if [[ -n "$agent_ac_section" ]] && echo "$agent_ac_section" | grep -qE '^\s*-\s+\['; then
+        ac_section="$agent_ac_section"
+        section_name="Agent Verification"
+    else
+        # Fallback: extract entire Acceptance Criteria section (backward compat)
+        ac_section=$(sed -n '/^## Acceptance Criteria/,/^##[^#]/{ /^## Acceptance Criteria/d; /^##[^#]/d; p; }' "$plan_file")
+        section_name="Acceptance Criteria"
+    fi
     
     # If no section or empty, pass
     if [[ -z "$ac_section" ]] || ! echo "$ac_section" | grep -q '\-'; then
-        log_info "No Acceptance Criteria found in plan"
+        log_info "No $section_name found in plan"
         return 0
     fi
     
@@ -536,7 +554,7 @@ check_acceptance_criteria() {
     unchecked=$(echo "$ac_section" | grep -E '^\s*-\s+\[\s*\]' || true)
     
     if [[ -n "$unchecked" ]]; then
-        log_error "Acceptance Criteria not completed:"
+        log_error "$section_name not completed:"
         echo ""
         echo "$unchecked" | while read -r line; do
             echo "  $line"
@@ -550,13 +568,13 @@ check_acceptance_criteria() {
     checked=$(echo "$ac_section" | grep -E '^\s*-\s+\[x\]' || true)
     
     if [[ -z "$checked" ]]; then
-        log_warn "No Acceptance Criteria items found (checked or unchecked)"
+        log_warn "No $section_name items found (checked or unchecked)"
         return 0
     fi
     
     local checked_count
     checked_count=$(echo "$checked" | wc -l | tr -d ' ')
-    log_success "All $checked_count Acceptance Criteria completed"
+    log_success "All $checked_count $section_name completed"
     return 0
 }
 
@@ -580,6 +598,61 @@ get_incomplete_ac_count() {
     fi
     
     echo "$ac_section" | grep -cE '^\s*-\s+\[\s*\]' || echo "0"
+}
+
+# Check if all User Validation items are completed
+# Usage: check_user_validation <plan_file>
+# Returns: 0 if all completed or no criteria found, 1 if incomplete
+# Output: incomplete items (if any)
+#
+# Behavior:
+#   - If `### User Validation` sub-section exists: check that section
+#   - If no sub-section: pass (backward compat - old plans don't have this)
+check_user_validation() {
+    local plan_file="$1"
+    
+    if [[ ! -f "$plan_file" ]]; then
+        log_error "Plan file not found: $plan_file"
+        return 1
+    fi
+    
+    # Extract `### User Validation` sub-section
+    local user_ac_section
+    user_ac_section=$(awk '/^### User Validation/{found=1;next} /^###{1,2}[^#]/{found=0} found{print}' "$plan_file")
+    
+    # If no section or empty, pass (backward compat)
+    if [[ -z "$user_ac_section" ]] || ! echo "$user_ac_section" | grep -qE '^\s*-\s+\['; then
+        log_info "No User Validation section found in plan"
+        return 0
+    fi
+    
+    # Check for unchecked items: - [ ]
+    local unchecked
+    unchecked=$(echo "$user_ac_section" | grep -E '^\s*-\s+\[\s*\]' || true)
+    
+    if [[ -n "$unchecked" ]]; then
+        log_error "User Validation not completed:"
+        echo ""
+        echo "$unchecked" | while read -r line; do
+            echo "  $line"
+        done
+        echo ""
+        return 1
+    fi
+    
+    # Check if there are any checked items
+    local checked
+    checked=$(echo "$user_ac_section" | grep -E '^\s*-\s+\[x\]' || true)
+    
+    if [[ -z "$checked" ]]; then
+        log_warn "No User Validation items found (checked or unchecked)"
+        return 0
+    fi
+    
+    local checked_count
+    checked_count=$(echo "$checked" | wc -l | tr -d ' ')
+    log_success "All $checked_count User Validation completed"
+    return 0
 }
 
 # Export functions for use in other scripts

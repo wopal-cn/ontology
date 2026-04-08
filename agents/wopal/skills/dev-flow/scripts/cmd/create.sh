@@ -58,7 +58,7 @@ cmd_start() {
     slug=$(title_to_slug "$title")
     slug=$(echo "$slug" | sed -E 's/^(fix|feat|feature|enhance|refactor|docs|chore|test)-//')
 
-    plan_name="${project}-${plan_type}-${slug}"
+    plan_name="${issue_number}-${plan_type}-${slug}"
     plan_dir=$(resolve_plan_dir --project "$project")
     mkdir -p "$plan_dir"
 

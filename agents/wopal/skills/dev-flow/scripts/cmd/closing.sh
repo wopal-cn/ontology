@@ -49,9 +49,24 @@ cmd_validate() {
         echo ""
         echo "Issue is awaiting user verification."
         echo ""
-        echo "After user confirms validation passes, run:"
+        echo "Please verify User Validation items in the Plan:"
+        echo "  $plan_file"
+        echo ""
+        echo "After verification, check the User Validation checkboxes and run:"
         echo "  flow.sh validate $issue_number --confirm"
         exit 0
+    fi
+
+    # Check User Validation Acceptance Criteria
+    if ! check_user_validation "$plan_file"; then
+        echo ""
+        log_error "Cannot validate: User Validation not satisfied"
+        echo ""
+        echo "Please complete the User Validation items in the Plan file:"
+        echo "  $plan_file"
+        echo ""
+        echo "After completing, run: flow.sh validate $issue_number --confirm"
+        exit 1
     fi
 
     # Add validation/passed label

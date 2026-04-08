@@ -103,6 +103,37 @@ check_doc_plan() {
     root_dir=$(find_workspace_root)
 
     # ============================================
+    # 0. File name validation (new naming convention)
+    # ============================================
+    local plan_basename
+    plan_basename=$(basename "$plan_file" .md)
+
+    # Check file name matches format: <issue_number>-<type>-<slug>
+    if [[ "$plan_basename" =~ ^([0-9]+)-(feature|enhance|fix|refactor|docs|chore|test)-([a-z0-9-]+)$ ]]; then
+        local filename_issue="${BASH_REMATCH[1]}"
+        log_success "File name format: valid (issue #${filename_issue})"
+
+        # Verify issue number matches Plan metadata
+        local metadata_issue
+        metadata_issue=$(grep -m1 '^\- \*\*Issue\*\*: #' "$plan_file" | sed 's/.*#//; s/[^0-9].*//' || true)
+
+        if [[ -n "$metadata_issue" ]]; then
+            if [[ "$filename_issue" == "$metadata_issue" ]]; then
+                log_success "Issue number consistency: filename #${filename_issue} = metadata #${metadata_issue}"
+            else
+                echo "Issue number mismatch: filename has #${filename_issue}, metadata has #${metadata_issue}"
+                ((issues++))
+            fi
+        else
+            log_warn "Cannot verify issue number: no '**Issue**: #N' found in metadata"
+            ((warnings++))
+        fi
+    else
+        echo "File name does not match format '<issue_number>-<type>-<slug>.md': $plan_basename"
+        ((issues++))
+    fi
+
+    # ============================================
     # 1. Check for placeholders (exclude code blocks)
     # ============================================
     local placeholder_found=""
@@ -189,8 +220,7 @@ check_doc_plan() {
     # ============================================
     # 5.1 Spike investigation sections (recommended)
     # ============================================
-    local spike_sections="## Technical Context## Affected Components## Code References"
-    for section in "## Technical Context" "## Affected Components" "## Code References"; do
+    for section in "## Technical Context" "## Affected Components"; do
         if grep -q "$section" "$plan_file"; then
             log_success "$section (spike investigation)"
         else
@@ -268,13 +298,26 @@ check_doc_plan() {
     fi
 
     # ============================================
-    # 11. Test Plan section (recommended)
+    # 11. Test Plan section (mandatory with content check)
     # ============================================
     if grep -q '^## Test Plan' "$plan_file"; then
-        log_success "## Test Plan"
+        # Extract Test Plan section content (between ## Test Plan and next ## section)
+        local testplan_content
+        testplan_content=$(sed -n '/^## Test Plan/,/^## /p' "$plan_file" | sed '1d;$d' | grep -v '^$' || true)
+
+        # Check content is not just N/A or placeholders
+        local testplan_lines
+        testplan_lines=$(echo "$testplan_content" | grep -vE '^(N/A|n/a|待补充|TODO|- N/A|\- \*\*Unit\*\*: N/A|\- \*\*Integration\*\*: N/A|\- \*\*E2E\*\*: N/A)$' || true)
+
+        if [[ -n "$testplan_lines" ]]; then
+            log_success "## Test Plan (has non-empty test descriptions)"
+        else
+            echo "## Test Plan has no valid content (only N/A or placeholders)"
+            ((issues++))
+        fi
     else
-        log_warn "Missing ## Test Plan (recommended)"
-        ((warnings++))
+        echo "Missing ## Test Plan (mandatory for execution-grade plans)"
+        ((issues++))
     fi
 
     # ============================================
