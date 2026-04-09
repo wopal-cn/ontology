@@ -18,7 +18,6 @@ import type { Model } from "@opencode-ai/sdk";
 import type { SimpleTaskManager } from "./simple-task-manager.js";
 import type { MemoryInjector } from "./memory/index.js";
 import type { IdleDiagnostic } from "./idle-diagnostic.js";
-import type { WopalTask } from "./types.js"
 import { trackActivity } from "./progress-tracker.js";
 import { loadSessionContext } from "./memory/session-context.js";
 
@@ -808,7 +807,8 @@ export class OpenCodeRulesRuntime {
 
     const ACTIONABLE_EVENTS = new Set(["session.idle"])
     if (ACTIONABLE_EVENTS.has(eventType)) {
-      this.taskDebugLog(`[onEvent] received event: ${eventType}`)
+      const eventSessionID = props?.sessionID as string | undefined
+      this.taskDebugLog(`[onEvent] received event: ${eventType}${eventSessionID ? ` session=${eventSessionID}` : ''}`)
     }
 
     // Track meaningful activity from streaming events for stuck detection
@@ -842,25 +842,17 @@ export class OpenCodeRulesRuntime {
       // 拉取消息并诊断
       const diagnostic = await this.diagnoseIdleSession(sessionID)
 
-      if (diagnostic.verdict === 'completed') {
-        const completedTask = this.taskManager.markTaskCompletedBySession(sessionID)
-        if (completedTask) {
-          this.taskDebugLog(`task ${completedTask.id} completed via session.idle`)
-          this.taskManager.notifyParent(completedTask.id).catch(() => {})
+      // Phase 3: 所有 idle 统一走 idleNotified 路径，判断权交给 Wopal
+      if (!task.idleNotified && task.status === 'running') {
+        task.idleNotified = true
+        // Release concurrency slot so new tasks can launch
+        if (task.concurrencyKey) {
+          this.taskManager.releaseConcurrencySlot(task)
+          task.waitingConcurrencyKey = task.concurrencyKey
+          task.concurrencyKey = undefined
         }
-      } else if (diagnostic.verdict === 'waiting') {
-        const waitingTask = this.taskManager.markTaskWaitingBySession(sessionID, diagnostic)
-        if (waitingTask) {
-          this.taskDebugLog(`task ${waitingTask.id} waiting: ${diagnostic.reason}`)
-          this.notifyParentWaiting(waitingTask, diagnostic).catch(() => {})
-        }
-      } else {
-        // error
-        const errorTask = this.taskManager.markTaskErrorBySession(sessionID, diagnostic.reason)
-        if (errorTask) {
-          this.taskDebugLog(`task ${errorTask.id} error: ${diagnostic.reason}`)
-          this.taskManager.notifyParent(errorTask.id).catch(() => {})
-        }
+        this.taskDebugLog(`task ${task.id} idle: verdict=${diagnostic.verdict}, reason=${diagnostic.reason}`)
+        this.taskManager.notifyParent(task.id).catch(() => {})
       }
     }
 
@@ -910,13 +902,13 @@ export class OpenCodeRulesRuntime {
       const sessionID = props?.sessionID as string | undefined
       const requestID = props?.id as string | undefined
 
-      if (sessionID && props?.questions) {
+      if (sessionID && requestID && props?.questions) {
         const { handleQuestionAsked } = await import("./question-relay.js")
         const questions = props.questions as Array<{ header?: string; question?: string; options?: Array<{ label: string; description: string }> }>
         const firstQuestion = questions[0]
         if (firstQuestion) {
           await handleQuestionAsked(
-            { sessionID, requestID, question: firstQuestion },
+            { sessionID, requestID: requestID!, question: firstQuestion },
             this.taskManager!,
             this.taskDebugLog
           )
@@ -962,35 +954,6 @@ export class OpenCodeRulesRuntime {
     } catch (err) {
       this.taskDebugLog(`diagnoseIdleSession error: ${err}`)
       return { verdict: 'error', reason: 'diagnostic_failed' }
-    }
-  }
-
-  private async notifyParentWaiting(task: WopalTask, diagnostic: IdleDiagnostic): Promise<void> {
-    const notification = `<system-reminder>
-[WOPAL TASK WAITING]
-**Task ID:** \`${task.id}\`
-**Description:** ${task.description}
-**Reason:** ${diagnostic.reason}
-${diagnostic.lastMessage ? `**Last Message:**\n${diagnostic.lastMessage.slice(0, 500)}` : ''}
-
-The background task is waiting for your response. Use \`wopal_reply\` to continue.
-</system-reminder>`
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = this.client as any
-
-    if (typeof client?.session?.promptAsync !== "function") return
-
-    try {
-      await client.session.promptAsync({
-        path: { id: task.parentSessionID },
-        body: {
-          noReply: true,
-          parts: [{ type: "text", text: notification, synthetic: true }],
-        },
-      })
-    } catch (err) {
-      this.taskDebugLog(`notifyParentWaiting error: ${err}`)
     }
   }
 }

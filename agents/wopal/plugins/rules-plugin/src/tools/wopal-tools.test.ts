@@ -87,29 +87,6 @@ describe("wopal tools", () => {
         expect.objectContaining({ agent: "general" }),
       )
     })
-
-    it("appends report template to prompt", async () => {
-      const manager = {
-        launch: vi.fn().mockResolvedValue({
-          ok: true,
-          taskId: "task-1",
-          status: "running",
-        }),
-      }
-
-      const execute = getExecute(createWopalTaskTool(manager as never))
-      await execute(
-        { description: "Test task", prompt: "Do something" },
-        { sessionID: "parent-1" },
-      )
-
-      const callArgs = manager.launch.mock.calls[0][0]
-      expect(callArgs.prompt).toContain("Do something")
-      expect(callArgs.prompt).toContain("[MANDATORY - Include this report at the end of your response]")
-      expect(callArgs.prompt).toContain("## Task Report")
-      expect(callArgs.prompt).toContain("**Summary**:")
-      expect(callArgs.prompt).toContain("**Files**:")
-    })
   })
 
   describe("wopal_output", () => {

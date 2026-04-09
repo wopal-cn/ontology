@@ -7,25 +7,16 @@ import type {
 import type { DebugLog } from "./debug.js"
 import type { IdleDiagnostic } from "./idle-diagnostic.js"
 import { createDebugLog } from "./debug.js"
-import {
-  checkAndInterruptStaleTasks,
-  DEFAULT_STALE_TIMEOUT_MS,
-  DEFAULT_MESSAGE_STALENESS_TIMEOUT_MS,
-  MIN_RUNTIME_BEFORE_STALE_MS,
-} from "./stale-detector.js"
 import { checkStuckTasks, clearStuckState, DEFAULT_STUCK_TIMEOUT_MS } from "./stuck-detector.js"
 import { ConcurrencyManager } from "./concurrency-manager.js"
 import { registerManagerForCleanup, unregisterManagerForCleanup } from "./process-cleanup.js"
 
 const defaultManagerLog = createDebugLog("[wopal-task]", "task")
 
-const DEFAULT_TIMEOUT_MS = 300_000  // 5 minutes
-const MAX_TIMEOUT_MS = 3_600_000    // 1 hour
 const CLEANUP_INTERVAL_MS = 600_000 // 10 minutes
 const CLEANUP_MAX_AGE_MS = 3600_000 // 1 hour
 const TASK_TTL_MS = 1_800_000       // 30 minutes for non-terminal tasks
-const DEFAULT_CONCURRENCY_LIMIT = 3 // Default concurrent tasks
-const MAX_STALE_TIMEOUT_MS = 1_800_000 // 30 minutes
+const DEFAULT_CONCURRENCY_LIMIT = 5 // Default concurrent tasks
 // Progress notification thresholds
 const PROGRESS_NOTIFY_MESSAGE_THRESHOLD = 20  // Notify after 20 new messages
 const PROGRESS_NOTIFY_TIME_THRESHOLD_MS = 180_000  // 3 minutes
@@ -65,9 +56,8 @@ export class SimpleTaskManager {
   private serverUrl?: URL
   private directory: string
   private debugLog: DebugLog
-  private timeoutTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private cleanupInterval: ReturnType<typeof setInterval> | undefined = undefined
-  private staleCheckInterval: ReturnType<typeof setInterval> | undefined = undefined
+  private tickerInterval: ReturnType<typeof setInterval> | undefined = undefined
   private concurrency = new ConcurrencyManager()
   private readonly CONCURRENCY_KEY = 'default'
   private isShuttingDown = false
@@ -84,7 +74,9 @@ export class SimpleTaskManager {
     this.client = client
     this.v2Client = v2Client
     this.directory = directory
-    this.serverUrl = serverUrl
+    if (serverUrl !== undefined) {
+      this.serverUrl = serverUrl
+    }
     this.debugLog = debugLog ?? defaultManagerLog
 
     // Setup automatic cleanup interval
@@ -93,25 +85,13 @@ export class SimpleTaskManager {
     }, CLEANUP_INTERVAL_MS)
     this.cleanupInterval.unref()
 
-    // Setup stale task detection (every 30 seconds)
-    this.staleCheckInterval = setInterval(() => {
-      checkAndInterruptStaleTasks({
-        tasks: this.tasks.values(),
-        config: {
-          staleTimeoutMs: DEFAULT_STALE_TIMEOUT_MS,
-          messageStalenessMs: DEFAULT_MESSAGE_STALENESS_TIMEOUT_MS,
-          minRuntimeBeforeStaleMs: MIN_RUNTIME_BEFORE_STALE_MS,
-        },
-        onStale: (task, reason) => this.interruptStaleTask(task, reason),
-      })
-      // Check for stuck tasks (no meaningful activity for 2 minutes)
+    // Setup stuck detection and progress notifications (every 30 seconds)
+    this.tickerInterval = setInterval(() => {
       this.checkStuckTasks()
-      // Clear stuck state for tasks that resumed activity
       clearStuckState(this.tasks.values())
-      // Also check for progress notifications
       this.checkProgressNotifications()
     }, 30_000)
-    this.staleCheckInterval.unref()
+    this.tickerInterval.unref()
 
     // Register for process exit cleanup
     registerManagerForCleanup(this)
@@ -152,14 +132,10 @@ export class SimpleTaskManager {
       clearInterval(this.cleanupInterval)
     }
     this.cleanupInterval = undefined
-    if (this.staleCheckInterval) {
-      clearInterval(this.staleCheckInterval)
+    if (this.tickerInterval) {
+      clearInterval(this.tickerInterval)
     }
-    this.staleCheckInterval = undefined
-    for (const timer of this.timeoutTimers.values()) {
-      clearTimeout(timer)
-    }
-    this.timeoutTimers.clear()
+    this.tickerInterval = undefined
   }
 
   /** Graceful shutdown: stop all tasks and cleanup */
@@ -207,14 +183,12 @@ export class SimpleTaskManager {
   }
 
   async launch(input: LaunchInput): Promise<LaunchOutput> {
-    this.debugLog(`[launch] starting: description="${input.description}" agent="${input.agent}" timeout=${input.timeout ?? 300}s parentSessionID=${input.parentSessionID}`)
+    this.debugLog(`[launch] starting: description="${input.description}" agent="${input.agent}" parentSessionID=${input.parentSessionID}`)
 
-    // Acquire concurrency slot first
-    try {
-      await this.concurrency.acquire(this.CONCURRENCY_KEY, DEFAULT_CONCURRENCY_LIMIT)
-    } catch (err) {
-      this.debugLog(`[launch] concurrency acquire failed: ${err}`)
-      return { ok: false, status: 'error', error: 'Concurrency queue cancelled' }
+    // Acquire concurrency slot (non-blocking)
+    if (!this.concurrency.tryAcquire(this.CONCURRENCY_KEY, DEFAULT_CONCURRENCY_LIMIT)) {
+      this.debugLog(`[launch] concurrency limit reached (${DEFAULT_CONCURRENCY_LIMIT}/${DEFAULT_CONCURRENCY_LIMIT})`)
+      return { ok: false, status: 'error', error: `Concurrency limit reached (${DEFAULT_CONCURRENCY_LIMIT}/${DEFAULT_CONCURRENCY_LIMIT}). Wait for running tasks to finish.` }
     }
 
     if (!input.parentSessionID) {
@@ -245,13 +219,6 @@ export class SimpleTaskManager {
       prompt: input.prompt,
       parentSessionID: input.parentSessionID,
       createdAt: new Date(),
-      timeoutMs: Math.min(
-        (input.timeout ?? DEFAULT_TIMEOUT_MS / 1000) * 1000,
-        MAX_TIMEOUT_MS
-      ),
-      staleTimeoutMs: input.staleTimeout
-        ? Math.min(input.staleTimeout * 1000, MAX_STALE_TIMEOUT_MS)
-        : undefined,
       concurrencyKey: this.CONCURRENCY_KEY,
     }
     this.tasks.set(taskId, task)
@@ -314,7 +281,6 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
     task.status = 'running'
     task.startedAt = new Date()
     task.progress = { toolCalls: 0, lastUpdate: new Date() }
-    this.scheduleTimeoutCheck(task.id, task.timeoutMs ?? DEFAULT_TIMEOUT_MS)
 
     void Promise.resolve(promptResult).catch(async (err: unknown) => {
       const error = `Background task execution failed: ${toErrorMessage(err)}`
@@ -325,7 +291,7 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
       }
     })
 
-    this.debugLog(`[launch] success: taskId=${taskId} sessionID=${task.sessionID} timeoutMs=${task.timeoutMs}`)
+    this.debugLog(`[launch] success: taskId=${taskId} sessionID=${task.sessionID}`)
 
     return { ok: true, taskId, status: 'running' }
   }
@@ -358,7 +324,6 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
       return undefined
     }
 
-    this.clearTimeoutTimer(task.id)
     this.releaseConcurrencySlot(task)
     task.status = 'completed'
     task.completedAt = new Date()
@@ -373,7 +338,6 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
       return undefined
     }
 
-    this.clearTimeoutTimer(task.id)
     if (!this.failTask(task, error)) {
       this.debugLog(`[markError] skipped: taskId=${task.id} status=${task.status} (already terminal)`)
       return undefined
@@ -389,7 +353,6 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
       return undefined
     }
 
-    this.clearTimeoutTimer(task.id)
     // 注意：waiting 状态不释放 concurrency slot，因为任务可能恢复
     task.status = 'waiting'
     task.waitingReason = diagnostic.reason
@@ -401,38 +364,32 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
   }
 
   async cancel(id: string, parentSessionID: string): Promise<CancelResult> {
-    this.debugLog(`[cancel] requested: taskId=${id} parentSessionID=${parentSessionID}`)
-
     const task = this.getTaskForParent(id, parentSessionID)
     if (!task) {
       this.debugLog(`[cancel] failed: taskId=${id} not found or ownership mismatch`)
       return 'not_found'
     }
-    if (task.status !== 'running') {
-      this.debugLog(`[cancel] failed: taskId=${id} status=${task.status} (not running)`)
+    if (task.status !== 'running' && task.status !== 'waiting' && task.status !== 'pending') {
+      this.debugLog(`[cancel] failed: taskId=${id} status=${task.status}`)
       return 'not_running'
     }
 
     // 先设置状态，防止 abort 触发 session.idle 导致的竞态
-    this.clearTimeoutTimer(task.id)
     this.releaseConcurrencySlot(task)
     task.status = 'cancelled'
     task.completedAt = new Date()
-    this.debugLog(`[cancel] status set to cancelled: taskId=${id}`)
 
-    // 然后调用 abort
-    if (task.sessionID && typeof this.client.session?.abort === "function") {
+    if (task.sessionID) {
       try {
         await this.client.session.abort({
           path: { id: task.sessionID },
         })
       } catch (err) {
-        this.debugLog(`[cancel] abort error (ignored, task already cancelled): ${toErrorMessage(err)}`)
-        // 不返回 abort_failed，因为任务已经被标记为 cancelled
+        // Ignore abort errors - task already marked as cancelled
       }
     }
 
-    this.debugLog(`[cancel] success: taskId=${id}`)
+    this.debugLog(`[cancel] taskId=${id}`)
     return 'cancelled'
   }
 
@@ -440,7 +397,7 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
     const task = this.tasks.get(taskId)
     if (!task || !task.sessionID) return
 
-    const statusText = task.status.toUpperCase()
+    const statusText = task.idleNotified ? 'IDLE' : task.status.toUpperCase()
     const notification = `<system-reminder>
 [WOPAL TASK ${statusText}]
 **ID:** \`${task.id}\`
@@ -471,7 +428,7 @@ Use \`wopal_output(task_id="${task.id}")\` to retrieve the result.
   }
 
   private async checkProgressNotifications(): Promise<void> {
-    const runningTasks = Array.from(this.tasks.values()).filter(t => t.status === 'running')
+    const runningTasks = Array.from(this.tasks.values()).filter(t => t.status === 'running' && !t.idleNotified)
     
     for (const task of runningTasks) {
       if (!task.sessionID) continue
@@ -596,62 +553,14 @@ Task is still running. Use \`wopal_output(task_id="${task.id}")\` for details.
       this.debugLog(
         `[abortSession] error for ${sessionID}: ${toErrorMessage(err)}`,
       )
-    }
+}
   }
 
-  private scheduleTimeoutCheck(taskId: string, timeoutMs: number): void {
-    this.debugLog(`[timeout] scheduled: taskId=${taskId} timeoutMs=${timeoutMs}`)
-    
-    const timer = setTimeout(async () => {
-      const task = this.tasks.get(taskId)
-      if (!task || task.status !== 'running') return
-
-      this.timeoutTimers.delete(taskId)
-
-      // Set status BEFORE abort to prevent race with promptAsync.catch and session.error
-      this.releaseConcurrencySlot(task)
-      task.status = 'error'
-      task.error = `Task timed out after ${timeoutMs / 1000} seconds`
-      task.errorCategory = 'timeout'
-      task.completedAt = new Date()
-
-      this.debugLog(`[timeout] triggered: taskId=${taskId} after ${timeoutMs / 1000}s`)
-
-      await this.abortSession(task.sessionID)
-      await this.notifyParent(taskId)
-    }, timeoutMs)
-
-    this.timeoutTimers.set(taskId, timer)
-  }
-
-  private clearTimeoutTimer(taskId: string): void {
-    const timer = this.timeoutTimers.get(taskId)
-    if (timer) {
-      clearTimeout(timer)
-      this.timeoutTimers.delete(taskId)
-      this.debugLog(`[timeout] cleared: taskId=${taskId}`)
-    }
-  }
-
-  private releaseConcurrencySlot(task: WopalTask): void {
+  public releaseConcurrencySlot(task: WopalTask): void {
     if (task.concurrencyKey) {
       this.concurrency.release(task.concurrencyKey)
       task.concurrencyKey = undefined
     }
-  }
-
-  private async interruptStaleTask(task: WopalTask, reason: string): Promise<void> {
-    this.debugLog(`[stale] interrupting taskId=${task.id}: ${reason}`)
-
-    this.clearTimeoutTimer(task.id)
-    this.releaseConcurrencySlot(task)
-    task.status = 'error'
-    task.error = `Stale timeout (${reason})`
-    task.errorCategory = 'timeout'
-    task.completedAt = new Date()
-
-    await this.abortSession(task.sessionID)
-    await this.notifyParent(task.id)
   }
 
   private async checkStuckTasks(): Promise<void> {

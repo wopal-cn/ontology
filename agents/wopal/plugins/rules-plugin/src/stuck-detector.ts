@@ -23,6 +23,7 @@ export function checkStuckTasks(args: {
     if (task.status !== "running" && task.status !== "waiting") continue
     if (!task.startedAt || !task.sessionID) continue
     if (task.stuckNotified) continue
+    if (task.idleNotified) continue
 
     const meaningfulActivity = task.progress?.lastMeaningfulActivity ?? task.startedAt
     const elapsed = now - meaningfulActivity.getTime()

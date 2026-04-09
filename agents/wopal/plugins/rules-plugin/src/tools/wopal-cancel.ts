@@ -3,7 +3,7 @@ import type { SimpleTaskManager } from "../simple-task-manager.js"
 
 export function createWopalCancelTool(manager: SimpleTaskManager): ToolDefinition {
   return tool({
-    description: "Cancel a running background task owned by the current session",
+    description: "Cancel a background task (running, waiting, or pending)",
     args: {
       task_id: tool.schema.string().describe("Task ID to cancel"),
     },

@@ -90,8 +90,6 @@ export function analyzeProgress(
   allMessages: SessionMessage[],
   newMessages: SessionMessage[]
 ): ProgressInfo {
-  debugLog(`[progress] analyzing: ${allMessages.length} total, ${newMessages.length} new`)
-
   const toolCounts = countToolCalls(allMessages)
   const toolCalls = Array.from(toolCounts.entries())
     .map(([tool, count]) => ({ tool, count }))
@@ -121,7 +119,10 @@ export function analyzeProgress(
     ...(finishReason !== undefined ? { finishReason } : {}),
   }
 
-  debugLog(`[progress] analyzed: ${info.totalMessages} messages, ${info.toolCalls.length} tool types`)
+  const toolSummary = toolCalls.length > 0
+    ? `, tools: ${toolCalls.map(t => `${t.tool}×${t.count}`).join(', ')}`
+    : ''
+  debugLog(`[progress] ${allMessages.length} msgs (+${newMessages.length})${toolSummary}`)
 
   return info
 }

@@ -57,7 +57,7 @@
 | **核心逻辑** | 任务管理、并发控制 | `src/simple-task-manager.ts`, `src/concurrency-manager.ts` |
 | **诊断模块** | Idle 状态诊断 | `src/idle-diagnostic.ts` |
 | **事件处理** | 权限代理、问题中继 | `src/permission-proxy.ts`, `src/question-relay.ts` |
-| **检测器** | Stale 检测、错误分类 | `src/stale-detector.ts`, `src/error-classifier.ts` |
+| **检测器** | 错误分类 | `src/error-classifier.ts` |
 | **运行时** | 事件钩子、规则注入 | `src/runtime.ts` |
 | **测试** | 单元测试 | `src/*.test.ts` |
 
@@ -77,7 +77,6 @@ src/                         # 源码目录
 ├── utils.ts                 # ⚠️ 612 行，职责模糊
 │
 ├── concurrency-manager.ts   # 并发控制 ✅
-├── stale-detector.ts        # Stale 检测
 ├── stuck-detector.ts        # Stuck 检测
 ├── error-classifier.ts      # 错误分类
 ├── idle-diagnostic.ts       # Idle 诊断
@@ -348,17 +347,14 @@ interface IdleDiagnostic {
 ### 状态流转
 
 ```
-running → [session.idle] → diagnoseIdle() → {completed | waiting | error}
-         ↑                                           │
-         │                                           ↓
-         └─────── wopal_reply ←── [WOPAL TASK WAITING] 通知
+running → [session.idle] → IDLE 通知 → Wopal 判断
+Wopal → wopal_output 检查 → wopal_cancel / wopal_reply
 ```
 
 ### 通知格式
 
 | 状态 | 通知标记 | 说明 |
 |------|---------|------|
-| `completed` | `[WOPAL TASK COMPLETED]` | 任务正常完成 |
 | `waiting` | `[WOPAL TASK WAITING]` | 子代理提问，等待父代理回复 |
 | `error` | `[WOPAL TASK ERROR]` | 任务异常终止 |
 | `permission` | `[WOPAL TASK PERMISSION]` | 权限自动授权通知 |
@@ -382,10 +378,8 @@ wopal_reply(task_id="wopal-task-xxx", message="继续执行方案 A")
 
 | 常量 | 值 | 用途 |
 |------|-----|------|
-| `DEFAULT_TIMEOUT_MS` | 5 分钟 | 任务默认超时 |
 | `MAX_TIMEOUT_MS` | 1 小时 | 最大超时 |
 | `TASK_TTL_MS` | 30 分钟 | 非终态任务 TTL |
-| `DEFAULT_STALE_TIMEOUT_MS` | 3 分钟 | 运行中 stale 检测 |
 | `DEFAULT_MESSAGE_STALENESS_TIMEOUT_MS` | 30 分钟 | 启动后 stale 检测 |
 | `DEFAULT_CONCURRENCY_LIMIT` | 3 | 并发任务数限制 |
 

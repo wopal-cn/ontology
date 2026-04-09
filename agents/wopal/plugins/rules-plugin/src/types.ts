@@ -22,8 +22,6 @@ export interface WopalTask {
   createdAt: Date
   completedAt?: Date
   error?: string
-  timeoutMs?: number
-  staleTimeoutMs?: number | undefined
   // Phase 3 additions
   startedAt?: Date
   progress?: TaskProgress
@@ -40,6 +38,10 @@ export interface WopalTask {
   // Stuck detection
   stuckNotified?: boolean
   stuckNotifiedAt?: Date
+  // Concurrency slot key for waiting tasks
+  waitingConcurrencyKey?: string
+  // Idle notification (Phase 3: judgment delegated to Wopal)
+  idleNotified?: boolean
 }
 
 export interface LaunchInput {
@@ -47,8 +49,6 @@ export interface LaunchInput {
   prompt: string
   agent: string
   parentSessionID: string
-  timeout?: number
-  staleTimeout?: number
   abortSignal?: AbortSignal
 }
 

@@ -83,20 +83,31 @@ describe("wopal_reply", () => {
       { sessionID: parentSessionID },
     )
 
-    expect(result).toBe("Error: Task is completed, not waiting. Only waiting tasks can receive replies.")
+    expect(result).toBe("Error: Task is completed. Only running and waiting tasks can receive replies.")
   })
 
-  it("task status is running (not waiting): returns error", async () => {
-    const runningTask = createWaitingTask({ status: "running" })
-    const mockManager = createMockTaskManager(runningTask)
+  
+
+  it("idle task (running + idleNotified): sends message via promptAsync, clears idleNotified", async () => {
+    const mockClient = createMockClient()
+    const idleTask = createWaitingTask({ status: "running", idleNotified: true } as Partial<WopalTask>)
+    const mockManager = createMockTaskManager(idleTask, mockClient)
     const execute = getExecute(createWopalReplyTool(mockManager as never))
 
     const result = await execute(
-      { task_id: runningTask.id, message: "test" },
+      { task_id: idleTask.id, message: "继续完善" },
       { sessionID: parentSessionID },
     )
 
-    expect(result).toBe("Error: Task is running, not waiting. Only waiting tasks can receive replies.")
+    expect(result).toBe(`Reply sent to task ${idleTask.id}. The background task will continue execution.`)
+    expect(mockClient.session.promptAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { id: idleTask.sessionID },
+      }),
+    )
+    expect(idleTask.idleNotified).toBeUndefined()
+    expect(idleTask.status).toBe("running")
+    expect(idleTask.waitingReason).toBeUndefined()
   })
 
   it("task status is waiting with valid message: calls promptAsync, status becomes running, returns success", async () => {

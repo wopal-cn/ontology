@@ -55,12 +55,10 @@ async function getCachedRule(
     // Check if we have a valid cached entry
     const cached = ruleCache.get(filePath);
     if (cached && cached.mtime === mtime) {
-      debugLog(`Cache hit: ${filePath}`);
       return cached;
     }
 
     // Read and cache the file
-    debugLog(`Cache miss: ${filePath}`);
     const content = await readFile(filePath, "utf-8");
     const metadata = parseRuleMetadata(content);
     const strippedContent = stripFrontmatter(content);
@@ -435,9 +433,6 @@ export async function readAndFormatRules(
 
       // If rule has conditions but none match, skip it
       if (!globsMatch && !keywordsMatch && !toolsMatch) {
-        debugLog(
-          `Skipping conditional rule: ${relativePath} (no matching paths, keywords, or tools)`,
-        );
         continue;
       }
 

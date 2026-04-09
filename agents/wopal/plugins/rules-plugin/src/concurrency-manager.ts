@@ -101,6 +101,18 @@ export class ConcurrencyManager {
   }
 
   /**
+   * Non-blocking acquire. Returns true if slot acquired, false if limit reached.
+   */
+  tryAcquire(key: string, limit: number): boolean {
+    const current = this.counts.get(key) ?? 0
+    if (current < limit) {
+      this.counts.set(key, current + 1)
+      return true
+    }
+    return false
+  }
+
+  /**
    * Get current count for a key (for testing/debugging)
    */
   getCount(key: string): number {

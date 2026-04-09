@@ -84,6 +84,8 @@ function isDebugEnabled(module: DebugModule): boolean {
 }
 
 function writeLog(prefix: string, message: string): void {
+  if (process.env.VITEST) return;
+
   const logFile = getLogFile();
   if (!ensureLogFile(logFile)) {
     return;

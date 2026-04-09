@@ -62,7 +62,7 @@ function formatProgressOutput(
 
 export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinition {
   return tool({
-    description: "Get lifecycle status for a background task owned by the current session. Use `section` to retrieve specific content types: 'tools' for tool calls/results (check progress), 'reasoning' for thinking process (diagnose stuck), 'text' for text output (get results). Without section, returns a lightweight summary.",
+    description: "Get status and output for a background task. Use `section` param: 'tools' (tool calls), 'reasoning' (thinking), 'text' (output). Omit for summary.",
     args: {
       task_id: tool.schema.string().describe("Task ID returned by wopal_task"),
       section: tool.schema.enum(["tools", "reasoning", "text"]).optional().describe("Content section to retrieve: 'tools' (tool calls & results), 'reasoning' (thinking process), 'text' (text output). Omit for summary only."),
@@ -85,6 +85,12 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
       result += `**Status:** ${task.status}\n`
       result += `**Description:** ${task.description}\n`
       result += `**Agent:** ${task.agent}\n`
+
+      // idle task: awaiting Wopal judgment
+      if (task.idleNotified) {
+        result += `\n\n**Idle:** awaiting your judgment`
+        result += `\nThis task is idle. Use wopal_output to check, then wopal_cancel or wopal_reply.`
+      }
 
       if (task.status === 'completed' && task.sessionID) {
         result += `\nTask completed at ${task.completedAt?.toISOString()}`

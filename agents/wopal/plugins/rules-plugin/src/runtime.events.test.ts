@@ -37,7 +37,7 @@ function createRuntime(taskManager: {
 }
 
 describe("OpenCodeRulesRuntime event handling", () => {
-  it("marks running task completed on session.idle and notifies parent", async () => {
+  it("marks running task idle on session.idle and notifies parent", async () => {
     const mockTask = { id: "task-1", sessionID: "child-1", status: "running" }
     // Mock messages with an assistant message that has finish: "stop" and no question
     const mockMessages = [
@@ -48,10 +48,11 @@ describe("OpenCodeRulesRuntime event handling", () => {
     ]
     const taskManager = {
       findBySession: vi.fn().mockReturnValue(mockTask),
-      markTaskCompletedBySession: vi.fn().mockReturnValue({ id: "task-1" }),
+      markTaskCompletedBySession: vi.fn(),
       markTaskErrorBySession: vi.fn(),
       markTaskWaitingBySession: vi.fn(),
       notifyParent: vi.fn().mockResolvedValue(undefined),
+      releaseConcurrencySlot: vi.fn(),
     }
     const runtime = new OpenCodeRulesRuntime({
       client: {
@@ -73,7 +74,9 @@ describe("OpenCodeRulesRuntime event handling", () => {
     })
 
     expect(taskManager.findBySession).toHaveBeenCalledWith("child-1")
-    expect(taskManager.markTaskCompletedBySession).toHaveBeenCalledWith("child-1")
+    // Phase 3: idle sets idleNotified flag instead of markTaskCompletedBySession
+    expect(mockTask.idleNotified).toBe(true)
+    expect(taskManager.markTaskCompletedBySession).not.toHaveBeenCalled()
     expect(taskManager.notifyParent).toHaveBeenCalledWith("task-1")
   })
 

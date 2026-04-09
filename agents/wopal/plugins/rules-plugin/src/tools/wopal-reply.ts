@@ -58,8 +58,7 @@ async function replyQuestion(taskId: string, manager: SimpleTaskManager, client:
 
 export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition {
   return tool({
-    description:
-      "Send a message to a waiting background task to resume its execution. Use when a background task is waiting for your input.",
+    description: "Send a message to a background task to resume or redirect its execution. Works on waiting and idle (running+idleNotified) tasks.",
     args: {
       task_id: tool.schema.string().describe("The ID of the waiting task to reply to"),
       message: tool.schema.string().describe("The message to send to the background task"),
@@ -77,8 +76,8 @@ export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition
         return "Error: Task not found or not owned by this session"
       }
 
-      if (task.status !== "waiting") {
-        return `Error: Task is ${task.status}, not waiting. Only waiting tasks can receive replies.`
+      if (task.status !== "waiting" && task.status !== "running") {
+        return `Error: Task is ${task.status}. Only running and waiting tasks can receive replies.`
       }
 
       if (!task.sessionID) {
@@ -101,6 +100,7 @@ export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition
 
           task.status = "running"
           delete task.waitingReason
+          if (task.idleNotified) delete task.idleNotified
           trackActivity(task, "text")
           debugLog(`task ${task_id} resumed via question.reply`)
 
@@ -120,6 +120,7 @@ export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition
 
         task.status = "running"
         delete task.waitingReason
+        if (task.idleNotified) delete task.idleNotified
         trackActivity(task, "text")
         debugLog(`task ${task_id} resumed`)
 

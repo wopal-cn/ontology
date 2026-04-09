@@ -7,16 +7,20 @@ import { createDebugLog, createWarnLog } from "./debug.js";
 describe("createDebugLog", () => {
   let tempDir: string;
   let logFile: string;
+  let savedVitest: string | undefined;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "debug-test-"));
     logFile = join(tempDir, "test.log");
     process.env.WOPAL_PLUGIN_LOG_FILE = logFile;
+    savedVitest = process.env.VITEST;
+    delete process.env.VITEST;
   });
 
   afterEach(() => {
     delete process.env.WOPAL_PLUGIN_DEBUG;
     delete process.env.WOPAL_PLUGIN_LOG_FILE;
+    if (savedVitest !== undefined) process.env.VITEST = savedVitest;
     if (existsSync(logFile)) {
       unlinkSync(logFile);
     }
@@ -100,16 +104,20 @@ describe("createDebugLog", () => {
 describe("createDebugLog module filtering", () => {
   let tempDir: string;
   let logFile: string;
+  let savedVitest: string | undefined;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "module-test-"));
     logFile = join(tempDir, "test.log");
     process.env.WOPAL_PLUGIN_LOG_FILE = logFile;
+    savedVitest = process.env.VITEST;
+    delete process.env.VITEST;
   });
 
   afterEach(() => {
     delete process.env.WOPAL_PLUGIN_DEBUG;
     delete process.env.WOPAL_PLUGIN_LOG_FILE;
+    if (savedVitest !== undefined) process.env.VITEST = savedVitest;
     if (existsSync(logFile)) {
       unlinkSync(logFile);
     }
@@ -185,16 +193,20 @@ describe("createDebugLog module filtering", () => {
 describe("createWarnLog", () => {
   let tempDir: string;
   let logFile: string;
+  let savedVitest: string | undefined;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "warn-test-"));
     logFile = join(tempDir, "warn.log");
     process.env.WOPAL_PLUGIN_LOG_FILE = logFile;
+    savedVitest = process.env.VITEST;
+    delete process.env.VITEST;
   });
 
   afterEach(() => {
     delete process.env.WOPAL_PLUGIN_DEBUG;
     delete process.env.WOPAL_PLUGIN_LOG_FILE;
+    if (savedVitest !== undefined) process.env.VITEST = savedVitest;
     if (existsSync(logFile)) {
       unlinkSync(logFile);
     }
