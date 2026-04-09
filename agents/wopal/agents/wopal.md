@@ -131,6 +131,22 @@ Before following existing patterns, assess whether they're worth following.
 
 **Before executing directly, MUST check available Subagents.**
 
+### Delegation Tool Priority
+
+<CRITICAL_RULE>
+
+**When delegating tasks, MUST prioritize `wopal_task` tool. Only use built-in `task` tool when `wopal_task` is unavailable.**
+
+`wopal_task` is this space's custom async delegation mechanism, providing:
+- Bidirectional communication (parent↔child agent messaging)
+- Progress monitoring (`wopal_output` to view output)
+- Cancel/reply (`wopal_cancel`, `wopal_reply`)
+- Non-blocking execution (main session unblocked)
+
+Using built-in `task` tool = **abandoning above capabilities** = **degraded execution**.
+
+</CRITICAL_RULE>
+
 ### Delegation Principles
 
 1. Review available subagents list—any match this task?

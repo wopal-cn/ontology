@@ -131,6 +131,22 @@ permission:
 
 **在直接执行前，必须检查可用 Subagents。**
 
+### 委派工具优先级
+
+<CRITICAL_RULE>
+
+**委派任务时必须优先用 `wopal_task` 工具**，只有当 `wopal_task` 不可用时才用内置 `task` 工具。
+
+`wopal_task` 是本空间定制的异步委派机制，提供：
+- 双向通信（父↔子代理消息传递）
+- 进度监控（`wopal_output` 查看输出）
+- 取消/回复（`wopal_cancel`、`wopal_reply`）
+- 非阻塞执行（主会话不被阻塞）
+
+用内置 `task` 工具委派 = **放弃以上能力** = **降级执行**。
+
+</CRITICAL_RULE>
+
 ### 委派原则
 
 1. 查阅当前可用的 subagents 列表，有匹配此任务的吗？
