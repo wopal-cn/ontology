@@ -56,7 +56,7 @@ ontology/
 │   ├── commands/      # 专用命令
 │   ├── skills/        # 专用技能（plan-master, skill-master 等）
 │   ├── agents/        # 子代理提示词（fae, docs-writer 等）
-│   └── plugins/       # 插件（rules-plugin）
+│   └── plugins/       # 插件（wopal-plugin）
 │
 └── agents/fae/        # Fae 专用
 ```
@@ -84,13 +84,13 @@ python scripts/sync-to-wopal.py -y
 wopal skills install /path/to/skill
 
 # 插件开发
-cd agents/wopal/plugins/rules-plugin
+cd plugins/wopal-plugin
 bun install && bun run build && bun test
 ```
 
 ## 插件
 
-### rules-plugin
+### wopal-plugin
 
 OpenCode 规则注入 + 非阻塞任务委派。
 

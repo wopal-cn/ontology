@@ -147,6 +147,6 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
 };
 
 export default {
-  id: "wopal-rules-plugin",
+  id: "wopal-wopal-plugin",
   server: openCodeRulesPlugin,
 };

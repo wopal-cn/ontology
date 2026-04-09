@@ -22,7 +22,7 @@ title: 故障排查详解
 
 **原因**：旧版本 bug
 
-**解决**：更新 rules-plugin
+**解决**：更新 wopal-plugin
 
 ### 取消返回 "task is not running"
 

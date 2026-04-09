@@ -132,7 +132,7 @@ description: |
 
 ## 插件开发
 
-**参考**：`agents/wopal/plugins/rules-plugin/AGENTS.md`
+**参考**：`plugins/wopal-plugin/AGENTS.md`
 
 插件是 TypeScript 编写的 OpenCode 运行时扩展，提供自定义工具和事件钩子。
 
@@ -158,10 +158,10 @@ description: |
 | | 规则 | `agents/wopal/rules/` | `.wopal/agents/wopal/rules/` |
 | | 技能 | `agents/wopal/skills/` | `.wopal/agents/wopal/skills/` |
 | | 代理 | `agents/wopal/agents/` | `.wopal/agents/wopal/agents/` |
-| | 插件 | `agents/wopal/plugins/` | `.wopal/agents/wopal/plugins/` |
 | **Fae** | 命令 | `agents/fae/commands/` | `.wopal/agents/fae/commands/` |
 | | 规则 | `agents/fae/rules/` | `.wopal/agents/fae/rules/` |
 | | 技能 | `agents/fae/skills/` | `.wopal/agents/fae/skills/` |
+| **通用** | 插件 | `plugins/` | `.wopal/plugins/` |
 
 **原则**：通用层优先，专用层补充(重名则覆盖通用层)。修改通用层影响所有 Agent。
 

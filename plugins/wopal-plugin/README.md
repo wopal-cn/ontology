@@ -1,4 +1,4 @@
-# rules-plugin — Wopal OpenCode 插件
+# wopal-plugin — Wopal OpenCode 插件
 
 Wopal 专用的 OpenCode 插件，提供规则注入与非阻塞任务委派能力。
 

@@ -1,4 +1,4 @@
-# rules-plugin — Wopal OpenCode 插件
+# wopal-plugin — Wopal OpenCode 插件
 
 > **定位**：Wopal 专用的 OpenCode 插件，提供规则注入 + 非阻塞任务委派能力
 
@@ -117,7 +117,7 @@ src/                         # 源码目录
 ├── migrate-embeddings.ts    # CLI 工具
 ├── test-retrieval.ts        # 测试工具
 ├── test-retriever-live.ts   # 测试工具
-├── validate-rules-plugin.ts # 验证工具
+├── validate-wopal-plugin.ts # 验证工具
 ├── bun.lock                 # ✅ 主锁文件（保留）
 └── pnpm-lock.yaml          # ⚠️ 冗余锁文件（待删）
 ```
@@ -292,7 +292,7 @@ WOPAL_PLUGIN_DEBUG=task   # 仅任务模块
 WOPAL_PLUGIN_DEBUG=rules  # 仅规则模块
 
 # 指定日志文件
-WOPAL_PLUGIN_LOG_FILE=/Users/sam/coding/wopal/wopal-workspace/logs/wopal-plugins-debug.log
+WOPAL_PLUGIN_LOG_FILE=logs/wopal-plugins-debug.log
 ```
 
 日志位置由 `WOPAL_PLUGIN_LOG_FILE` 环境变量指定，默认 `tmpdir()/wopal-plugin.log`
@@ -399,14 +399,14 @@ OpenCode 配置 (`opencode.jsonc`)：
 ### 部署前从源码目录测试
 ```json
 "plugin": [
-  "./projects/ontology/agents/wopal/plugins/rules-plugin/src/index.ts"
+  "./projects/ontology/plugins/wopal-plugin/src/index.ts"
 ]
 ```
 
 ### 部署后从部署层加载
 ```json
 "plugin": [
-  "./.wopal/agents/wopal/plugins/rules-plugin/src/index.ts"
+  "./.wopal/plugins/wopal-plugin/src/index.ts"
 ]
 ```
 

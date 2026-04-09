@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * OpenCode Rules Plugin 验证脚本
+ * OpenCode wopal-plugin 验证脚本
  *
  * 测试内容：
  * 1. 插件是否能正确加载
@@ -10,7 +10,7 @@
  *
  * 使用方法：
  *   cd /path/to/workspace
- *   bun projects/ontology/plugins/opencode/rules-plugin/validate-rules-plugin.ts
+ *   bun projects/ontology/plugins/wopal-plugin/validate-wopal-plugin.ts
  */
 
 import { cwd } from 'process';
