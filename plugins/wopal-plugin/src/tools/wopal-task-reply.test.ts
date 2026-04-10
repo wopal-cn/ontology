@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { createWopalReplyTool } from "./wopal-reply.js"
+import { createWopalReplyTool } from "./wopal-task-reply.js"
 import type { WopalTask } from "../types.js"
 
 function getExecute(toolDefinition: unknown) {
@@ -10,6 +10,7 @@ function createMockClient() {
   return {
     session: {
       promptAsync: vi.fn().mockResolvedValue(undefined),
+      abort: vi.fn().mockResolvedValue(undefined),
     },
     question: {
       reply: vi.fn().mockResolvedValue(undefined),
@@ -31,10 +32,11 @@ function createMockTaskManager(
     getClient: vi.fn(() => mockClient),
     getV2Client: vi.fn(() => v2Client),
     getServerUrl: vi.fn(() => serverUrl),
+    releaseConcurrencySlot: vi.fn(),
   }
 }
 
-describe("wopal_reply", () => {
+describe("wopal_task_reply", () => {
   const parentSessionID = "parent-session-123"
 
   function createWaitingTask(overrides?: Partial<WopalTask>): WopalTask {
@@ -235,5 +237,80 @@ describe("wopal_reply", () => {
     )
 
     expect(result).toBe("Error: session.promptAsync is unavailable")
+  })
+
+  it("interrupt=true calls abort + promptAsync on running task", async () => {
+    const mockClient = createMockClient()
+    const runningTask = createWaitingTask({ status: "running" as WopalTask["status"] })
+    const mockManager = createMockTaskManager(runningTask, mockClient)
+    const execute = getExecute(createWopalReplyTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: runningTask.id, message: "Change direction", interrupt: true },
+      { sessionID: parentSessionID },
+    )
+
+    expect(result).toBe(`Interrupt sent to task ${runningTask.id}. The background task will continue with new direction.`)
+    expect(mockClient.session.abort).toHaveBeenCalledWith({ path: { id: runningTask.sessionID } })
+    expect(mockClient.session.promptAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { id: runningTask.sessionID },
+        body: { parts: [{ type: "text", text: "Change direction" }] },
+      }),
+    )
+    expect(runningTask.status).toBe("running")
+    expect(runningTask.idleNotified).toBeUndefined()
+    expect(runningTask.waitingReason).toBeUndefined()
+  })
+
+  it("interrupt=true returns error for non-running task", async () => {
+    const waitingTask = createWaitingTask()
+    const mockManager = createMockTaskManager(waitingTask)
+    const execute = getExecute(createWopalReplyTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: waitingTask.id, message: "test", interrupt: true },
+      { sessionID: parentSessionID },
+    )
+
+    expect(result).toContain("interrupt only works on running tasks")
+    expect(result).toContain("Task is waiting")
+  })
+
+  it("interrupt=true abort fails but still sends message", async () => {
+    const mockClient = createMockClient()
+    mockClient.session.abort.mockRejectedValueOnce(new Error("Session already idle"))
+    const runningTask = createWaitingTask({ status: "running" as WopalTask["status"], idleNotified: true })
+    const mockManager = createMockTaskManager(runningTask, mockClient)
+    const execute = getExecute(createWopalReplyTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: runningTask.id, message: "new direction", interrupt: true },
+      { sessionID: parentSessionID },
+    )
+
+    expect(result).toBe(`Interrupt sent to task ${runningTask.id}. The background task will continue with new direction.`)
+    expect(mockClient.session.abort).toHaveBeenCalled()
+    expect(mockClient.session.promptAsync).toHaveBeenCalled()
+  })
+
+  it("interrupt=true clears waitingConcurrencyKey and releases slot", async () => {
+    const mockClient = createMockClient()
+    const runningTask = createWaitingTask({
+      status: "running" as WopalTask["status"],
+      idleNotified: true,
+      waitingConcurrencyKey: "default",
+      concurrencyKey: undefined,
+    } as Partial<WopalTask>)
+    const mockManager = createMockTaskManager(runningTask, mockClient)
+    const execute = getExecute(createWopalReplyTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: runningTask.id, message: "continue", interrupt: true },
+      { sessionID: parentSessionID },
+    )
+
+    expect(result).toBe(`Interrupt sent to task ${runningTask.id}. The background task will continue with new direction.`)
+    expect(mockManager.releaseConcurrencySlot).toHaveBeenCalled()
   })
 })

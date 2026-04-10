@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { createWopalOutputTool } from "./wopal-output.js"
+import { createWopalOutputTool } from "./wopal-task-output.js"
 import type { WopalTask } from "../types.js"
 
 function getExecute(toolDefinition: unknown) {
@@ -27,10 +27,11 @@ function createMockTaskManager(
       task && task.id === id && task.parentSessionID === parentID ? task : undefined,
     ),
     getClient: vi.fn(() => mockClient),
+    complete: vi.fn().mockResolvedValue("completed"),
   }
 }
 
-describe("wopal_output", () => {
+describe("wopal_task_output", () => {
   const parentSessionID = "parent-session-123"
 
   function createRunningTask(overrides?: Partial<WopalTask>): WopalTask {
@@ -59,7 +60,7 @@ describe("wopal_output", () => {
     )
 
     expect(result).toContain("**Idle:** awaiting your judgment")
-    expect(result).toContain("This task is idle. Use wopal_output to check, then wopal_cancel or wopal_reply.")
+    expect(result).toContain("Use wopal_task_output(action=\"complete\") to accept")
   })
 
   it("does not show idle status when idleNotified is false or undefined", async () => {
@@ -110,5 +111,80 @@ describe("wopal_output", () => {
     const result = await execute({ task_id: "task-1" }, {})
 
     expect(result).toBe("Current session ID is unavailable; cannot read task status.")
+  })
+
+  it("shows 'idle (awaiting judgment)' status text when task.idleNotified is true", async () => {
+    const mockClient = createMockClient()
+    const idleTask = createRunningTask({ idleNotified: true })
+    const mockManager = createMockTaskManager(idleTask, mockClient)
+    const execute = getExecute(createWopalOutputTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: idleTask.id },
+      { sessionID: parentSessionID },
+    )
+
+    expect(result).toContain("**Status:** idle (awaiting judgment)")
+    expect(result).not.toContain("**Status:** running")
+  })
+
+  it("action='complete' marks idle task as completed", async () => {
+    const mockClient = createMockClient()
+    const idleTask = createRunningTask({ idleNotified: true })
+    const mockManager = createMockTaskManager(idleTask, mockClient)
+    mockManager.complete.mockResolvedValue("completed")
+    const execute = getExecute(createWopalOutputTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: idleTask.id, action: "complete" },
+      { sessionID: parentSessionID },
+    )
+
+    expect(mockManager.complete).toHaveBeenCalledWith(idleTask.id, parentSessionID)
+    expect(result).toContain("**Status:** idle (awaiting judgment)")
+  })
+
+  it("action='complete' returns error for non-idle non-running task", async () => {
+    const completedTask = createRunningTask({ status: "completed" as WopalTask["status"] })
+    const mockManager = createMockTaskManager(completedTask)
+    const execute = getExecute(createWopalOutputTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: completedTask.id, action: "complete" },
+      { sessionID: parentSessionID },
+    )
+
+    expect(result).toContain("Task is not idle")
+    expect(result).toContain("Current status: completed")
+  })
+
+  it("action='complete' returns error when manager.complete returns 'not_found'", async () => {
+    const mockClient = createMockClient()
+    const idleTask = createRunningTask({ idleNotified: true })
+    const mockManager = createMockTaskManager(idleTask, mockClient)
+    mockManager.complete.mockResolvedValue("not_found")
+    const execute = getExecute(createWopalOutputTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: idleTask.id, action: "complete" },
+      { sessionID: parentSessionID },
+    )
+
+    expect(result).toContain("Task not found")
+  })
+
+  it("action='complete' returns error when manager.complete returns 'not_running'", async () => {
+    const mockClient = createMockClient()
+    const idleTask = createRunningTask({ idleNotified: true })
+    const mockManager = createMockTaskManager(idleTask, mockClient)
+    mockManager.complete.mockResolvedValue("not_running")
+    const execute = getExecute(createWopalOutputTool(mockManager as never))
+
+    const result = await execute(
+      { task_id: idleTask.id, action: "complete" },
+      { sessionID: parentSessionID },
+    )
+
+    expect(result).toContain("Task is not running")
   })
 })

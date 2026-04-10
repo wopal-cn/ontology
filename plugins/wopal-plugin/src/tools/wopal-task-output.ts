@@ -67,13 +67,14 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
       task_id: tool.schema.string().describe("Task ID returned by wopal_task"),
       section: tool.schema.enum(["tools", "reasoning", "text"]).optional().describe("Content section to retrieve: 'tools' (tool calls & results), 'reasoning' (thinking process), 'text' (text output). Omit for summary only."),
       last_n: tool.schema.number().optional().describe("Only output the last N messages. Default: all messages."),
+      action: tool.schema.enum(["complete"]).optional().describe("Action to perform: 'complete' marks task as completed (only for idle tasks)."),
     },
-    execute: async (args: { task_id: string; section?: OutputSection; last_n?: number }, context: ToolContext) => {
+    execute: async (args: { task_id: string; section?: OutputSection; last_n?: number; action?: "complete" }, context: ToolContext) => {
       if (!context.sessionID) {
         return "Current session ID is unavailable; cannot read task status."
       }
 
-      const { task_id, section, last_n } = args
+      const { task_id, section, last_n, action } = args
 
       const task = manager.getTaskForParent(task_id, context.sessionID)
 
@@ -81,15 +82,31 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
         return `Task not found for current session: ${task_id}`
       }
 
+      // Handle action="complete"
+      if (action === "complete") {
+        if (!task.idleNotified && task.status !== 'running') {
+          return `Task is not idle. Only idle tasks can be completed. Current status: ${task.status}`
+        }
+        const result = await manager.complete(task_id, context.sessionID)
+        if (result === 'not_found') {
+          return `Task not found: ${task_id}`
+        }
+        if (result === 'not_running') {
+          return `Task is not running: ${task_id}. Current status: ${task.status}`
+        }
+        // Success - continue to display output below
+      }
+
       let result = `**Task:** ${task.id}\n`
-      result += `**Status:** ${task.status}\n`
+      const statusDisplay = task.idleNotified ? 'idle (awaiting judgment)' : task.status
+      result += `**Status:** ${statusDisplay}\n`
       result += `**Description:** ${task.description}\n`
       result += `**Agent:** ${task.agent}\n`
 
       // idle task: awaiting Wopal judgment
       if (task.idleNotified) {
         result += `\n\n**Idle:** awaiting your judgment`
-        result += `\nThis task is idle. Use wopal_output to check, then wopal_cancel or wopal_reply.`
+        result += `\nUse wopal_task_output(action="complete") to accept, wopal_task_reply to redirect, or wopal_task_cancel to terminate.`
       }
 
       if (task.status === 'completed' && task.sessionID) {

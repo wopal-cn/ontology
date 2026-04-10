@@ -62,10 +62,11 @@ export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition
     args: {
       task_id: tool.schema.string().describe("The ID of the waiting task to reply to"),
       message: tool.schema.string().describe("The message to send to the background task"),
+      interrupt: tool.schema.boolean().optional().default(false).describe("Abort current execution and send correction"),
     },
-    execute: async (args: { task_id: string; message: string }, context: ToolContext) => {
-      const { task_id, message } = args
-      debugLog(`wopal_reply called: task_id=${task_id}`)
+    execute: async (args: { task_id: string; message: string; interrupt?: boolean }, context: ToolContext) => {
+      const { task_id, message, interrupt = false } = args
+      debugLog(`wopal_reply called: task_id=${task_id} interrupt=${interrupt}`)
 
       if (!context.sessionID) {
         return "Error: Current session ID is unavailable; cannot reply to task."
@@ -87,6 +88,52 @@ export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition
       const client = manager.getClient()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const clientAny = client as any
+
+      // Handle interrupt mode
+      if (interrupt) {
+        if (task.status !== "running") {
+          return `Error: interrupt only works on running tasks. Task is ${task.status}. Waiting tasks don't need interrupt - just reply normally.`
+        }
+
+        try {
+          // Abort current execution
+          if (typeof clientAny?.session?.abort === "function") {
+            try {
+              await clientAny.session.abort({ path: { id: task.sessionID } })
+              debugLog(`task ${task_id} aborted before interrupt reply`)
+            } catch (abortErr) {
+              debugLog(`abort failed (task may already be idle): ${abortErr}`)
+            }
+          }
+
+          // Send corrective message
+          if (typeof clientAny?.session?.promptAsync !== "function") {
+            return "Error: session.promptAsync is unavailable"
+          }
+
+          await clientAny.session.promptAsync({
+            path: { id: task.sessionID },
+            body: {
+              parts: [{ type: "text", text: message }],
+            },
+          })
+
+          // Reset state
+          task.status = "running"
+          delete task.idleNotified
+          delete task.waitingReason
+          if (task.waitingConcurrencyKey) {
+            manager.releaseConcurrencySlot(task)
+          }
+          trackActivity(task, "text")
+          debugLog(`task ${task_id} interrupted and resumed with new direction`)
+
+          return `Interrupt sent to task ${task_id}. The background task will continue with new direction.`
+        } catch (err) {
+          debugLog(`wopal_reply interrupt error: ${err}`)
+          return `Failed to send interrupt: ${err instanceof Error ? err.message : String(err)}`
+        }
+      }
 
       try {
         if (task.pendingQuestionID) {

@@ -69,7 +69,7 @@ describe("SimpleTaskManager", () => {
           agent: "general",
           parts: [{ type: "text", text: "Do something" }],
           tools: {
-            "wopal_task": false,  // only wopal_task is disabled; wopal_output and wopal_cancel are kept for monitoring mode
+            "wopal_task": false,  // only wopal_task is disabled; wopal_task_output and wopal_task_cancel are kept for monitoring mode
           },
         },
       })

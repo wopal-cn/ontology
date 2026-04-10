@@ -27,7 +27,7 @@ export function createWopalTaskTool(manager: SimpleTaskManager): ToolDefinition 
         return `Failed to launch task.\n${taskLine}Reason: ${result.error}`
       }
 
-      return `Task launched: ${result.taskId}\nStatus: ${result.status}\n\nUse \`wopal_output(task_id="${result.taskId}")\` to check status and retrieve results.`
+      return `Task launched: ${result.taskId}\nStatus: ${result.status}\n\nUse \`wopal_task_output(task_id="${result.taskId}")\` to check status and retrieve results.`
     },
   })
 }

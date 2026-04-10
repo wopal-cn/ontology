@@ -264,7 +264,7 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
         parts: [{ type: "text", text: input.prompt }],
         tools: {
           "wopal_task": false,  // 禁止嵌套启动新任务
-          // wopal_output 和 wopal_cancel 保留可用，支持监工模式
+          // wopal_task_output 和 wopal_task_cancel 保留可用，支持监工模式
         },
       },
     })
@@ -393,6 +393,30 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
     return 'cancelled'
   }
 
+  async complete(id: string, parentSessionID: string): Promise<'completed' | 'not_found' | 'not_running'> {
+    const task = this.getTaskForParent(id, parentSessionID)
+    if (!task) {
+      this.debugLog(`[complete] failed: taskId=${id} not found or ownership mismatch`)
+      return 'not_found'
+    }
+    if (task.status !== 'running') {
+      this.debugLog(`[complete] failed: taskId=${id} status=${task.status}`)
+      return 'not_running'
+    }
+
+    // Restore concurrencyKey from waitingConcurrencyKey if present (idle case)
+    if (task.waitingConcurrencyKey) {
+      task.concurrencyKey = task.waitingConcurrencyKey
+      delete task.waitingConcurrencyKey
+    }
+    this.releaseConcurrencySlot(task)
+    task.status = 'completed'
+    task.completedAt = new Date()
+
+    this.debugLog(`[complete] taskId=${id}`)
+    return 'completed'
+  }
+
   async notifyParent(taskId: string): Promise<void> {
     const task = this.tasks.get(taskId)
     if (!task || !task.sessionID) return
@@ -404,7 +428,7 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
 **Description:** ${task.description}
 ${task.error ? `**Error:** ${task.error}` : ''}
 
-Use \`wopal_output(task_id="${task.id}")\` to retrieve the result.
+Use \`wopal_task_output(task_id="${task.id}")\` to retrieve the result.
 </system-reminder>`
 
     if (typeof this.client.session?.promptAsync !== "function") {
@@ -472,7 +496,7 @@ Use \`wopal_output(task_id="${task.id}")\` to retrieve the result.
 **Description:** ${task.description}
 **Progress:** ${messageCount} messages
 
-Task is still running. Use \`wopal_output(task_id="${task.id}")\` for details.
+Task is still running. Use \`wopal_task_output(task_id="${task.id}")\` for details.
 </system-reminder>`
 
     await this.client.session.promptAsync({
@@ -593,7 +617,7 @@ Task is still running. Use \`wopal_output(task_id="${task.id}")\` for details.
 **Description:** ${task.description}
 **Duration:** No meaningful output for ${durationText}
 
-The background task may be stuck in a reasoning loop. Use \`wopal_output(task_id="${task.id}", section="reasoning")\` to check its thinking content. If it's truly stuck, use \`wopal_cancel(task_id="${task.id}")\` to terminate it.
+The background task may be stuck in a reasoning loop. Use \`wopal_task_output(task_id="${task.id}", section="reasoning")\` to check its thinking content. If it's truly stuck, use \`wopal_task_cancel(task_id="${task.id}")\` to terminate it.
 </system-reminder>`
 
     if (typeof this.client.session?.promptAsync !== "function") {

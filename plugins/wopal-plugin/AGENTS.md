@@ -43,8 +43,8 @@
 
 **核心流程**：
 - **规则注入**：发现规则文件 → 匹配条件 → 注入系统提示词
-- **任务委派**：`wopal_task` 启动子会话 → `wopal_output` 查询状态 → `session.idle` 事件触发诊断 → 完成/等待/错误
-- **双向通信**：子会话等待 → `[WOPAL TASK WAITING]` 通知父代理 → `wopal_reply` 恢复执行
+- **任务委派**：`wopal_task` 启动子会话 → `wopal_task_output` 查询状态 → `session.idle` 事件触发诊断 → 完成/等待/错误
+- **双向通信**：子会话等待 → `[WOPAL TASK WAITING]` 通知父代理 → `wopal_task_reply` 恢复执行
 - **上下文管理**：`context_manage summary` 生成摘要 → 存入 SessionContext → `buildEnrichedQuery` 读缓存增强检索
 
 ---
@@ -348,7 +348,7 @@ interface IdleDiagnostic {
 
 ```
 running → [session.idle] → IDLE 通知 → Wopal 判断
-Wopal → wopal_output 检查 → wopal_cancel / wopal_reply
+Wopal → wopal_task_output 检查 → wopal_task_output(action="complete") / wopal_task_reply / wopal_task_cancel
 ```
 
 ### 通知格式
@@ -360,12 +360,18 @@ Wopal → wopal_output 检查 → wopal_cancel / wopal_reply
 | `permission` | `[WOPAL TASK PERMISSION]` | 权限自动授权通知 |
 | `question` | `[WOPAL TASK QUESTION]` | Question Tool 事件中继 |
 
-### wopal_reply 使用
+### wopal_task_reply 使用
 
-当收到 `[WOPAL TASK WAITING]` 通知时，父代理可使用 `wopal_reply` 恢复子会话：
+当收到 `[WOPAL TASK WAITING]` 通知时，父代理可使用 `wopal_task_reply` 恢复子会话：
 
 ```
-wopal_reply(task_id="wopal-task-xxx", message="继续执行方案 A")
+wopal_task_reply(task_id="wopal-task-xxx", message="继续执行方案 A")
+```
+
+中断走偏的任务：
+
+```
+wopal_task_reply(task_id="wopal-task-xxx", message="改用方案 B", interrupt=true)
 ```
 
 ### 权限自动代理

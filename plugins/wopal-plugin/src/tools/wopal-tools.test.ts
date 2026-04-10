@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { createWopalCancelTool } from "./wopal-cancel.js"
-import { createWopalOutputTool } from "./wopal-output.js"
+import { createWopalCancelTool } from "./wopal-task-cancel.js"
+import { createWopalOutputTool } from "./wopal-task-output.js"
 import { createWopalTaskTool } from "./wopal-task.js"
 
 function getExecute(toolDefinition: unknown) {
@@ -89,7 +89,7 @@ describe("wopal tools", () => {
     })
   })
 
-  describe("wopal_output", () => {
+  describe("wopal_task_output", () => {
     it("enforces ownership via current session", async () => {
       const manager = {
         getTaskForParent: vi.fn().mockReturnValue(undefined),
@@ -196,7 +196,7 @@ describe("wopal tools", () => {
     })
   })
 
-  describe("wopal_cancel", () => {
+  describe("wopal_task_cancel", () => {
     it("enforces ownership via current session", async () => {
       const manager = {
         cancel: vi.fn().mockResolvedValue("not_found"),
