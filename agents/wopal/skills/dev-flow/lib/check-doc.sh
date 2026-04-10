@@ -141,9 +141,10 @@ check_doc_plan() {
     local plan_content_no_codeblocks
     plan_content_no_codeblocks=$(_remove_code_blocks "$(cat "$plan_file")")
     
-    if echo "$plan_content_no_codeblocks" | grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' > /dev/null 2>&1; then
+    local placeholder_pattern='(<!\-\- *(TODO|FIXME)|\- \[ \] *(TODO|FIXME)|\*\*(TODO|FIXME)|^[[:space:]]*(TODO|FIXME)[：:])|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]'
+    if echo "$plan_content_no_codeblocks" | grep -nE "$placeholder_pattern" > /dev/null 2>&1; then
         echo "Found placeholders:"
-        echo "$plan_content_no_codeblocks" | grep -nE 'TODO|FIXME|待补充|REQ-xxx|path/to/|\[[^]]*任务名称[^]]*\]' | head -5
+        echo "$plan_content_no_codeblocks" | grep -nE "$placeholder_pattern" | head -5
         ((issues++))
         placeholder_found="yes"
     else
