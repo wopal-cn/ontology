@@ -2,7 +2,7 @@
 description: Wopal's execution agent for implementation tasks—coding, refactoring, file operations, build/test runs. Receives scoped work, returns evidence. Not for planning, design, or review.
 mode: all
 temperature: 0.3
-model: qwen-coding-plan/glm-5
+model:  wopal-ai/glm-5
 permission:
   "*": allow
   doom_loop: ask
