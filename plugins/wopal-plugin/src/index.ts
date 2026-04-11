@@ -125,7 +125,7 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
 
   const hooks = runtime.createHooks();
 
-  const tools = createWopalTools(taskManager, memory?.store, memory?.embedder, sessionStore);
+  const tools = createWopalTools(taskManager, memory?.store, memory?.embedder, sessionStore, memory?.distillEngine, pluginInput.client);
 
   if (memory) {
     const { createContextManageTool } = await import("./tools/context-manage");
@@ -133,8 +133,6 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
     tools.context_manage = createContextManageTool(
       memory.llm,
       pluginInput.client,
-      memory.distillEngine,
-      memory.store,
     );
   }
 

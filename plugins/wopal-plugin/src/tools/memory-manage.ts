@@ -1,7 +1,8 @@
 /**
- * memory_manage Tool - Memory CRUD Operations
+ * memory_manage Tool - Memory CRUD Operations & Distillation
  *
- * List, search, delete, add, and stats for LanceDB memories.
+ * List, search, delete, add, stats for LanceDB memories.
+ * Also handles memory distillation (preview/confirm/cancel).
  * Registered as a plugin tool so it's always available regardless of install path.
  */
 
@@ -9,6 +10,27 @@ import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin
 import type { MemoryStore, MemoryCategory } from "../memory/store.js";
 import type { EmbeddingClient } from "../memory/embedder.js";
 import type { SessionStore } from "../session-store.js";
+import type { DistillEngine } from "../memory/distill.js";
+import {
+  clearExtractionState,
+  getPendingConfirmation,
+  setPendingConfirmation,
+  clearPendingConfirmation,
+} from "../memory/distill.js";
+import type { SessionMessage } from "../types.js";
+import {
+  formatPreviewReport,
+  formatConfirmReportWithDedup,
+} from "./distill-formatters.js";
+
+const confirmingSessions = new Set<string>();
+
+const ECHO_REMINDER_DISTILL = [
+  "",
+  "重要：调用本工具后，你必须将以上完整蒸馏结果逐字展示给用户。用户无法看到工具内部输出，依赖你主动展示。",
+  "每条候选记忆必须完整展示所有字段（正文、分类、重要性、标签），严禁省略、摘要或概括。",
+  "distill 后必须等用户确认才能执行 confirm，严禁跳过展示直接 confirm。",
+].join("\n");
 
 const ECHO_REMINDER = [
   "",
@@ -39,21 +61,28 @@ function formatTime(ts: number): string {
   return `${d.getFullYear()}-${padTime(d.getMonth() + 1)}-${padTime(d.getDate())} ${padTime(d.getHours())}:${padTime(d.getMinutes())}:${padTime(d.getSeconds())}`;
 }
 
-export function createMemoryManageTool(store: MemoryStore, embedder?: EmbeddingClient, sessionStore?: SessionStore): ToolDefinition {
+export function createMemoryManageTool(
+  store: MemoryStore,
+  embedder?: EmbeddingClient,
+  sessionStore?: SessionStore,
+  distillEngine?: DistillEngine,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  client?: any,
+): ToolDefinition {
   return tool({
     description:
       "管理 LanceDB 中的长期记忆。子命令: list（列出全部）, stats（统计）, search（搜索）, delete（删除）, add（添加单条）, update（更新单条）, injected（查看当前上下文注入的记忆）。 " +
-      "list 支持 --category 和 --limit 过滤。delete 使用记忆 ID 前缀，多个用逗号分隔。" +
-      "add 需要提供 text（记忆正文，至少 20 字符）和 category（分类）。" +
-      "update 需要提供 id（记忆 ID 前缀），只传需要修改的字段，未传的字段保持不变。text 变更时会自动重新计算向量。",
+      "Distill current session: distill（预览候选）, confirm（写入数据库）, cancel（丢弃候选）。\n\n" +
+      "重要：调用本工具后，必须把 output 的完整文本逐字写入用户回复。严禁概括、严禁摘要、严禁省略任何一条结果。" +
+      "用户使用 list 的目的是逐条审查完整内容，以决定删除或调整哪一条记忆。",
     args: {
       command: tool.schema
-        .enum(["list", "stats", "search", "delete", "add", "update", "injected"])
+        .enum(["list", "stats", "search", "delete", "add", "update", "injected", "distill", "confirm", "cancel"])
         .describe("子命令"),
       query: tool.schema
         .string()
         .optional()
-        .describe("search 的查询内容 / delete 和 update 的 ID 前缀"),
+        .describe("search 时为搜索关键词；delete/update 时为记忆 ID 前缀"),
       category: tool.schema
         .string()
         .optional()
@@ -80,9 +109,17 @@ export function createMemoryManageTool(store: MemoryStore, embedder?: EmbeddingC
         .string()
         .optional()
         .describe("语义标签（逗号分隔，如 'distill,蒸馏,规则'）"),
+      force: tool.schema
+        .boolean()
+        .optional()
+        .describe("强制重新蒸馏（仅 distill 命令）"),
+      selectedIndices: tool.schema
+        .array(tool.schema.number())
+        .optional()
+        .describe("指定写入的候选索引（仅 confirm 命令，0-based）"),
     },
     execute: async (args, context: ToolContext) => {
-      const { command, query, category, limit, text, importance, project, concepts } = args;
+      const { command, query, category, limit, text, importance, project, concepts, force, selectedIndices } = args;
 
       switch (command) {
         case "list":
@@ -111,11 +148,121 @@ export function createMemoryManageTool(store: MemoryStore, embedder?: EmbeddingC
         }
         case "injected":
           return (await formatInjected(sessionStore, context.sessionID)) + ECHO_REMINDER;
+        case "distill": {
+          const sessionID = context.sessionID;
+          if (!sessionID) return "Failed: current session ID is unavailable.";
+          if (!distillEngine) return "Memory system unavailable. Distillation requires the memory system to be initialized.";
+          return await handleDistill(sessionID, distillEngine, client, force);
+        }
+        case "confirm": {
+          const sessionID = context.sessionID;
+          if (!sessionID) return "Failed: current session ID is unavailable.";
+          if (!distillEngine) return "Memory system unavailable. Distillation requires the memory system to be initialized.";
+          return await handleConfirm(sessionID, distillEngine, selectedIndices);
+        }
+        case "cancel": {
+          const sessionID = context.sessionID;
+          if (!sessionID) return "Failed: current session ID is unavailable.";
+          clearPendingConfirmation(sessionID);
+          return "❌ Distillation cancelled. Candidates discarded.";
+        }
         default:
           return `未知命令: ${command}`;
       }
     },
   });
+}
+
+async function handleDistill(
+  sessionID: string,
+  distillEngine: DistillEngine,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  client: any,
+  force?: boolean,
+): Promise<string> {
+  if (force) {
+    clearExtractionState(sessionID);
+    clearPendingConfirmation(sessionID);
+  }
+
+  if (typeof client?.session?.messages !== "function") {
+    return "Failed: session.messages API is unavailable.";
+  }
+
+  try {
+    const result = await client.session.messages({ path: { id: sessionID } });
+    const messages: SessionMessage[] = result?.data ?? [];
+
+    if (messages.length === 0) {
+      return "No messages in current session to distill.";
+    }
+
+    const previewResult = await distillEngine.preview(sessionID, messages);
+
+    if (previewResult.candidates.length === 0) {
+      return "No memories extracted from this session. The conversation may be too short or contain no long-term valuable information.";
+    }
+
+    setPendingConfirmation(sessionID, previewResult);
+    return (
+      formatPreviewReport(
+        previewResult.candidates,
+        previewResult.title,
+        messages.length,
+      ) + ECHO_REMINDER_DISTILL
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `Distillation preview failed: ${message}`;
+  }
+}
+
+async function handleConfirm(
+  sessionID: string,
+  distillEngine: DistillEngine,
+  selectedIndices?: number[],
+): Promise<string> {
+  if (confirmingSessions.has(sessionID)) {
+    return "⚠️ Distillation confirm is already running for this session. Wait for it to finish.";
+  }
+
+  const pending = getPendingConfirmation(sessionID);
+  if (!pending) {
+    return "⚠️ No pending candidates to confirm. Run with command='distill' first.";
+  }
+
+  confirmingSessions.add(sessionID);
+  clearPendingConfirmation(sessionID);
+
+  try {
+    let candidatesToWrite = pending.candidates;
+    if (selectedIndices && selectedIndices.length > 0) {
+      candidatesToWrite = selectedIndices
+        .filter((i) => i >= 0 && i < pending.candidates.length)
+        .map((i) => pending.candidates[i]);
+      if (candidatesToWrite.length === 0) {
+        setPendingConfirmation(sessionID, pending);
+        return "⚠️ No valid candidates selected.";
+      }
+    }
+
+    const result = await distillEngine.confirmCandidates(
+      sessionID,
+      candidatesToWrite,
+      "wopal-space",
+    );
+
+    return (
+      formatConfirmReportWithDedup(candidatesToWrite, pending.title, result) +
+      ECHO_REMINDER_DISTILL
+    );
+  } catch (error) {
+    setPendingConfirmation(sessionID, pending);
+    const message = error instanceof Error ? error.message : String(error);
+    return `Distillation confirm failed: ${message}`;
+  } finally {
+    confirmingSessions.delete(sessionID);
+  }
 }
 
 async function formatList(

@@ -40,12 +40,12 @@ export function formatPreviewReport(
   lines.push("");
   lines.push("**Next Steps:**");
   lines.push(
-    "- To write all candidates: `context_manage action=confirm`",
+    "- To write all candidates: `memory_manage command=confirm`",
   );
   lines.push(
-    "- To write specific candidates: `context_manage action=confirm selectedIndices=[0,2,5]`",
+    "- To write specific candidates: `memory_manage command=confirm selectedIndices=[0,2,5]`",
   );
-  lines.push("- To cancel: `context_manage action=cancel`");
+  lines.push("- To cancel: `memory_manage command=cancel`");
 
   return lines.join("\n");
 }
