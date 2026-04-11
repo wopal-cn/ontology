@@ -248,8 +248,6 @@ If you observe:
 
 ## Phase 8: Memory Management
 
-See `/memo` and `/evolve` commands for detailed rules.
-
 ### Proactive Recall Timing
 
 **Memory is an external brain — it only has value when actively retrieved.**
