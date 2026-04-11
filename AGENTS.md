@@ -161,7 +161,7 @@ description: |
 | **Fae** | 命令 | `agents/fae/commands/` | `.wopal/agents/fae/commands/` |
 | | 规则 | `agents/fae/rules/` | `.wopal/agents/fae/rules/` |
 | | 技能 | `agents/fae/skills/` | `.wopal/agents/fae/skills/` |
-| **通用** | 插件 | `plugins/` | `.wopal/plugins/` |
+| **通用** | 插件 | `plugins/` | `.opencode/plugins/` (symlink 自动发现) |
 
 **原则**：通用层优先，专用层补充(重名则覆盖通用层)。修改通用层影响所有 Agent。
 

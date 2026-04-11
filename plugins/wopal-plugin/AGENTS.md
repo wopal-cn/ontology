@@ -391,32 +391,39 @@ wopal_task_reply(task_id="wopal-task-xxx", message="改用方案 B", interrupt=t
 
 ---
 
-## 部署 （注意：测试验证过程中无需部署）
+## 部署
 
-插件通过 `sync-to-wopal.py` 同步到 `.wopal/` 目录：
+插件通过 `.opencode/plugins/` 目录的 symlink 自动发现机制加载，无需手动部署或配置。
+
+### 自动发现机制
+
+OpenCode 启动时会自动扫描 `.opencode/plugins/*.{ts,js}`，无需在 `opencode.jsonc` 中手动声明。
+
+### 插件安装位置
+
+```
+.opencode/plugins/
+├── wopal-plugin.ts    → symlink: projects/ontology/plugins/wopal-plugin/src/index.ts
+└── task-notify.js     → symlink: projects/ontology/plugins/task-notify.js
+```
+
+### 创建 symlink
 
 ```bash
-cd /Users/sam/coding/wopal/wopal-workspace
-python scripts/sync-to-wopal.py -y
+cd /Users/sam/coding/wopal/wopal-workspace/.opencode/plugins
+ln -s /Users/sam/coding/wopal/wopal-workspace/projects/ontology/plugins/wopal-plugin/src/index.ts wopal-plugin.ts
+ln -s /Users/sam/coding/wopal/wopal-workspace/projects/ontology/plugins/task-notify.js task-notify.js
 ```
 
-OpenCode 配置 (`opencode.jsonc`)：
+### 开发阶段
 
-### 部署前从源码目录测试
-```json
-"plugin": [
-  "./projects/ontology/plugins/wopal-plugin/src/index.ts"
-]
-```
+直接修改 `projects/ontology/plugins/wopal-plugin/src/*.ts`，symlink 即时生效，无需重新部署。
 
-### 部署后从部署层加载
-```json
-"plugin": [
-  "./.wopal/plugins/wopal-plugin/src/index.ts"
-]
-```
+### 依赖管理
 
-
+- `.opencode/package.json` 由 OpenCode 自动注入 `@opencode-ai/plugin` + 执行 `npm install`
+- `wopal-plugin/node_modules/` 包含插件的其他依赖（`@lancedb/lancedb`, `openai`, `yaml`）
+- Bun import 从 symlink 目标向上查找 `node_modules`，依赖可达
 ---
 
 ## 注意事项

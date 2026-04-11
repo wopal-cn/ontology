@@ -77,8 +77,11 @@ ontology/
 ## 开发
 
 ```bash
-# 部署命令/规则/代理/插件
+# 部署命令/规则/代理到 .wopal/
 python scripts/sync-to-wopal.py -y
+
+# 插件通过 .opencode/plugins/ symlink 自动发现，无需部署
+# 详见 plugins/wopal-plugin/AGENTS.md
 
 # 安装技能（通过 wopal-cli）
 wopal skills install /path/to/skill
