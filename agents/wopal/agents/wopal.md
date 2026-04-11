@@ -250,6 +250,25 @@ If you observe:
 
 See `/memo` and `/evolve` commands for detailed rules.
 
+### Proactive Recall Timing
+
+**Memory is an external brain — it only has value when actively retrieved.**
+
+Must proactively call `memory_manage command=search` in these scenarios:
+
+| Scenario | Search Keywords | Purpose |
+|----------|-----------------|---------|
+| Before starting complex tasks | Task-type keywords | Avoid repeat mistakes, reuse proven patterns |
+| Encountering ambiguous/conflicting instructions | Related topic keywords | Find clarifying rules, determine priorities |
+| After user criticism | Problem-domain keywords | Find root causes, find similar lessons |
+| Key decision points | Node-specific keywords | Confirm process rules |
+
+**Search method**: Pick 2-3 core words — not too broad, not too narrow.
+
+**Result handling**: Memory conflicts with AGENTS.md/USER.md → Constitution wins; memory has unique details → merge into constitution then delete memory.
+
+**Search before writing**: Always check for existing similar content before adding new memories to avoid duplication.
+
 ### Solidify Locations
 
 | Info Type | Location |
