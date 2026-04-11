@@ -1,24 +1,13 @@
 /**
- * context_manage Tool - Session Context Management & Memory Distillation
+ * context_manage Tool - Session Context Management
  *
- * Manages session-level state including summaries, status, and distillation.
+ * Manages session-level state including summaries and status.
  * - summary: Generate session summary via LLM and update session title
  * - status: View current session context state and staleness
- * - distill: Preview candidates for review (requires memory system)
- * - confirm: Write pending candidates to database (requires memory system)
- * - cancel: Discard pending candidates (requires memory system)
  */
 
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin";
-import type { DistillEngine } from "../memory/distill.js";
-import {
-  clearExtractionState,
-  getPendingConfirmation,
-  setPendingConfirmation,
-  clearPendingConfirmation,
-} from "../memory/distill.js";
 import type { DistillLLMClient } from "../memory/llm-client.js";
-import type { MemoryStore } from "../memory/store.js";
 import {
   loadSessionContext,
   saveSessionContext,
@@ -26,77 +15,31 @@ import {
 } from "../memory/session-context.js";
 import type { SessionMessage } from "../types.js";
 import { createDebugLog } from "../debug.js";
-import {
-  formatPreviewReport,
-  formatConfirmReportWithDedup,
-} from "./distill-formatters.js";
 
 const debugLog = createDebugLog("[wopal-memory]", "memory");
 
-const confirmingSessions = new Set<string>();
-
 const STALENESS_THRESHOLD = 20;
-
-const ECHO_REMINDER = [
-  "",
-  "重要：调用本工具后，你必须将以上完整蒸馏结果逐字展示给用户。用户无法看到工具内部输出，依赖你主动展示。",
-  "每条候选记忆必须完整展示所有字段（正文、分类、重要性、标签），严禁省略、摘要或概括。",
-  "distill 后必须等用户确认才能执行 confirm，严禁跳过展示直接 confirm。",
-].join("\n");
-
-type ContextManageAction =
-  | "summary"
-  | "status"
-  | "distill"
-  | "confirm"
-  | "cancel";
-
-interface ContextManageArgs {
-  action: ContextManageAction;
-  force?: boolean;
-  selectedIndices?: number[];
-}
 
 /**
  * Create context_manage tool
  *
  * @param distillLLM - Distill LLM client for summary generation
  * @param client - OpenCode client for session.messages() and session.update()
- * @param distillEngine - Distill engine instance (optional, for distill actions)
- * @param store - Memory store (optional, kept for API compatibility)
  */
 export function createContextManageTool(
   distillLLM: DistillLLMClient,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   client: any,
-  distillEngine?: DistillEngine,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _store?: MemoryStore,
 ): ToolDefinition {
   return tool({
     description:
-      "管理会话上下文状态。子命令: summary（生成摘要 + 更新 session title）, status（查看状态 + 过时判断）。" +
-      "summary 是内部基础设施：调用 LLM 生成 ≤50 字核心意图，用于 session title 管理和语义检索增强。不是会话回顾工具。" +
-      "status 显示当前摘要内容、title、以及是否过时（超过 20 条新消息则提示重新生成）。" +
-      "Distill current session: Step 1 - Preview candidates for review. Step 2 - Confirm to write. " +
-      "Use action='distill' to extract without writing, action='confirm' to write pending candidates, action='cancel' to discard." +
-      "\n\n⚠️ Agent 禁止主动生成长格式会话摘要——那是 OpenCode compact 的职责，不是本工具的用途。",
+      "管理会话上下文状态。子命令: summary（生成摘要 + 更新 session title）, status（查看状态 + 过时判断）。summary 是内部基础设施：调用 LLM 生成 ≤50 字核心意图，用于 session title 管理和语义检索增强。不是会话回顾工具。status 显示当前摘要内容、title、以及是否过时（超过 20 条新消息则提示重新生成）。\n\n⚠️ Agent 禁止主动生成长格式会话摘要——那是 OpenCode compact 的职责，不是本工具的用途。",
     args: {
       action: tool.schema
-        .enum(["summary", "status", "distill", "confirm", "cancel"] as const)
-        .describe(
-          "子命令: 'summary' 生成摘要并更新 title, 'status' 查看当前状态, 'distill' 提取候选记忆, 'confirm' 写入数据库, 'cancel' 丢弃候选",
-        ),
-      force: tool.schema
-        .boolean()
-        .optional()
-        .describe("Force re-distillation even if already extracted (only for distill)"),
-      selectedIndices: tool.schema
-        .array(tool.schema.number())
-        .optional()
-        .describe("Optional: indices of candidates to write (0-based)"),
+        .enum(["summary", "status"] as const)
+        .describe("子命令: 'summary' 生成摘要并更新 title, 'status' 查看当前状态"),
     },
-    execute: async (args: ContextManageArgs, context: ToolContext): Promise<string> => {
+    execute: async (args, context: ToolContext): Promise<string> => {
       const sessionID = context.sessionID;
 
       debugLog(`[context_manage] Action: ${args.action}, Session: ${sessionID ?? "N/A"}`);
@@ -113,120 +56,9 @@ export function createContextManageTool(
         return await handleStatus(sessionID, client);
       }
 
-      if (args.action === "distill") {
-        if (!distillEngine) {
-          return "Memory system unavailable. Distillation requires the memory system to be initialized.";
-        }
-        return await handleDistill(sessionID, distillEngine, client, args.force);
-      }
-
-      if (args.action === "confirm") {
-        if (!distillEngine) {
-          return "Memory system unavailable. Distillation requires the memory system to be initialized.";
-        }
-        return await handleConfirm(sessionID, distillEngine, args.selectedIndices);
-      }
-
-      if (args.action === "cancel") {
-        clearPendingConfirmation(sessionID);
-        return "❌ Distillation cancelled. Candidates discarded.";
-      }
-
       return "Unknown action.";
     },
   });
-}
-
-async function handleDistill(
-  sessionID: string,
-  distillEngine: DistillEngine,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: any,
-  force?: boolean,
-): Promise<string> {
-  if (force) {
-    clearExtractionState(sessionID);
-    clearPendingConfirmation(sessionID);
-  }
-
-  if (typeof client?.session?.messages !== "function") {
-    return "Failed: session.messages API is unavailable.";
-  }
-
-  try {
-    const result = await client.session.messages({ path: { id: sessionID } });
-    const messages: SessionMessage[] = result?.data ?? [];
-
-    if (messages.length === 0) {
-      return "No messages in current session to distill.";
-    }
-
-    const previewResult = await distillEngine.preview(sessionID, messages);
-
-    if (previewResult.candidates.length === 0) {
-      return "No memories extracted from this session. The conversation may be too short or contain no long-term valuable information.";
-    }
-
-    setPendingConfirmation(sessionID, previewResult);
-    return (
-      formatPreviewReport(
-        previewResult.candidates,
-        previewResult.title,
-        messages.length,
-      ) + ECHO_REMINDER
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return `Distillation preview failed: ${message}`;
-  }
-}
-
-async function handleConfirm(
-  sessionID: string,
-  distillEngine: DistillEngine,
-  selectedIndices?: number[],
-): Promise<string> {
-  if (confirmingSessions.has(sessionID)) {
-    return "⚠️ Distillation confirm is already running for this session. Wait for it to finish.";
-  }
-
-  const pending = getPendingConfirmation(sessionID);
-  if (!pending) {
-    return "⚠️ No pending candidates to confirm. Run with action='distill' first.";
-  }
-
-  confirmingSessions.add(sessionID);
-  clearPendingConfirmation(sessionID);
-
-  try {
-    let candidatesToWrite = pending.candidates;
-    if (selectedIndices && selectedIndices.length > 0) {
-      candidatesToWrite = selectedIndices
-        .filter((i) => i >= 0 && i < pending.candidates.length)
-        .map((i) => pending.candidates[i]);
-      if (candidatesToWrite.length === 0) {
-        setPendingConfirmation(sessionID, pending);
-        return "⚠️ No valid candidates selected.";
-      }
-    }
-
-    const result = await distillEngine.confirmCandidates(
-      sessionID,
-      candidatesToWrite,
-      "wopal-space",
-    );
-
-    return (
-      formatConfirmReportWithDedup(candidatesToWrite, pending.title, result) +
-      ECHO_REMINDER
-    );
-  } catch (error) {
-    setPendingConfirmation(sessionID, pending);
-    const message = error instanceof Error ? error.message : String(error);
-    return `Distillation confirm failed: ${message}`;
-  } finally {
-    confirmingSessions.delete(sessionID);
-  }
 }
 
 async function handleSummary(
