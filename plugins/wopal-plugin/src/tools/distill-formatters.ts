@@ -31,7 +31,7 @@ export function formatPreviewReport(
       lines.push(indentedBody);
     }
     lines.push(
-      `   Category: \`${candidate.category}\` | Importance: ${candidate.importance}/10 | Concepts: ${candidate.concepts.join(", ") || "none"}`,
+      `   Category: \`${candidate.category}\` | Importance: ${candidate.importance}/10 | Tags: ${candidate.tags.join(", ") || "none"}`,
     );
     lines.push("");
   });
@@ -73,7 +73,7 @@ export function formatConfirmReportWithDedup(
 
   selected.forEach((m, i) => {
     lines.push(
-      `**[${i}] ${m.category} | 重要性: ${m.importance}/10 | 标签: ${m.concepts.join(", ") || "none"}**`,
+      `**[${i}] ${m.category} | 重要性: ${m.importance}/10 | 标签: ${m.tags.join(", ") || "none"}**`,
     );
     lines.push(m.body);
     lines.push("");

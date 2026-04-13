@@ -46,6 +46,7 @@ export interface Memory {
   created_at: number; // timestamp ms
   updated_at: number; // timestamp ms
   access_count: number;
+  tags: string; // comma-separated tags: "distill,memory,rule"
   metadata: Record<string, unknown>;
   [key: string]: unknown;
 }
@@ -60,6 +61,7 @@ export interface MemoryInput {
   project: string;
   session_id: string;
   importance?: number;
+  tags?: string[]; // comma-separated tags array
   metadata?: Record<string, unknown>;
 }
 
@@ -79,6 +81,7 @@ interface StoredMemoryRow {
   created_at: bigint;
   updated_at: bigint;
   access_count: number;
+  tags: string;
   metadata: string;
 }
 
@@ -92,6 +95,7 @@ type MemoryUpdate = Partial<
     | "session_id"
     | "importance"
     | "access_count"
+    | "tags"
     | "metadata"
   >
 >;
@@ -163,6 +167,7 @@ export class MemoryStore {
             created_at: BigInt(0),
             updated_at: BigInt(0),
             access_count: 0,
+            tags: "",
             metadata: "{}",
           },
         ]);
@@ -171,10 +176,62 @@ export class MemoryStore {
         debugLog(`Table '${this.tableName}' created with schema`);
       }
 
+      // Schema migration: add 'tags' column if missing (upgrade from pre-83)
+      const schema = await this.table.schema();
+      const hasTags = schema.fields.some((f) => f.name === "tags");
+      if (!hasTags) {
+        debugLog(`Schema migration: adding 'tags' column`);
+        const allRows = await this.table.query().toArray();
+        const migrated = allRows.map((row) => {
+          const r = row as Record<string, unknown>;
+          let meta: Record<string, unknown> = {};
+          if (typeof r.metadata === "string") {
+            try { meta = JSON.parse(r.metadata); } catch { /* */ }
+          }
+          const concepts = meta.concepts as string[] | undefined;
+          return {
+            id: String(r.id),
+            text: String(r.text),
+            vector: new Float32Array(r.vector as ArrayLike<number>),
+            category: String(r.category),
+            project: String(r.project),
+            session_id: String(r.session_id),
+            importance: Number(r.importance),
+            created_at: BigInt(Number(r.created_at)),
+            updated_at: BigInt(Number(r.updated_at)),
+            access_count: Number(r.access_count),
+            metadata: String(r.metadata),
+            tags: concepts?.join(",") ?? "",
+          };
+        });
+
+        // Drop old table and recreate with tags column
+        await this.db.dropTable(this.tableName);
+        this.table = await this.db.createTable(this.tableName, makeArrowTable(migrated));
+        debugLog(`Migrated ${migrated.length} rows with 'tags' column`);
+      }
+
       await this.table.createIndex("text", {
-        config: lancedb.Index.fts(),
+        config: lancedb.Index.fts({
+          baseTokenizer: "ngram",
+          ngramMinLength: 2,
+          ngramMaxLength: 4,
+        }),
       });
-      debugLog(`FTS index created on 'text' column`);
+      debugLog(`FTS index created on 'text' column (ngram tokenizer)`);
+
+      try {
+        await this.table.createIndex("tags", {
+          config: lancedb.Index.fts({
+            baseTokenizer: "ngram",
+            ngramMinLength: 2,
+            ngramMaxLength: 4,
+          }),
+        });
+        debugLog(`FTS index created on 'tags' column (ngram tokenizer)`);
+      } catch (idxErr) {
+        debugLog(`FTS index on 'tags' skipped (may already exist): ${idxErr}`);
+      }
 
       this.initialized = true;
       debugLog(`MemoryStore initialized successfully`);
@@ -204,6 +261,7 @@ export class MemoryStore {
       created_at: BigInt(memory.created_at),
       updated_at: BigInt(memory.updated_at),
       access_count: memory.access_count,
+      tags: memory.tags ?? "",
       metadata: JSON.stringify(memory.metadata ?? {}),
     };
   }
@@ -224,6 +282,11 @@ export class MemoryStore {
         }
       } else if (r.metadata == null) {
         r.metadata = {};
+      }
+
+      // Populate tags from row (default to empty string)
+      if (r.tags == null) {
+        r.tags = "";
       }
 
       if (typeof r.created_at === "bigint") r.created_at = Number(r.created_at);
@@ -257,6 +320,7 @@ export class MemoryStore {
     }
 
     const now = Date.now();
+    const tags = input.tags ?? [];
     const memory: Memory = {
       id: randomUUID(),
       text: body,
@@ -268,7 +332,8 @@ export class MemoryStore {
       created_at: now,
       updated_at: now,
       access_count: 0,
-      metadata: input.metadata ?? {},
+      tags: tags.join(","),
+      metadata: { ...input.metadata },
     };
 
     await this.table.add([this.toStoredRow(memory)]);
@@ -296,7 +361,7 @@ export class MemoryStore {
     query: string,
     limit: number = 10,
     queryType: QueryType = "hybrid",
-    ftsColumns: string[] = ["text"]
+    ftsColumns: string[] = ["text", "tags"]
   ): Promise<Memory[]> {
     if (!this.initialized || !this.table) {
       throw new Error("MemoryStore not initialized");

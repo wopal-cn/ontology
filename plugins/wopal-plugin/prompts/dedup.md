@@ -97,11 +97,11 @@
 
 JSON 格式，index 对应输入数组中的编号：
 
-{"decisions": [{"index": 1, "action": "create"}, {"index": 2, "action": "skip"}, {"index": 3, "action": "merge", "merge_into": 1, "merged_body": "合并后完整内容", "concepts": ["tag1"]}, {"index": 4, "action": "replace", "replace_existing": 2, "concepts": ["tag2"]}]}
+{"decisions": [{"index": 1, "action": "create"}, {"index": 2, "action": "skip"}, {"index": 3, "action": "merge", "merge_into": 1, "merged_body": "合并后完整内容", "tags": ["tag1"]}, {"index": 4, "action": "replace", "replace_existing": 2, "tags": ["tag2"]}]}
 
 字段说明：
 - action：create / skip / merge / replace
 - merge_into：合并到哪条已有记忆（编号对应 similar_existing 中的 index）
 - replace_existing：替换哪条已有记忆（编号对应 similar_existing 中的 index）
-- merged_body：merge 时输出的合并后完整内容（replace 时不需要，直接用候选 body）
-- concepts：检索标签，2-5 个小写英文短横线关键词（如 `gotcha`、`git-workflow`），反映记忆核心主题。merge 和 replace 时与已有记忆的 concepts 取并集
+- merged_body：合并后的完整内容（仅 merge 时）
+- tags：检索标签，2-5 个小写英文短横线关键词（如 `gotcha`、`git-workflow`），反映记忆核心主题。merge 和 replace 时与已有记忆的 tags 取并集

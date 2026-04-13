@@ -84,7 +84,7 @@ describe("MemoryStore", () => {
       expect(typeof retrieved!.created_at).toBe("number");
       expect(typeof retrieved!.updated_at).toBe("number");
       expect(typeof retrieved!.access_count).toBe("number");
-      expect(retrieved!.metadata).toEqual(input.metadata);
+      expect(retrieved!.metadata).toEqual({ key: "value", num: 42 });
     });
 
     it("should be idempotent for exact duplicate memory in same session", async () => {

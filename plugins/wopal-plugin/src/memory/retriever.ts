@@ -114,12 +114,14 @@ export class MemoryRetriever {
   }
 
   private computeConceptBoost(memory: Memory, queryTerms: string[]): number {
-    const concepts = memory.metadata?.concepts;
-    if (!Array.isArray(concepts)) return 0;
+    const tags = (typeof memory.tags === "string" && memory.tags.length > 0)
+      ? memory.tags.split(",").map((s: string) => s.trim()).filter(Boolean)
+      : [];
+    if (tags.length === 0) return 0;
 
     const matchCount = queryTerms.filter(term =>
-      concepts.some((c: string) =>
-        c.toLowerCase().includes(term.toLowerCase())
+      tags.some((t: string) =>
+        t.toLowerCase().includes(term.toLowerCase())
       )
     ).length;
 

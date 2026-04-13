@@ -3,7 +3,7 @@
 **必须输出 JSON 格式。禁止输出 `<system-reminder>` 或其他格式。**
 
 输出模板：
-{"memories": [{"category": "knowledge", "body": "标题\n\n核心内容...", "concepts": ["tag"]}]}
+{"memories": [{"category": "knowledge", "body": "标题\n\n核心内容...", "tags": ["tag"]}]}
 
 如果无记忆可提取，输出：{"memories": []}
 
@@ -139,25 +139,25 @@
 ## 格式模板
 
 ### 用户画像
-{"category": "profile", "body": "<身份描述>\n\n- 职业: ...\n- 技术栈: ...", "concepts": ["背景"]}
+{"category": "profile", "body": "<身份描述>\n\n- 职业: ...\n- 技术栈: ...", "tags": ["背景"]}
 
 ### 用户偏好
-{"category": "preference", "body": "<偏好描述>\n\n背景：...\n适用：...", "concepts": ["偏好"]}
+{"category": "preference", "body": "<偏好描述>\n\n背景：...\n适用：...", "tags": ["偏好"]}
 
 ### 技术知识
-{"category": "knowledge", "body": "<精确主题>\n\n<核心内容>\n\n来源：...", "concepts": ["reference"]}
+{"category": "knowledge", "body": "<精确主题>\n\n<核心内容>\n\n来源：...", "tags": ["reference"]}
 
 ### 项目事实
-{"category": "fact", "body": "<发现/决策>\n\n<结论和细节>", "concepts": ["how-it-works"]}
+{"category": "fact", "body": "<发现/决策>\n\n<结论和细节>", "tags": ["how-it-works"]}
 
 ### 避坑方法
-{"category": "gotcha", "body": "<结论/正确做法>\n\n问题：...\n方案：...\n适用：...", "concepts": ["gotcha", "problem-solution"]}
+{"category": "gotcha", "body": "<结论/正确做法>\n\n问题：...\n方案：...\n适用：...", "tags": ["gotcha", "problem-solution"]}
 
 ### 实践经验
-{"category": "experience", "body": "<流程/模式描述>\n\n流程：...\n原因：...", "concepts": ["pattern"]}
+{"category": "experience", "body": "<流程/模式描述>\n\n流程：...\n原因：...", "tags": ["pattern"]}
 
 ### 用户要求
-{"category": "requirement", "body": "<规则描述>\n\n背景：...\n适用：...", "concepts": ["user-rule"]}
+{"category": "requirement", "body": "<规则描述>\n\n背景：...\n适用：...", "tags": ["user-rule"]}
 
 ---
 
@@ -166,12 +166,12 @@
 用户说："我之前用 tail -f 监控日志，界面卡死了，以后都用 tail -n 30"
 
 输出：
-{"memories": [{"category": "gotcha", "body": "不要用 tail -f 监控日志，用 tail -n 30 代替\n\n问题：tail -f 监控日志会导致 OpenCode 界面挂起\n方案：使用 tail -n 30 代替，或定期读取文件内容\n适用：OpenCode 插件开发调试时监控日志", "concepts": ["gotcha"]}]}
+{"memories": [{"category": "gotcha", "body": "不要用 tail -f 监控日志，用 tail -n 30 代替\n\n问题：tail -f 监控日志会导致 OpenCode 界面挂起\n方案：使用 tail -n 30 代替，或定期读取文件内容\n适用：OpenCode 插件开发调试时监控日志", "tags": ["gotcha"]}]}
 
 用户说："以后代码提交前先让我评审"
 
 输出：
-{"memories": [{"category": "requirement", "body": "代码提交前必须先评审\n\n背景：用户希望对代码变更有审核权\n要求：Git commit 前必须先提供变更列表供用户评审，只有用户明确要求时才执行 commit/push\n适用：所有 Git 提交场景", "concepts": ["user-rule"]}]}
+{"memories": [{"category": "requirement", "body": "代码提交前必须先评审\n\n背景：用户希望对代码变更有审核权\n要求：Git commit 前必须先提供变更列表供用户评审，只有用户明确要求时才执行 commit/push\n适用：所有 Git 提交场景", "tags": ["user-rule"]}]}
 
 ---
 

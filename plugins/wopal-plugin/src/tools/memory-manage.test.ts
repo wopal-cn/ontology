@@ -36,7 +36,7 @@ describe('memory_manage: distill/confirm/cancel', () => {
         {
           category: 'knowledge',
           body: '## [技术知识]: 测试\n这是一个用于验证 confirm 重入保护的候选记忆正文，长度足够。',
-          concepts: ['test'],
+          tags: ['test'],
           importance: 0.7,
         },
       ],

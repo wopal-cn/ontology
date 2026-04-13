@@ -74,7 +74,8 @@ export function createMemoryManageTool(
       "管理 LanceDB 中的长期记忆。子命令: list（列出全部）, stats（统计）, search（搜索）, delete（删除）, add（添加单条）, update（更新单条）, injected（查看当前上下文注入的记忆）。 " +
       "Distill current session: distill（预览候选）, confirm（写入数据库）, cancel（丢弃候选）。\n\n" +
       "重要：调用本工具后，必须把 output 的完整文本逐字写入用户回复。严禁概括、严禁摘要、严禁省略任何一条结果。" +
-      "用户使用 list 的目的是逐条审查完整内容，以决定删除或调整哪一条记忆。",
+      "用户使用 list 的目的是逐条审查完整内容，以决定删除或调整哪一条记忆。\n\n" +
+      "参数用法：search 用 query（关键词）；delete 用 id（记忆 ID，逗号分隔多个）；update 用 id + 要修改的字段。id 从 list/search 结果的方括号中获取（如 [53cc9388] → id=\"53cc9388\"）。禁止将正文内容作为 id 传入。",
     args: {
       command: tool.schema
         .enum(["list", "stats", "search", "delete", "add", "update", "injected", "distill", "confirm", "cancel"])
@@ -82,7 +83,7 @@ export function createMemoryManageTool(
       query: tool.schema
         .string()
         .optional()
-        .describe("search 时为搜索关键词；delete/update 时为记忆 ID 前缀"),
+        .describe("search 时为搜索关键词（FTS + LIKE 混合检索）"),
       category: tool.schema
         .string()
         .optional()
@@ -105,10 +106,14 @@ export function createMemoryManageTool(
         .string()
         .optional()
         .describe("所属项目（add 默认 wopal-space）"),
-      concepts: tool.schema
+      tags: tool.schema
         .string()
         .optional()
-        .describe("语义标签（逗号分隔，如 'distill,蒸馏,规则'）"),
+        .describe("逗号分隔的关键词，用于精确检索"),
+      id: tool.schema
+        .string()
+        .optional()
+        .describe("记忆 ID（从 list/search 结果方括号获取，如 53cc9388）。delete 支持逗号分隔多个 ID"),
       force: tool.schema
         .boolean()
         .optional()
@@ -119,7 +124,7 @@ export function createMemoryManageTool(
         .describe("指定写入的候选索引（仅 confirm 命令，0-based）"),
     },
     execute: async (args, context: ToolContext) => {
-      const { command, query, category, limit, text, importance, project, concepts, force, selectedIndices } = args;
+      const { command, query, category, limit, text, importance, project, tags, force, selectedIndices, id } = args;
 
       switch (command) {
         case "list":
@@ -127,15 +132,15 @@ export function createMemoryManageTool(
         case "stats":
           return (await formatStats(store)) + ECHO_REMINDER;
         case "search":
-          return (await formatSearch(store, query ?? "")) + ECHO_REMINDER;
+          return (await formatSearch(store, query ?? "", tags)) + ECHO_REMINDER;
         case "delete":
-          return (await deleteMemories(store, query ?? "")) + ECHO_REMINDER;
+          return (await deleteMemories(store, id ?? "")) + ECHO_REMINDER;
         case "add":
           return (await addMemory(store, embedder, text ?? "", category as MemoryCategory | undefined, {
             sessionId: context.sessionID ?? "unknown",
             importance: importance ?? 0.5,
             project: project ?? "wopal-space",
-            concepts: concepts ? concepts.split(",").map(s => s.trim()).filter(Boolean) : [],
+            tags: tags ? tags.split(",").map(s => s.trim()).filter(Boolean) : [],
           })) + ECHO_REMINDER;
         case "update": {
           const updateOpts: UpdateOptions = {};
@@ -143,8 +148,8 @@ export function createMemoryManageTool(
           if (category !== undefined) updateOpts.category = category as MemoryCategory;
           if (importance !== undefined) updateOpts.importance = importance;
           if (project !== undefined) updateOpts.project = project;
-          if (concepts !== undefined) updateOpts.concepts = concepts.split(",").map(s => s.trim()).filter(Boolean);
-          return (await updateMemory(store, embedder, query ?? "", updateOpts)) + ECHO_REMINDER;
+          if (tags !== undefined) updateOpts.tags = tags.split(",").map(s => s.trim()).filter(Boolean);
+          return (await updateMemory(store, embedder, id ?? "", updateOpts)) + ECHO_REMINDER;
         }
         case "injected":
           return (await formatInjected(sessionStore, context.sessionID)) + ECHO_REMINDER;
@@ -285,8 +290,8 @@ async function formatList(
 
   for (let i = 0; i < displayed.length; i++) {
     const r = displayed[i];
-    const concepts = (r.metadata?.concepts as string[] | undefined)?.join(", ") ?? "(无)";
-    lines.push(`${i + 1}. [${r.id.slice(0, 8)}] [${formatTime(r.created_at)}] [${getCategoryLabel(r.category)}] [重要性: ${r.importance}] [标签: ${concepts}]`);
+    const tags = r.tags || "(无)";
+    lines.push(`${i + 1}. [${r.id.slice(0, 8)}] [${formatTime(r.created_at)}] [${getCategoryLabel(r.category)}] [重要性: ${r.importance}] [标签: ${tags}]`);
     lines.push(r.text);
     lines.push("");
   }
@@ -332,13 +337,19 @@ async function formatStats(store: MemoryStore): Promise<string> {
 
 async function formatSearch(
   store: MemoryStore,
-  query: string
+  query: string,
+  tags?: string
 ): Promise<string> {
-  if (!query) return "用法: search 需要 query 参数";
+  if (!query && !tags) return "用法: search 需要 query 或 tags 参数";
 
-  const results = await store.searchByQuery(query, 20, "fts", ["text"]);
+  // Build full query: append tags as space-separated terms for FTS
+  const fullQuery = tags
+    ? `${query} ${tags.replace(/,/g, " ")}`.trim()
+    : query;
+
+  const results = await store.searchByQuery(fullQuery, 20, "fts");
   // FTS 对中文支持有限，补充 LIKE 搜索
-  const likeResults = await store.searchByQuery(query, 20, "like", ["text"]);
+  const likeResults = await store.searchByQuery(query || "", 20, "like");
 
   // Merge dedup
   const seen = new Set<string>();
@@ -351,15 +362,15 @@ async function formatSearch(
   }
 
   if (merged.length === 0) {
-    return `搜索 "${query}" — 无结果`;
+    return `搜索 "${fullQuery}" — 无结果`;
   }
 
-  const lines = [`搜索 "${query}" — 找到 ${merged.length} 条结果\n`];
+  const lines = [`搜索 "${fullQuery}" — 找到 ${merged.length} 条结果\n`];
 
   for (let i = 0; i < merged.length; i++) {
     const r = merged[i];
-    const concepts = (r.metadata?.concepts as string[] | undefined)?.join(", ") ?? "(无)";
-    lines.push(`${i + 1}. [${r.id.slice(0, 8)}] [${getCategoryLabel(r.category)}] [重要性: ${r.importance}] [标签: ${concepts}]`);
+    const tags = r.tags || "(无)";
+    lines.push(`${i + 1}. [${r.id.slice(0, 8)}] [${getCategoryLabel(r.category)}] [重要性: ${r.importance}] [标签: ${tags}]`);
     lines.push(r.text);
     lines.push("");
   }
@@ -371,39 +382,48 @@ async function deleteMemories(
   store: MemoryStore,
   ids: string
 ): Promise<string> {
-  const prefixes = ids
+  const rawIds = ids
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 
-  if (prefixes.length === 0) {
-    return "用法: delete 需要 ID 前缀参数（逗号分隔多个）";
+  if (rawIds.length === 0) {
+    return "用法: delete 需要 id 参数（记忆 ID，逗号分隔多个）。ID 从 list/search 结果方括号中获取";
   }
 
-  const all = await store.searchByQuery("", 1000, "like", ["text"]);
-
-  const toDelete: { fullId: string; prefix: string; text: string }[] = [];
+  const toDelete: { fullId: string; shortId: string; text: string }[] = [];
   const notFound: string[] = [];
 
-  for (const prefix of prefixes) {
-    const match = all.find((r) => r.id.startsWith(prefix));
-    if (match) {
-      toDelete.push({
-        fullId: match.id,
-        prefix,
-        text: match.text.slice(0, 80),
-      });
-    } else {
-      notFound.push(prefix);
+  for (const rawId of rawIds) {
+    // 先尝试精确匹配完整 UUID
+    let memory = await store.get(rawId);
+    if (memory) {
+      toDelete.push({ fullId: memory.id, shortId: memory.id.slice(0, 8), text: memory.text.slice(0, 80) });
+      continue;
     }
+    // 再按前缀匹配（list 显示的 8 位短 ID）
+    const all = await store.searchByQuery("", 1000, "like", ["text"]);
+    const match = all.find((r) => r.id.startsWith(rawId));
+    if (match) {
+      toDelete.push({ fullId: match.id, shortId: match.id.slice(0, 8), text: match.text.slice(0, 80) });
+    } else {
+      notFound.push(rawId);
+    }
+  }
+
+  if (toDelete.length === 0) {
+    return `未找到 ID 为 ${rawIds.join(", ")} 的记忆`;
   }
 
   const lines: string[] = ["即将删除以下记忆：\n"];
   for (const item of toDelete) {
-    lines.push(`  [${item.prefix}] ${item.text}`);
+    lines.push(`  [${item.shortId}] ${item.text}`);
   }
-  for (const prefix of notFound) {
-    lines.push(`  [${prefix}] — 未找到`);
+  if (notFound.length > 0) {
+    lines.push("");
+    for (const id of notFound) {
+      lines.push(`  [${id}] — 未找到`);
+    }
   }
   lines.push("");
 
@@ -426,7 +446,7 @@ interface AddOptions {
   sessionId: string;
   importance: number;
   project: string;
-  concepts: string[];
+  tags: string[];
 }
 
 async function addMemory(
@@ -459,7 +479,7 @@ async function addMemory(
       project: options.project,
       session_id: options.sessionId,
       importance: options.importance,
-      metadata: { concepts: options.concepts },
+      tags: options.tags,
     });
 
     return [
@@ -468,7 +488,7 @@ async function addMemory(
       `  分类: ${getCategoryLabel(category)}`,
       `  项目: ${options.project}`,
       `  重要性: ${options.importance}`,
-      `  标签: ${options.concepts.join(", ") || "(无)"}`,
+      `  标签: ${options.tags.join(", ") || "(无)"}`,
       `  正文: ${memory.text.slice(0, 100)}${memory.text.length > 100 ? "..." : ""}`,
     ].join("\n") + ECHO_REMINDER;
   } catch (error) {
@@ -482,28 +502,33 @@ interface UpdateOptions {
   category?: MemoryCategory;
   importance?: number;
   project?: string;
-  concepts?: string[];
+  tags?: string[];
 }
 
 async function updateMemory(
   store: MemoryStore,
   embedder: EmbeddingClient | undefined,
-  idPrefix: string,
+  rawId: string,
   options: UpdateOptions,
 ): Promise<string> {
-  if (!idPrefix) {
-    return "更新失败：必须指定 ID 前缀（通过 query 参数）";
+  if (!rawId) {
+    return "更新失败：必须指定 id 参数（记忆 ID，从 list/search 结果方括号中获取）";
   }
 
-  const all = await store.searchByQuery("", 1000, "like", ["text"]);
-  const match = all.find((r) => r.id.startsWith(idPrefix));
+  // 先尝试精确匹配完整 UUID
+  let memory = await store.get(rawId);
+  // 再按前缀匹配（list 显示的 8 位短 ID）
+  if (!memory) {
+    const all = await store.searchByQuery("", 1000, "like", ["text"]);
+    memory = all.find((r) => r.id.startsWith(rawId)) ?? null;
+  }
 
-  if (!match) {
-    return `更新失败：未找到 ID 前缀为 ${idPrefix} 的记忆`;
+  if (!memory) {
+    return `更新失败：未找到 ID 为 ${rawId} 的记忆`;
   }
 
   const hasChanges = options.text !== undefined || options.category !== undefined ||
-    options.importance !== undefined || options.project !== undefined || options.concepts !== undefined;
+    options.importance !== undefined || options.project !== undefined || options.tags !== undefined;
 
   if (!hasChanges) {
     return "更新失败：未提供任何需要修改的字段";
@@ -540,20 +565,20 @@ async function updateMemory(
       updates.project = options.project;
     }
 
-    if (options.concepts !== undefined) {
-      updates.metadata = { concepts: options.concepts };
+    if (options.tags !== undefined) {
+      updates.tags = options.tags.join(",");
     }
 
-    await store.update(match.id, updates);
+    await store.update(memory.id, updates);
 
     return [
       "更新成功！",
-      `  ID: ${match.id}`,
+      `  ID: ${memory.id}`,
       options.text !== undefined ? `  正文: ${options.text.trim().slice(0, 100)}${options.text.trim().length > 100 ? "..." : ""}` : null,
       options.category !== undefined ? `  分类: ${getCategoryLabel(options.category)}` : null,
       options.importance !== undefined ? `  重要性: ${options.importance}` : null,
       options.project !== undefined ? `  项目: ${options.project}` : null,
-      options.concepts !== undefined ? `  标签: ${options.concepts.join(", ") || "(无)"}` : null,
+      options.tags !== undefined ? `  标签: ${options.tags.join(", ") || "(无)"}` : null,
     ].filter(Boolean).join("\n") + ECHO_REMINDER;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

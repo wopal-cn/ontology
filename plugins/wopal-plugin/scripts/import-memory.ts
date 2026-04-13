@@ -140,49 +140,49 @@ ${conversation}
 {
   "category": "profile",
   "body": "## [画像]: AI 开发工程师\\n- 职业: AI 开发工程师\\n- 经验: 3 年 LLM 应用开发\\n- 技术栈: Python, LangChain, TypeScript",
-  "concepts": ["背景"]
+  "tags": ["背景"]
 }
 
 ## preference
 {
   "category": "preference",
   "body": "## [偏好]: Python 代码风格\\n- 偏好: 不加类型标注，函数注释简洁，直接实现\\n- 适用范围: Python 项目开发",
-  "concepts": ["偏好"]
+  "tags": ["偏好"]
 }
 
 ## knowledge
 {
   "category": "knowledge",
   "body": "## [知识]: OpenCode Part type 枚举值\\n- 枚举值: \\"tool\\"（不是 \\"tool_call\\"）、\\"text\\"、\\"reasoning\\"、\\"step-start\\"、\\"step-finish\\"\\n- 参考: labs/ref-repos/opencode/packages/opencode/src/session/message-v2.ts",
-  "concepts": ["reference"]
+  "tags": ["reference"]
 }
 
 ## fact
 {
   "category": "fact",
   "body": "## [事实]: 技能 scope 与 agentScope 是独立维度\\n- 结论: --global 和 --agent 互斥，agentScope 隐含 space scope\\n- 细节: install 无 --agent → 空间共享；加 --agent → Agent 专属",
-  "concepts": ["how-it-works"]
+  "tags": ["how-it-works"]
 }
 
 ## gotcha
 {
   "category": "gotcha",
   "body": "## [避坑方法]: LanceDB BigInt 错误\\n### 问题\\nLanceDB 0.26+ 返回 BigInt 类型的数值列，直接算术运算会抛类型错误\\n### 方案\\n算术运算前用 Number(...) 强制转换\\n### 适用范围\\n- LanceDB 0.26+ 版本",
-  "concepts": ["gotcha", "problem-solution"]
+  "tags": ["gotcha", "problem-solution"]
 }
 
 ## experience
 {
   "category": "experience",
   "body": "## [经验]: 工具优先级策略\\n- 策略: 网页搜索和抓取优先使用 fc-local 技能（本地免费），firecrawl 消耗 credit 仅作为备选\\n- 原因: 持续打磨自研技能是空间核心策略",
-  "concepts": ["pattern"]
+  "tags": ["pattern"]
 }
 
 ## requirement
 {
   "category": "requirement",
   "body": "## [用户要求]: Git push 由用户自己决定\\n- 要求: AI Agent 永远不需要问用户是否 push\\n- 背景: 用户习惯自己决定 push 时机",
-  "concepts": ["user-rule"]
+  "tags": ["user-rule"]
 }
 
 # 输出格式
@@ -193,7 +193,7 @@ ${conversation}
     {
       "category": "profile|preference|knowledge|fact|gotcha|experience|requirement",
       "body": "结构化 Markdown body（50-300字），标题以 ## [中文标签]: 开头",
-      "concepts": ["可选概念标签"]
+      "tags": ["可选概念标签"]
     }
   ]
 }
@@ -234,7 +234,7 @@ const TAG_TO_CATEGORY: Record<string, MemoryCategory> = {
 interface ExtractedMemory {
   category: MemoryCategory;
   body: string;
-  concepts: string[];
+  tags: string[];
 }
 
 function parseLlmResponse(raw: string): { memories: ExtractedMemory[]; raw: string } {
@@ -245,10 +245,10 @@ function parseLlmResponse(raw: string): { memories: ExtractedMemory[]; raw: stri
     if (content.includes('"memories"')) {
       try {
         const parsed = JSON.parse(content);
-        const memories = (parsed.memories ?? []).map((m: { category: string; body: string; concepts?: string[] }) => {
+        const memories = (parsed.memories ?? []).map((m: { category: string; body: string; tags?: string[] }) => {
           const match = m.body.match(/^## \[(.+?)\]/);
           const category = match && TAG_TO_CATEGORY[match[1]] ? TAG_TO_CATEGORY[match[1]] : m.category as MemoryCategory;
-          return { category, body: m.body, concepts: m.concepts ?? [] };
+          return { category, body: m.body, tags: m.tags ?? [] };
         });
         return { memories, raw: "" };
       } catch {
@@ -284,10 +284,10 @@ function parseLlmResponse(raw: string): { memories: ExtractedMemory[]; raw: stri
 
   try {
     const parsed = JSON.parse(jsonStr);
-    const memories = (parsed.memories ?? []).map((m: { category: string; body: string; concepts?: string[] }) => {
+    const memories = (parsed.memories ?? []).map((m: { category: string; body: string; tags?: string[] }) => {
       const match = m.body.match(/^## \[(.+?)\]/);
       const category = match && TAG_TO_CATEGORY[match[1]] ? TAG_TO_CATEGORY[match[1]] : m.category as MemoryCategory;
-      return { category, body: m.body, concepts: m.concepts ?? [] };
+      return { category, body: m.body, tags: m.tags ?? [] };
     });
     return { memories, raw: "" };
   } catch (e) {
@@ -392,7 +392,7 @@ async function main() {
         project: "wopal-space",
         session_id: `import-memory-${Date.now()}`,
         importance: IMPORTANCE[m.category] ?? 0.5,
-        metadata: { concepts: m.concepts },
+        tags: m.tags.join(","),
       });
       stored++;
       console.log(`  [${stored}] [${m.category}] ${m.body.split("\n")[0]}`);

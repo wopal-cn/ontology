@@ -71,7 +71,7 @@ export interface DistillResult {
 export interface PreviewCandidate {
   category: MemoryCategory;
   body: string;
-  concepts: string[];
+  tags: string[];
   importance: number;
 }
 
@@ -97,7 +97,7 @@ export interface ExtractResult {
   memories: Array<{
     category: MemoryCategory;
     body: string; // self-contained structured Markdown
-    concepts: string[];
+    tags: string[];
   }>;
   title?: string;
 }
@@ -187,7 +187,7 @@ function loadPromptTemplate(): string {
 # 输出格式
 
 返回 JSON 对象。示例：
-{"memories": [{"category": "knowledge", "body": "## [技术知识]: 主题\\n**背景**: ...\\n**内容**: ...", "concepts": ["tag"]}]}
+{"memories": [{"category": "knowledge", "body": "## [技术知识]: 主题\\n**背景**: ...\\n**内容**: ...", "tags": ["tag"]}]}
 
 如果无记忆可提取，返回 {"memories": []}`;
 }
@@ -383,11 +383,11 @@ ${JSON.stringify(input, null, 2)}
 - requirement 类型：两条不同的用户要求应并存（create），不要合并
 - create：候选与已有记忆说的是不同的事情，应该同时存在
 - skip：候选的所有关键信息都已在已有记忆中
-- merge：候选补充了已有记忆没有的新细节，输出 merged_body 和 concepts
+- merge：候选补充了已有记忆没有的新细节，输出 merged_body 和 tags
 - replace：候选与已有记忆冲突（旧的对新的错），用候选替换
 
 输出 JSON：
-{"decisions": [{"index": 1, "action": "create"}, {"index": 2, "action": "skip"}, {"index": 3, "action": "merge", "merge_into": 1, "merged_body": "合并后完整内容", "concepts": ["tag1"]}]}`;
+{"decisions": [{"index": 1, "action": "create"}, {"index": 2, "action": "skip"}, {"index": 3, "action": "merge", "merge_into": 1, "merged_body": "合并后完整内容", "tags": ["tag1"]}]}`;
 }
 
 /**
@@ -486,6 +486,7 @@ export class DistillEngine {
         project,
         session_id: sessionID,
         importance: memory.importance,
+        tags: memory.tags,
         metadata: memory.metadata,
       });
     }
@@ -494,6 +495,7 @@ export class DistillEngine {
       await this.store.update(merge.existingId, {
         text: merge.body,
         vector: merge.vector,
+        tags: merge.tags.join(","),
         metadata: merge.metadata,
       });
     }
@@ -559,7 +561,7 @@ export class DistillEngine {
       return {
         category: validated.category,
         body: validated.body,
-        concepts: m.concepts ?? [],
+        tags: m.tags ?? [],
         importance: getDefaultImportance(validated.category),
       };
     });
@@ -587,6 +589,7 @@ export class DistillEngine {
       vector: Float32Array;
       category: MemoryCategory;
       importance: number;
+      tags: string[];
       metadata: Record<string, unknown>;
     }>;
     merge: Array<{
@@ -594,6 +597,7 @@ export class DistillEngine {
       existingBody: string;
       body: string;
       vector: Float32Array;
+      tags: string[];
       metadata: Record<string, unknown>;
     }>;
     skip: Array<{ reason: string }>;
@@ -604,6 +608,7 @@ export class DistillEngine {
         vector: Float32Array;
         category: MemoryCategory;
         importance: number;
+        tags: string[];
         metadata: Record<string, unknown>;
       }>,
       merge: [] as Array<{
@@ -611,6 +616,7 @@ export class DistillEngine {
         existingBody: string;
         body: string;
         vector: Float32Array;
+        tags: string[];
         metadata: Record<string, unknown>;
       }>,
       skip: [] as Array<{ reason: string }>,
@@ -636,7 +642,7 @@ export class DistillEngine {
     // gives similarityScore ≈ 0.5 which is well below retrieval threshold.
     const DEDUP_MAX_DISTANCE = 1.0;
 
-    const existingByCandidate = new Map<number, Array<{ index: number; body: string; id: string; metadata: Record<string, unknown> }>>();
+    const existingByCandidate = new Map<number, Array<{ index: number; body: string; id: string; tags: string; metadata: Record<string, unknown> }>>();
     for (let i = 0; i < validated.length; i++) {
       const vector = this.embedder.toFloat32Array(embeddings[i]);
       const similar = await this.store.search(vector, 5);
@@ -649,6 +655,7 @@ export class DistillEngine {
           index: idx + 1,
           body: m.text,
           id: m.id,
+          tags: m.tags ?? "",
           metadata: (m.metadata as Record<string, unknown>) ?? {},
         })));
       }
@@ -662,7 +669,8 @@ export class DistillEngine {
         const importance = getDefaultImportance(category);
         result.create.push({
           text: body, vector, category, importance,
-          metadata: { concepts: newMemories[i].concepts ?? [] },
+          tags: newMemories[i].tags ?? [],
+          metadata: {},
         });
       }
     }
@@ -686,7 +694,7 @@ export class DistillEngine {
         merge_into?: number;
         replace_existing?: number;
         merged_body?: string;
-        concepts?: string[];
+        tags?: string[];
       }>;
     }
 
@@ -703,7 +711,8 @@ export class DistillEngine {
           const importance = getDefaultImportance(category);
           result.create.push({
             text: body, vector, category, importance,
-            metadata: { concepts: newMemories[i].concepts ?? [] },
+            tags: newMemories[i].tags ?? [],
+            metadata: {},
           });
         }
       }
@@ -717,22 +726,21 @@ export class DistillEngine {
       const { category, body } = validated[i];
       const vector = this.embedder.toFloat32Array(embeddings[i]);
       const importance = getDefaultImportance(category);
-      const metadata: Record<string, unknown> = {
-        concepts: newMemories[i].concepts ?? [],
-      };
+      const tags: string[] = newMemories[i].tags ?? [];
+      const metadata: Record<string, unknown> = {};
 
       if (dec.action === "skip") {
         result.skip.push({ reason: "duplicate" });
       } else if (dec.action === "create") {
         // LLM decided candidate is unrelated to existing memories — create as new
-        result.create.push({ text: body, vector, category, importance, metadata });
+        result.create.push({ text: body, vector, category, importance, tags, metadata });
       } else if ((dec.action === "merge" || dec.action === "replace") && (dec.merge_into !== undefined || dec.replace_existing !== undefined)) {
         const matchIdx = dec.action === "replace" ? dec.replace_existing! : dec.merge_into!;
         const existingList = existingByCandidate.get(dec.index);
         const matchedExisting = existingList?.[matchIdx - 1];
         if (!matchedExisting) {
           warnLog(`[deduplicate] match ${matchIdx} out of range for candidate ${dec.index}`);
-          result.create.push({ text: body, vector, category, importance, metadata });
+          result.create.push({ text: body, vector, category, importance, tags, metadata });
           continue;
         }
 
@@ -740,8 +748,8 @@ export class DistillEngine {
         const mergedBody = dec.action === "replace" ? body : (dec.merged_body ?? body);
         const mergedConcepts = Array.from(
           new Set([
-            ...((matchedExisting.metadata?.concepts as string[]) ?? []),
-            ...(dec.concepts ?? []),
+            ...(matchedExisting.tags?.split(",") ?? []),
+            ...(dec.tags ?? []),
           ])
         );
 
@@ -753,11 +761,12 @@ export class DistillEngine {
           existingBody: matchedExisting.body,
           body: mergedBody,
           vector: mergedVector,
-          metadata: { concepts: mergedConcepts },
+          tags: mergedConcepts,
+          metadata: {},
         });
       } else {
         // Unknown action or missing merge target — create as new
-        result.create.push({ text: body, vector, category, importance, metadata });
+        result.create.push({ text: body, vector, category, importance, tags, metadata });
       }
     }
 
@@ -813,7 +822,7 @@ export class DistillEngine {
     const memories = candidates.map((c) => ({
       category: c.category,
       body: c.body,
-      concepts: c.concepts,
+      tags: c.tags,
     }));
 
     const dedupResult = await this.deduplicate(memories, sessionID, project);
@@ -826,6 +835,7 @@ export class DistillEngine {
         project,
         session_id: sessionID,
         importance: memory.importance,
+        tags: memory.tags,
         metadata: memory.metadata,
       });
     }
@@ -834,6 +844,7 @@ export class DistillEngine {
       await this.store.update(merge.existingId, {
         text: merge.body,
         vector: merge.vector,
+        tags: merge.tags.join(","),
         metadata: merge.metadata,
       });
     }

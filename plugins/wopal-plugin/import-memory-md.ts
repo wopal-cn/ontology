@@ -30,7 +30,7 @@ interface ParsedEntry {
   abstract: string;
   overview: string;
   content: string;
-  concepts: string[];
+  tags: string[];
 }
 
 const SECTION_TO_CATEGORY: Record<string, MemoryCategory> = {
@@ -44,7 +44,7 @@ const SECTION_TO_CATEGORY: Record<string, MemoryCategory> = {
   "OpenSpace 技能进化研究": "entities",
 };
 
-const SECTION_TO_CONCEPTS: Record<string, string[]> = {
+const SECTION_TO_TAGS: Record<string, string[]> = {
   "Wopal-Fae 协作": ["collaboration", "pattern"],
   "经验": ["pattern", "workflow"],
   "知识": ["how-it-works", "reference"],
@@ -69,7 +69,7 @@ function parseMemoryMd(content: string): ParsedEntry[] {
     if (!text) return;
 
     const category = SECTION_TO_CATEGORY[currentSection] ?? "entities";
-    const concepts = SECTION_TO_CONCEPTS[currentSection] ?? [];
+    const tags = SECTION_TO_TAGS[currentSection] ?? [];
 
     // For multi-paragraph blocks (like Wopal-Fae 协作), treat as single entry
     const firstLine = text.split("\n")[0].replace(/^\*\*.*?\*\*[:：]\s*/, "").trim();
@@ -81,7 +81,7 @@ function parseMemoryMd(content: string): ParsedEntry[] {
       abstract,
       overview: `## ${currentSection}\n${text.split("\n").slice(0, 6).join("\n")}`,
       content: text,
-      concepts,
+      tags,
     });
   }
 
@@ -181,14 +181,14 @@ function parseMemoryMdSmart(content: string): ParsedEntry[] {
           if (subBlockTitle && subBlockLines.length > 0) {
             const text = subBlockLines.join("\n").trim();
             const category = SECTION_TO_CATEGORY[currentSection] ?? "entities";
-            const concepts = SECTION_TO_CONCEPTS[currentSection] ?? [];
+            const tags = SECTION_TO_TAGS[currentSection] ?? [];
             entries.push({
               section: currentSection,
               category,
               abstract: `${subBlockTitle}: ${text.split("\n")[0].replace(/^\*\*.*?\*\*[:：]\s*/, "").slice(0, 80)}`,
               overview: `## ${currentSection}\n### ${subBlockTitle}\n${text.split("\n").slice(0, 6).join("\n")}`,
               content: text,
-              concepts,
+              tags,
             });
           }
           subBlockTitle = boldMatch[1];
@@ -202,14 +202,14 @@ function parseMemoryMdSmart(content: string): ParsedEntry[] {
       if (subBlockTitle && subBlockLines.length > 0) {
         const text = subBlockLines.join("\n").trim();
         const category = SECTION_TO_CATEGORY[currentSection] ?? "entities";
-        const concepts = SECTION_TO_CONCEPTS[currentSection] ?? [];
+        const tags = SECTION_TO_TAGS[currentSection] ?? [];
         entries.push({
           section: currentSection,
           category,
           abstract: `${subBlockTitle}: ${text.split("\n")[0].replace(/^\*\*.*?\*\*[:：]\s*/, "").slice(0, 80)}`,
           overview: `## ${currentSection}\n### ${subBlockTitle}\n${text.split("\n").slice(0, 6).join("\n")}`,
           content: text,
-          concepts,
+          tags,
         });
       }
       continue;
@@ -230,7 +230,7 @@ function parseMemoryMdSmart(content: string): ParsedEntry[] {
           abstract: `dev-flow 验证结论: 流程可行，待优化 Appetite/PRD/门控/调查清单`,
           overview: `## ${currentSection}\n${text.split("\n").slice(0, 6).join("\n")}`,
           content: text,
-          concepts: SECTION_TO_CONCEPTS[currentSection] ?? [],
+          tags: SECTION_TO_TAGS[currentSection] ?? [],
         });
       }
       continue;
@@ -264,7 +264,7 @@ function parseMemoryMdSmart(content: string): ParsedEntry[] {
       }
 
       const category = SECTION_TO_CATEGORY[currentSection] ?? "entities";
-      const concepts = SECTION_TO_CONCEPTS[currentSection] ?? [];
+      const tags = SECTION_TO_TAGS[currentSection] ?? [];
 
       entries.push({
         section: currentSection,
@@ -272,7 +272,7 @@ function parseMemoryMdSmart(content: string): ParsedEntry[] {
         abstract,
         overview: `## ${currentSection}\n${text.split("\n").slice(0, 5).join("\n")}`,
         content: text,
-        concepts,
+        tags,
       });
       continue;
     }
@@ -359,10 +359,10 @@ async function main() {
       project: "wopal-space",
       session_id: "import-memory-md",
       importance: getDefaultImportance(entry.category),
+      tags: entry.tags.join(","),
       metadata: {
         overview: entry.overview,
         content: entry.content,
-        concepts: entry.concepts,
         source: "MEMORY.md",
         section: entry.section,
       },

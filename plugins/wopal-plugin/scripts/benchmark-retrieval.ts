@@ -1,7 +1,7 @@
 /**
  * Benchmark script for memory retrieval optimization
  * 
- * Compares old (Q3 threshold) vs new (adaptive gap + concepts boost) strategies
+ * Compares old (Q3 threshold) vs new (adaptive gap + tags boost) strategies
  */
 
 import { MemoryStore, type Memory } from "../src/memory/store.js";
@@ -118,10 +118,9 @@ function computePrecisionRecall(
   const correctCount = results.filter(m =>
     expectRelevant.some(keyword =>
       m.text.toLowerCase().includes(keyword.toLowerCase()) ||
-      (m.metadata?.concepts &&
-        Array.isArray(m.metadata.concepts) &&
-        m.metadata.concepts.some((c: string) =>
-          c.toLowerCase().includes(keyword.toLowerCase())
+      (m.tags &&
+        m.tags.split(",").some((t: string) =>
+          t.trim().toLowerCase().includes(keyword.toLowerCase())
         ))
     )
   ).length;
@@ -237,7 +236,7 @@ async function main(): Promise<void> {
   }
 
   formatResults("Baseline (Q3 Threshold)", baselineResults);
-  formatResults("New (Adaptive Gap + Concepts)", newResults);
+  formatResults("New (Adaptive Gap + Tags)", newResults);
 
   console.log("\n=== Benchmark Complete ===");
 }
