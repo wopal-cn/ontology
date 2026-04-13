@@ -2,7 +2,6 @@
 description: Wopal 的执行型分身，专注实现任务——编码、重构、文件操作、构建与测试。接收明确方案，返回可验证结果。不负责规划、设计或评审。
 mode: all
 temperature: 0.3
-model: zai-coding-plan/glm-5-turbo
 permission:
   "*": allow
   doom_loop: ask
