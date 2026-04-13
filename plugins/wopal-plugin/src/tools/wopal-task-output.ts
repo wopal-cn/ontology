@@ -17,6 +17,59 @@ function truncateOutput(text: string): string {
   return text.slice(-MAX_RECENT_OUTPUT) + "\n[...earlier content truncated]"
 }
 
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`
+  return String(n)
+}
+
+async function getContextUsage(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  client: any,
+  sessionID: string,
+  directory: string,
+): Promise<string | null> {
+  try {
+    if (typeof client.session?.messages !== "function") return null
+    const messagesResult = await client.session.messages({
+      path: { id: sessionID },
+    })
+    const messages = messagesResult?.data ?? []
+
+    // 找最后一条 assistant 消息（含 tokens 字段）
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lastAssistant = [...messages].reverse().find((m: any) =>
+      m?.info?.role === "assistant" && m?.info?.tokens
+    )
+    if (!lastAssistant?.info?.tokens) return null
+
+    const tokens = lastAssistant.info.tokens
+    const used = (tokens.input ?? 0) + (tokens.cache?.read ?? 0)
+    if (used === 0) return null
+
+    // 获取 model context limit
+    if (typeof client.config?.providers !== "function") return null
+    const providersResult = await client.config.providers({
+      query: { directory },
+    })
+    const providers = providersResult?.data?.providers ?? []
+    const providerID = lastAssistant.info.providerID ?? lastAssistant.info.model?.providerID
+    const modelID = lastAssistant.info.modelID ?? lastAssistant.info.model?.modelID
+    if (!providerID || !modelID) return null
+
+    const provider = providers.find((p: { id: string }) => p.id === providerID)
+    const contextLimit = provider?.models?.[modelID]?.limit?.context
+    if (!contextLimit) return null
+
+    const pct = Math.round((used / contextLimit) * 100)
+    const warn = pct > 45 ? " ⚠️" : ""
+    return `Context: ${pct}% used (${formatTokenCount(used)}/${formatTokenCount(contextLimit)})${warn}`
+  } catch (err) {
+    debugLog(`[contextUsage] error: ${err instanceof Error ? err.message : String(err)}`)
+    return null
+  }
+}
+
 /**
  * Format progress information for display.
  */
@@ -204,8 +257,12 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
               const progress = analyzeProgress(messages, newMessages)
               const loopWarning = detectLoop(messages)
               const recentOutput = extractAssistantContent(newMessages) || null
+              const contextUsage = await getContextUsage(client, task.sessionID!, manager.getDirectory())
 
               result += formatProgressOutput(progress, loopWarning, sessionStatus, recentOutput)
+              if (contextUsage) {
+                result += `\n- ${contextUsage}`
+              }
             }
           } catch (err) {
             const errorMsg = err instanceof Error ? err.message : String(err)

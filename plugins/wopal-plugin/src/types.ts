@@ -42,6 +42,9 @@ export interface WopalTask {
   waitingConcurrencyKey?: string
   // Idle notification (Phase 3: judgment delegated to Wopal)
   idleNotified?: boolean
+  // Context usage tracking
+  lastNotifyContextUsage?: number  // percentage at last notification (for growth detection)
+  lastContextUsage?: number        // last successfully fetched percentage (cached for tick display)
 }
 
 export interface LaunchInput {

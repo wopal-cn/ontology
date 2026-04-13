@@ -827,6 +827,10 @@ export class OpenCodeRulesRuntime {
         const task = this.taskManager?.findBySession(sessionID)
         if (task && task.status === "running") {
           trackActivity(task, part?.type)
+          // Cache context usage when step finishes (tokens are populated)
+          if (part?.type === "step-finish") {
+            void this.taskManager?.cacheContextUsage(sessionID)
+          }
         }
       }
     }
@@ -946,8 +950,12 @@ export class OpenCodeRulesRuntime {
         return { verdict: 'error', reason: 'no_message_access' }
       }
 
-      const result = await client.session.messages({ path: { id: sessionID } })
+      const result = await client.session.messages({
+        path: { id: sessionID },
+        query: { limit: 10 }
+      })
       const messages = result?.data ?? []
+      this.taskDebugLog(`diagnoseIdleSession: fetched ${messages.length} messages (limit: 10)`)
 
       const { diagnoseIdle } = await import("./idle-diagnostic.js")
       return diagnoseIdle(messages)

@@ -20,6 +20,8 @@ const DEFAULT_CONCURRENCY_LIMIT = 5 // Default concurrent tasks
 // Progress notification thresholds
 const PROGRESS_NOTIFY_MESSAGE_THRESHOLD = 20  // Notify after 20 new messages
 const PROGRESS_NOTIFY_TIME_THRESHOLD_MS = 180_000  // 3 minutes
+const CONTEXT_WARN_THRESHOLD = 45  // Warn when context usage >= 45%
+const CONTEXT_NOTIFY_INCREMENT = 5   // Re-notify only after usage grows by 5%
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
@@ -61,6 +63,7 @@ export class SimpleTaskManager {
   private concurrency = new ConcurrencyManager()
   private readonly CONCURRENCY_KEY = 'default'
   private isShuttingDown = false
+  private tickRunning = false
 
   constructor(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,9 +90,18 @@ export class SimpleTaskManager {
 
     // Setup stuck detection and progress notifications (every 30 seconds)
     this.tickerInterval = setInterval(() => {
-      this.checkStuckTasks()
-      clearStuckState(this.tasks.values())
-      this.checkProgressNotifications()
+      if (this.tickRunning) return
+      this.tickRunning = true
+      void (async () => {
+        try {
+          const taskInfos = await this.checkProgressNotifications()
+          clearStuckState(this.tasks.values())
+          this.checkStuckTasks()
+          this.logTickStatus(taskInfos)
+        } finally {
+          this.tickRunning = false
+        }
+      })()
     }, 30_000)
     this.tickerInterval.unref()
 
@@ -451,7 +463,68 @@ Use \`wopal_task_output(task_id="${task.id}")\` to retrieve the result.
     this.debugLog(`[notifyParent] success: taskId=${taskId}`)
   }
 
-  private async checkProgressNotifications(): Promise<void> {
+  private async getContextUsagePercent(sessionID: string): Promise<number | null> {
+    const ctxLog = (msg: string) => this.debugLog(`[ctxUsage:${sessionID.slice(0, 8)}] ${msg}`)
+    try {
+      if (typeof this.client.session?.messages !== "function") {
+        ctxLog("no session.messages API")
+        return null
+      }
+      const messagesResult = await this.client.session.messages({
+        path: { id: sessionID },
+      })
+      const messages = messagesResult?.data ?? []
+      ctxLog(`fetched ${messages.length} messages`)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const lastAssistant = [...messages].reverse().find((m: any) =>
+        m?.info?.role === "assistant" && m?.info?.tokens
+      )
+      if (!lastAssistant?.info?.tokens) {
+        const assistantCount = messages.filter((m: any) => m?.info?.role === "assistant").length
+        ctxLog(`no assistant with tokens (total assistants: ${assistantCount})`)
+        return null
+      }
+
+      const tokens = lastAssistant.info.tokens
+      const used = (tokens.input ?? 0) + (tokens.cache?.read ?? 0)
+      if (used === 0) {
+        ctxLog("tokens.input=0 (step still streaming)")
+        return null
+      }
+
+      if (typeof this.client.config?.providers !== "function") {
+        ctxLog("no config.providers API")
+        return null
+      }
+      const providersResult = await this.client.config.providers({
+        query: { directory: this.directory },
+      })
+      const providers = providersResult?.data?.providers ?? []
+      const providerID = lastAssistant.info.providerID ?? lastAssistant.info.model?.providerID
+      const modelID = lastAssistant.info.modelID ?? lastAssistant.info.model?.modelID
+      if (!providerID || !modelID) {
+        ctxLog(`missing IDs: providerID=${providerID ?? 'undefined'} modelID=${modelID ?? 'undefined'}`)
+        return null
+      }
+
+      const provider = providers.find((p: { id: string }) => p.id === providerID)
+      const contextLimit = provider?.models?.[modelID]?.limit?.context
+      if (!contextLimit) {
+        ctxLog(`no context limit for ${providerID}/${modelID}`)
+        return null
+      }
+
+      const pct = Math.round((used / contextLimit) * 100)
+      ctxLog(`${used}/${contextLimit} = ${pct}%`)
+      return pct
+    } catch (err) {
+      ctxLog(`error: ${toErrorMessage(err)}`)
+      return null
+    }
+  }
+
+  private async checkProgressNotifications(): Promise<Array<{ taskId: string; messageCount: number; wasNotified: boolean; contextUsage: number | null }>> {
+    const taskInfos: Array<{ taskId: string; messageCount: number; wasNotified: boolean; contextUsage: number | null }> = []
     const runningTasks = Array.from(this.tasks.values()).filter(t => t.status === 'running' && !t.idleNotified)
     
     for (const task of runningTasks) {
@@ -475,35 +548,79 @@ Use \`wopal_task_output(task_id="${task.id}")\` to retrieve the result.
         const messageDelta = messageCount - lastNotifyCount
         const timeDelta = now.getTime() - referenceTime
         
-        if (messageDelta >= PROGRESS_NOTIFY_MESSAGE_THRESHOLD || 
-            (referenceTime > 0 && timeDelta >= PROGRESS_NOTIFY_TIME_THRESHOLD_MS)) {
-          await this.sendProgressNotification(task, messageCount)
+        // Message/time based notification
+        let shouldNotify = messageDelta >= PROGRESS_NOTIFY_MESSAGE_THRESHOLD || 
+            (referenceTime > 0 && timeDelta >= PROGRESS_NOTIFY_TIME_THRESHOLD_MS)
+        
+        // Context usage based notification
+        let contextUsage: number | null = null
+        try {
+          contextUsage = await this.getContextUsagePercent(task.sessionID)
+          // Cache successful fetch for tick display (used when current tick fails)
+          if (contextUsage !== null) {
+            task.lastContextUsage = contextUsage
+          }
+        } catch {
+          // Graceful degradation
+        }
+        
+        // Context usage based notification (OR: independent from message/time)
+        // Triggers when context >= 45%, then re-triggers every +5%
+        if (contextUsage !== null && contextUsage >= CONTEXT_WARN_THRESHOLD) {
+          const lastNotifiedUsage = task.lastNotifyContextUsage ?? 0
+          const usageGrowth = contextUsage - lastNotifiedUsage
+          if (usageGrowth >= CONTEXT_NOTIFY_INCREMENT) {
+            shouldNotify = true
+          }
+        }
+        
+        if (shouldNotify) {
+          await this.sendProgressNotification(task, messageCount, contextUsage)
           task.lastNotifyMessageCount = messageCount
           task.lastNotifyTime = now
+          // Sync context baseline to prevent duplicate notifications
+          // from other trigger conditions
+          if (contextUsage !== null && contextUsage >= CONTEXT_WARN_THRESHOLD) {
+            task.lastNotifyContextUsage = contextUsage
+          }
         }
+        
+        taskInfos.push({
+          taskId: task.id,
+          messageCount,
+          wasNotified: shouldNotify,
+          contextUsage
+        })
       } catch (err) {
         this.debugLog(`[progressNotify] error for ${task.id}: ${toErrorMessage(err)}`)
       }
     }
+
+    return taskInfos
   }
 
-  private async sendProgressNotification(task: WopalTask, messageCount: number): Promise<void> {
+  private async sendProgressNotification(task: WopalTask, messageCount: number, contextUsage: number | null): Promise<void> {
     if (typeof this.client.session?.promptAsync !== "function") return
 
-    const notification = `<system-reminder>
-[WOPAL TASK PROGRESS]
+    let contextLine = ''
+    if (contextUsage !== null) {
+      const warn = contextUsage >= CONTEXT_WARN_THRESHOLD ? ' ⚠️' : ''
+      contextLine = `\n**Context:** ${contextUsage}% used${warn}`
+    }
+
+    const notification = `[WOPAL TASK PROGRESS]
 **ID:** \`${task.id}\`
 **Description:** ${task.description}
-**Progress:** ${messageCount} messages
+**Progress:** ${messageCount} messages${contextLine}
 
-Task is still running. Use \`wopal_task_output(task_id="${task.id}")\` for details.
-</system-reminder>`
+Task is still running. Use \`wopal_task_output(task_id="${task.id}")\` for details.`
+    // 注意：noReply: false 以触发主 agent 响应，与 idle/stuck 通知一致
 
     await this.client.session.promptAsync({
       path: { id: task.parentSessionID },
       body: {
-        noReply: true,
-        parts: [{ type: "text", text: notification, synthetic: true }],
+        noReply: false,
+        parts: [{ type: "text", text: notification }],
       },
     }).catch((err: unknown) => {
       this.debugLog(`[progressNotify] send error: ${toErrorMessage(err)}`)
@@ -608,6 +725,56 @@ Task is still running. Use \`wopal_task_output(task_id="${task.id}")\` for detai
     }
   }
 
+  private logTickStatus(
+    progressInfos: Array<{ taskId: string; messageCount: number; wasNotified: boolean; contextUsage: number | null }>
+  ): void {
+    // Exclude idleNotified tasks - they're awaiting Wopal's judgment, no need to monitor
+    const runningTasks = Array.from(this.tasks.values())
+      .filter(t => t.status === 'running' && !t.idleNotified)
+    
+    if (runningTasks.length === 0) return
+
+    const now = Date.now()
+    const lines = runningTasks.map((task, i) => {
+      const shortId = task.id.replace('wopal-task-', '').slice(0, 8)
+      const lastNotifyCount = task.lastNotifyMessageCount ?? 0
+      const wasChecked = progressInfos.find(p => p.taskId === task.id)
+      
+      // 消息增量
+      let msgsText: string
+      if (wasChecked) {
+        msgsText = lastNotifyCount > 0
+          ? `+${wasChecked.messageCount - lastNotifyCount} msgs`
+          : `${wasChecked.messageCount} msgs`
+      } else {
+        msgsText = '—'
+      }
+      
+      // 耗时：距上次通知，或从 startedAt
+      const refTime = lastNotifyCount > 0 && task.lastNotifyTime
+        ? task.lastNotifyTime.getTime()
+        : (task.startedAt?.getTime() ?? 0)
+      const elapsedMs = refTime > 0 ? now - refTime : 0
+      const totalSec = Math.floor(elapsedMs / 1000)
+      const min = Math.floor(totalSec / 60)
+      const sec = totalSec % 60
+      const timeText = `${min}m${sec.toString().padStart(2, '0')}s`
+      
+      // 上下文使用率：优先当前 tick，fallback 到上次缓存值
+      const ctxPct = wasChecked?.contextUsage ?? task.lastContextUsage
+      const ctxText = ctxPct != null
+        ? (ctxPct >= CONTEXT_WARN_THRESHOLD ? `, ctx:${ctxPct}% ⚠️` : `, ctx:${ctxPct}%`)
+        : ''
+      
+      // 通知标记
+      const notifiedMark = wasChecked?.wasNotified ? ' ✓notified' : ''
+      
+      return `  [${i + 1}] wopal-task-${shortId} "${task.description}": ${msgsText}, ${timeText}${ctxText}${notifiedMark}`
+    })
+    
+    this.debugLog(`[tick] ${runningTasks.length} tasks:\n${lines.join('\n')}`)
+  }
+
   async notifyParentStuck(task: WopalTask, durationText: string): Promise<void> {
     if (!task.sessionID) return
 
@@ -636,5 +803,25 @@ The background task may be stuck in a reasoning loop. Use \`wopal_task_output(ta
     })
 
     this.debugLog(`[notifyParentStuck] sent: taskId=${task.id} duration=${durationText}`)
+  }
+
+  /**
+   * Update cached context usage for a task's sub-session.
+   * Called from runtime event handler on step-finish to capture tokens
+   * before they become stale in the next streaming step.
+   */
+  async cacheContextUsage(sessionID: string): Promise<void> {
+    const task = this.findBySession(sessionID)
+    if (!task?.sessionID) return
+
+    try {
+      const pct = await this.getContextUsagePercent(sessionID)
+      if (pct !== null) {
+        task.lastContextUsage = pct
+        this.debugLog(`[ctxCache] session=${sessionID.slice(0, 8)} cached=${pct}%`)
+      }
+    } catch {
+      // Graceful degradation
+    }
   }
 }
