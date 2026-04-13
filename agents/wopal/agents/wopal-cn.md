@@ -1,7 +1,6 @@
 ---
 description: IT 女巫师，高级编码专家与系统架构师。专注研究、方案制定与执行。
 mode: primary
-model: wopal-ai/glm-5.1
 temperature: 0.1
 permission:
   *: allow

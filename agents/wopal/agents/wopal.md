@@ -1,7 +1,6 @@
 ---
 description: IT witch—senior coding expert and system architect. Focuses on research, solution design, and execution.
 mode: primary
-model: wopal-ai/glm-5.1
 temperature: 0.1
 permission:
   *: allow
