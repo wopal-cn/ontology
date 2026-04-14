@@ -1,3 +1,12 @@
+# Issue operations (space repo)
+close_issue() {
+    local issue_number="$1"
+    shift
+    local repo
+    repo=$(get_space_repo)
+    gh issue close "$issue_number" --repo "$repo" "$@"
+}
+
 # Helper functions for decompose-prd
 
 _create_phase_issue() {
@@ -129,18 +138,19 @@ cmd_decompose_prd() {
 }
 
 # cmd_reset: Reset plan to planning (3-state model)
+# Usage: flow.sh reset <issue-or-plan>
 cmd_reset() {
-    local issue_number="$1"
+    local input="$1"
 
-    if [[ -z "$issue_number" ]]; then
-        log_error "Issue number required"
-        echo "Usage: flow.sh reset <issue>"
+    if [[ -z "$input" ]]; then
+        log_error "Issue number or Plan name required"
+        echo "Usage: flow.sh reset <issue-or-plan>"
         exit 1
     fi
 
     local plan_file
-    plan_file=$(find_plan_by_issue "$issue_number") || {
-        log_error "No plan found for Issue #$issue_number"
+    plan_file=$(find_plan "$input") || {
+        log_error "No plan found for: $input"
         exit 1
     }
 
