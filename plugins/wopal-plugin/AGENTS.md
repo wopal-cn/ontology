@@ -12,8 +12,8 @@
 │              返回 { tool, event, hook, ... }               │
 ├─────────────────────────────────────────────────────────────┤
 │  运行时 (runtime.ts)            │  任务管理                 │
-│  ├── 规则发现与注入             │  simple-task-manager.ts   │
-│  ├── 记忆注入                   │  concurrency-manager.ts   │
+│  ├── 规则注入(rules/)           │  simple-task-manager.ts   │
+│  ├── 记忆注入(memory/)          │  concurrency-manager.ts   │
 │  ├── 消息转换                   │  stuck-detector.ts        │
 │  └── 事件路由                   │  progress-tracker.ts      │
 ├─────────────────────────────────────────────────────────────┤
@@ -22,22 +22,30 @@
 │  ├── error-classifier.ts       │  question-relay.ts        │
 │  └── loop-detector.ts          │  session-messages.ts      │
 ├─────────────────────────────────────────────────────────────┤
-│  memory/ (记忆系统)             │  tools/ (OpenCode 工具)    │
-│  ├── store.ts                  │  ├── wopal-task.ts        │
-│  ├── embedder.ts               │  ├── wopal-task-output.ts │
-│  ├── retriever.ts              │  ├── wopal-task-reply.ts  │
-│  ├── injector.ts               │  ├── wopal-task-interrupt │
-│  ├── distill.ts                │  ├── wopal-task-diff.ts   │
-│  ├── session-context.ts        │  ├── memory-manage.ts     │
-│  └── llm-client.ts             │  └── context-manage.ts    │
+│  rules/ (规则子系统)            │  tools/ (OpenCode 工具)    │
+│  ├── discoverer.ts              │  ├── wopal-task.ts        │
+│  ├── matcher.ts                 │  ├── wopal-task-output.ts │
+│  ├── formatter.ts               │  ├── wopal-task-reply.ts  │
+│  └── path-extractor.ts          │  ├── wopal-task-interrupt │
 ├─────────────────────────────────────────────────────────────┤
-│  utils/ (通用工具)                                            │
-│  ├── debug.ts, session-store.ts, utils.ts                    │
+│  memory/ (记忆系统)             │  utils/ (通用工具)        │
+│  ├── store.ts (418行)           │  debug.ts                 │
+│  ├── embedder.ts                │  session-store.ts         │
+│  ├── retriever.ts               │  utils.ts                 │
+│  ├── injector.ts                │                           │
+│  ├── distill.ts (249行)         │                           │
+│  ├── session-context.ts         │                           │
+│  ├── llm-client.ts              │                           │
+│  ├── categories.ts              │                           │
+│  ├── conversation.ts            │                           │
+│  ├── dedup.ts                   │                           │
+│  ├── prompts.ts                 │                           │
+│  └── types.ts                   │                           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **数据流**：
-1. **规则注入**：`utils.ts`(发现+匹配) → `runtime.ts`(systemTransform) → OpenCode
+1. **规则注入**：`rules/discoverer` → `rules/matcher` → `rules/formatter` → `runtime.ts`(systemTransform) → OpenCode
 2. **任务委派**：`wopal_task` → `simple-task-manager` → 子会话 → `idle-diagnostic` → 状态更新
 3. **记忆注入**：`memory/store` → `memory/retriever` → `runtime.ts`(systemTransform) → OpenCode
 4. **上下文管理**：`context_manage` → `memory/session-context` → `buildEnrichedQuery`
@@ -56,12 +64,13 @@
 | 类型 | 作用 | 位置 |
 |------|------|------|
 | **工具** | OpenCode 工具定义（7 个） | `src/tools/` |
+| **规则子系统** | 规则发现、匹配、格式化、路径提取 | `src/rules/` |
 | **核心逻辑** | 任务管理、并发控制 | `src/simple-task-manager.ts`, `src/concurrency-manager.ts` |
 | **诊断模块** | Idle 状态诊断 | `src/idle-diagnostic.ts` |
 | **检测器** | Stuck 检测、循环检测、错误分类 | `src/stuck-detector.ts`, `src/loop-detector.ts`, `src/error-classifier.ts` |
 | **运行时** | 事件钩子、规则注入、消息转换 | `src/runtime.ts` |
 | **通信辅助** | 权限代理、问题中继 | `src/permission-proxy.ts`, `src/question-relay.ts` |
-| **测试** | 单元测试 | `src/*.test.ts` |
+| **测试** | 单元测试 | `src/*.test.ts`, `src/rules/*.test.ts` |
 
 ---
 
@@ -76,7 +85,14 @@ src/                              # 源码目录
 │
 ├── runtime.ts                    # 运行时（事件路由、规则/记忆注入、消息转换）
 ├── simple-task-manager.ts        # 任务管理（状态、启动、监控、进度通知）
-├── utils.ts                      # 规则发现与匹配、通用工具函数
+│
+├── rules/                        # 规则子系统（#88 从 utils.ts 拆分）
+│   ├── index.ts                  # 统一导出
+│   ├── discoverer.ts             # 规则发现（扫描 .agents/rules/）
+│   ├── matcher.ts                # 条件匹配（路径、文件类型）
+│   ├── formatter.ts              # 规则格式化
+│   ├── path-extractor.ts         # 路径提取
+│   └── *.test.ts                 # 测试文件
 │
 ├── concurrency-manager.ts        # 并发控制
 ├── stuck-detector.ts             # Stuck 检测
@@ -103,9 +119,15 @@ src/                              # 源码目录
 │   ├── embedder.ts               # OpenAI Embedding
 │   ├── retriever.ts              # 语义检索（tags boost）
 │   ├── injector.ts               # 格式化注入系统提示词
-│   ├── distill.ts                # 蒸馏引擎（preview/confirm/cancel）
+│   ├── distill.ts                # 蒸馏引擎核心逻辑（preview/confirm/cancel）
 │   ├── session-context.ts        # 会话状态模型
-│   └── llm-client.ts             # LLM 客户端
+│   ├── llm-client.ts             # LLM 客户端
+│   ├── categories.ts             # 记忆分类定义（#89 内部拆分）
+│   ├── conversation.ts           # 会话消息提取（#89 内部拆分）
+│   ├── dedup.ts                  # 去重逻辑（#89 内部拆分）
+│   ├── prompts.ts                # 蒸馏提示词模板（#89 内部拆分）
+│   ├── types.ts                  # 记忆类型定义（#89 内部拆分）
+│   └── store.test.ts             # 测试文件
 │
 └── tools/                        # OpenCode 工具定义
     ├── index.ts                  # 工具注册入口
@@ -123,10 +145,17 @@ src/                              # 源码目录
 
 ```
 src/
-├── rules/                   # 从 utils.ts 拆分
+├── rules/                   # ✅ 已完成 (#88)
 │   ├── discoverer.ts
 │   ├── matcher.ts
-│   └── formatter.ts
+│   ├── formatter.ts
+│   └── path-extractor.ts
+├── memory/                  # ✅ 内部拆分已完成 (#89)
+│   ├── categories.ts
+│   ├── conversation.ts
+│   ├── dedup.ts
+│   ├── prompts.ts
+│   └── types.ts
 ├── hooks/                   # 从 runtime.ts 拆分
 │   ├── event-handler.ts
 │   ├── system-transform.ts
@@ -144,9 +173,10 @@ test/                        # 测试工具（从根目录移入）
 
 | 当前文件 | 拆分为 | 状态 |
 |----------|--------|------|
+| `utils.ts` | `rules/` 目录 | ✅ 已完成 (#88) |
+| `distill.ts` + `store.ts` | memory 内部模块 | ✅ 已完成 (#89) |
 | `runtime.ts` | `hooks/` 目录 | 🔴 待拆 |
 | `simple-task-manager.ts` | `tasks/` 目录 | 🔴 待拆 |
-| `utils.ts` | `rules/` 目录 | 🔴 待拆 |
 | 根目录 `*.ts` 脚本 | 移入 `scripts/` | 🔴 待移 |
 | `pnpm-lock.yaml` | 删除 | 🔴 待删 |
 | `pnpm-workspace.yaml` | 删除 | 🔴 待删 |
@@ -292,7 +322,7 @@ ticker 每 30 秒检查运行中任务，满足任一条件时通知父代理：
 
 | 组件 | 文件 | 职责 |
 |------|------|------|
-| DistillEngine | `memory/distill.ts` | 蒸馏核心逻辑：preview → confirm |
+| DistillEngine | `memory/distill.ts` | 蒸馏核心逻辑（preview → confirm），内部模块：categories, conversation, dedup, prompts, types |
 | MemoryStore | `memory/store.ts` | LanceDB CRUD，`tags` 字段，`get(id)` API |
 | EmbeddingClient | `memory/embedder.ts` | OpenAI Embedding |
 | MemoryRetriever | `memory/retriever.ts` | 语义检索（tags boost） |
