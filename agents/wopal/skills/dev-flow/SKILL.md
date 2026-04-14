@@ -1,7 +1,7 @@
 ---
 name: dev-flow
 description: |
-  **统一开发工作流 — 所有 Issue 驱动的开发任务必须使用此技能。**
+  **统一开发工作流 — Issue 驱动或 Plan 驱动的开发任务必须使用此技能。**
   
   提供协议驱动、状态机强制的 Issue → Plan → 执行 → 验证 完整流程。
   
@@ -13,6 +13,7 @@ description: |
   - 用户说"写个方案"、"出个计划"、"怎么实现"
   - 从 PRD 分解任务、创建 Issue
   - 用户提到 "dev-flow"、"开发流程"、"Plan 管理"
+  - **无 Issue 的快速开发**：用户直接说"做个 plan"或"写个方案"（跳过 Issue）
   
   **协议依赖**: git-worktrees 技能（可选，用于隔离开发）
 compatibility:
@@ -27,8 +28,8 @@ compatibility:
 
 The `--confirm` flag is a **human gate**. Under **no circumstances** should the agent:
 
-- Execute `flow.sh approve <issue> --confirm` on behalf of the user
-- Execute `flow.sh archive <issue> --confirm` on behalf of the user
+- Execute `flow.sh approve <plan> --confirm` on behalf of the user
+- Execute `flow.sh archive <plan> --confirm` on behalf of the user
 - Ask the user to let the agent run these commands
 - Bypass the check by proceeding without confirmation
 
@@ -66,13 +67,13 @@ planning → executing → done
  创建 Plan  用户确认审批  验证/PR merged
 ```
 
-| 状态 | 含义 | Label |
+| 状态 | 含义 | Label（有 Issue 时） |
 |------|------|-------|
 | `planning` | 规划编写（含调查） | `status/planning` |
 | `executing` | 执行中 | `status/in-progress` |
 | `done` | 已归档 | Issue closed |
 
-### Label 子状态机制
+### Label 子状态机制（有 Issue 时）
 
 | 类别 | Label | 含义 |
 |------|-------|------|
@@ -83,23 +84,45 @@ planning → executing → done
 ## 命令
 
 ```bash
-# 创建 Issue
+# 创建 Issue（可选，跳过则直接用 plan）
 flow.sh new-issue --title "<title>" --project <name> --type <type> [options]
 # 可选参数: --goal, --background, --scope, --out-of-scope, --reference, --body
 
-# 生命周期
-flow.sh plan <issue> [--project <name>] [--check]  # 创建 Plan（含调查）
-flow.sh approve <issue> --confirm [--worktree]     # 审批 → 执行
-flow.sh complete <issue> [--pr]                    # 完成
-flow.sh archive <issue> [--confirm]                # 归档
+# 生命周期（两种模式）
+# 模式 1: Issue 驱动
+flow.sh plan <issue> [--project <name>] [--check]      # 创建 Plan（含调查）
+flow.sh approve <issue> --confirm [--worktree]         # 审批 → 执行
+flow.sh complete <issue> [--pr]                        # 完成
+flow.sh archive <issue> [--confirm]                    # 归档
+
+# 模式 2: 无 Issue（快速开发）
+flow.sh plan --title "<title>" --project <name> --type <type> [--check]
+flow.sh approve <plan-name> --confirm [--worktree]
+flow.sh complete <plan-name> [--pr]
+flow.sh archive <plan-name> --confirm
 
 # 查询
-flow.sh status <issue>                             # 查看状态
-flow.sh list                                       # 列出任务
-flow.sh decompose-prd <prd> [--dry-run]            # 从 PRD 创建 Issue
+flow.sh status <issue-or-plan>                         # 查看状态
+flow.sh list                                           # 列出任务
+flow.sh reset <issue-or-plan>                          # 重置到 planning
+flow.sh decompose-prd <prd> [--dry-run]                # 从 PRD 创建 Issue
 ```
 
+### 参数说明
+
+| 参数 | 含义 |
+|------|------|
+| `<issue>` | Issue 编号（数字，如 `93`） |
+| `<plan-name>` | Plan 名称（如 `refactor-optimize-files-table`） |
+| `<issue-or-plan>` | 智能识别：数字 → Issue，字符串 → Plan |
+| `--check` | 验证 Plan 合规性（不创建） |
+| `--worktree` | 创建隔离开发环境 |
+| `--pr` | 完成时创建 PR |
+| `--confirm` | **人工确认**（Agent 禁止执行） |
+
 ## plan 命令要求
+
+### Issue 驱动模式
 
 运行 `flow.sh plan <issue>` 前，Issue 必须有 `project/*` label，否则会报错并显示修复指引。
 
@@ -107,6 +130,18 @@ flow.sh decompose-prd <prd> [--dry-run]            # 从 PRD 创建 Issue
 ```bash
 # 添加项目 label
 gh issue edit <issue> --add-label 'project/ontology'
+```
+
+### 无 Issue 模式
+
+运行 `flow.sh plan --title ...` 时，必须提供：
+- `--title "<title>"` — Plan 标题
+- `--project <name>` — 目标项目
+- `--type <type>` — 类型（feature/fix/refactor/docs/chore/test）
+
+示例：
+```bash
+flow.sh plan --title "优化 Affected Files 表格" --project ontology --type refactor
 ```
 
 ## 创建 Issue
@@ -236,6 +271,7 @@ executing
 
 ## 标准工作流程
 
+**模式 1: Issue 驱动（推荐用于正式任务）**
 ```
 1. plan <issue>        → AI 创建 Plan + 调查研究 + 编写 (status: planning)
 2. approve <issue>     → AI 提交审批，暂停等待
@@ -245,6 +281,27 @@ executing
     有 PR → 等待 PR merge
 4. archive <issue>     → AI 归档 (status: done)
 ```
+
+**模式 2: 无 Issue（适用于快速开发/原型/临时任务）**
+```
+1. plan --title "<title>" --project <name> --type <type>
+    → AI 创建 Plan + 编写 (status: planning)
+2. approve <plan-name> → AI 提交审批，暂停等待
+    用户确认后 → approve <plan-name> --confirm [--worktree]
+3. complete <plan-name> [--pr]
+    → AI 完成（无 Issue label 管理）
+4. archive <plan-name> --confirm
+    → 用户确认后归档 (status: done)
+```
+
+**差异对比**：
+
+| 特性 | Issue 驱动 | 无 Issue |
+|------|-----------|----------|
+| Issue 状态同步 | ✅ 自动同步 Label | ❌ 跳过 |
+| PR 关联 | ✅ PR URL 写入 Issue | ❌ PR 无 Issue ref |
+| 验证 Label | ✅ validation/awaiting | ❌ 直接用 --confirm |
+| 适用场景 | 正式任务、跨项目追踪 | 快速原型、临时优化 |
 
 ## AI 使用要点
 
@@ -316,9 +373,8 @@ plan 命令包含两个子阶段（AI 自然衔接，无显式切换）：
 基于调查结果填充 Plan 章节：
 - Scope Assessment：Complexity、Confidence
 - Technical Context：架构描述、变更原因、风险
-- Affected Components：表格
+- Affected Files：表格（Component + Files + Operation + Role）
 - In Scope/Out of Scope
-- Files：文件列表
 - Implementation：Task 分解
 - Test Plan
 
@@ -326,71 +382,26 @@ plan 命令包含两个子阶段（AI 自然衔接，无显式切换）：
 
 check-doc 强制验证：
 - Technical Context 非空
-- Affected Components 至少一行
+- Affected Files 至少一行
 - Complexity/Confidence 已填写（非占位符）
 - 每个 Task 有 Files 和 Verification
 
-## Plan 模板格式
+## Plan 结构
 
-```markdown
-# {issue编号}-{type}-{slug}
+完整模板：`templates/plan.md`（由 `flow.sh plan` 填充生成）
 
-## Metadata
-- **Issue**: #N
-- **Type**: feature|enhance|fix|refactor|docs|test
-- **Created**: YYYY-MM-DD
-- **Status**: planning
-
-## Scope Assessment
-- **Complexity**: Low|Medium|High
-- **Confidence**: High|Medium|Low
-
-## Goal
-<一句话目标>
-
-## Technical Context
-<当前架构描述，为什么需要变更>
-
-## Affected Components
-| Component | Key Files | Role |
-|-----------|-----------|------|
-
-## In Scope
-- [ ] 功能点 1
-
-## Out of Scope
-- <不做的内容>
-
-## Files
-| 文件 | 操作 | 说明 |
-|------|------|------|
-
-## Implementation
-### Task N: 标题
-**Files**: `path/to/file`
-**Changes**: ...
-**Verification**: ...
-
-## Delegation Strategy
-| 批次 | Task | 执行者 | 依赖 |
-|------|------|--------|------|
-| 1 | Task 1 | fae | 无 |
-<!-- 或：N/A — 单一任务，无需并行委派 -->
-
-## Test Plan
-### Test Case Design
-- <测试用例 1>
-### Regression Testing
-- <回归验证项>
-### Adjustment Strategy
-- <调整方案>
-
-## Acceptance Criteria
-### Agent Verification
-- [ ] <Agent 可验证项>
-### User Validation
-- <用户验证项>
-```
+| 章节 | 用途 | 必填时机 |
+|------|------|----------|
+| Metadata | Issue 编号、类型、状态 | 始终（自动填充） |
+| Scope Assessment | Complexity、Confidence | approve 前（非占位符校验） |
+| Goal | 一句话目标 | approve 前 |
+| Technical Context | 架构描述、变更原因、风险 | approve 前（非空校验） |
+| Affected Files | Component + Files + Operation + Role 表格 | approve 前（非空校验） |
+| In Scope / Out of Scope | 边界界定 | approve 前 |
+| Implementation | Task 分解，每 Task 有 Files、Changes、Verification | approve 前 |
+| Delegation Strategy | 批次划分、执行者、依赖 | 可选（简单任务填 N/A） |
+| Test Plan | 测试用例、回归验证、调整策略 | approve 前 |
+| Acceptance Criteria | Agent 验证项（checkbox）+ 用户确认项 | approve 前 |
 
 ## 错误处理
 

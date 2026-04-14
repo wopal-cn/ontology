@@ -137,10 +137,67 @@ find_plan_by_issue() {
     return 1
 }
 
-# Extract slug from plan name (last segment)
+# Find Plan by Issue number OR Plan name (smart lookup)
+# Usage: find_plan <issue_or_plan_name>
+# - If numeric → find_plan_by_issue
+# - If string → search all plan directories (global + project)
+find_plan() {
+    local input="$1"
+    
+    if [[ -z "$input" ]]; then
+        log_error "Issue number or Plan name required"
+        return 1
+    fi
+    
+    # Numeric input → Issue lookup
+    if [[ "$input" =~ ^[0-9]+$ ]]; then
+        find_plan_by_issue "$input"
+        return $?
+    fi
+    
+    # String input → search all plan directories (global + project)
+    local root_dir
+    root_dir=$(find_workspace_root)
+    local search_dir="$root_dir/docs/products"
+    
+    if [[ ! -d "$search_dir" ]]; then
+        log_error "No plan directory found"
+        return 1
+    fi
+    
+    # Search: docs/products/plans/ and docs/products/*/plans/
+    local matches=()
+    while IFS= read -r -d '' plan_file; do
+        local plan_name
+        plan_name=$(basename "$plan_file" .md)
+        # Match by full name or substring
+        if [[ "$plan_name" == "$input" || "$plan_name" == *"$input"* ]]; then
+            matches+=("$plan_file")
+        fi
+    done < <(find "$search_dir" -name "*.md" -not -path "*/done/*" -print0 2>/dev/null)
+    
+    if [[ ${#matches[@]} -eq 0 ]]; then
+        log_error "No plan found matching: $input"
+        echo "   Searched in: $search_dir/*/plans/" >&2
+        return 1
+    fi
+    
+    if [[ ${#matches[@]} -gt 1 ]]; then
+        log_error "Multiple plans matched: $input"
+        printf '  - %s\n' "${matches[@]}" >&2
+        return 1
+    fi
+    
+    echo "${matches[0]}"
+}
+
+# Extract slug from plan name (last segment, supports both formats)
+# With Issue: 42-fix-task-wait-bug → task-wait-bug
+# Without Issue: refactor-optimize-files → optimize-files
 extract_slug() {
     local plan_name="$1"
-    echo "$plan_name" | sed -E 's/^[0-9]+-[a-z]+-([a-z0-9-]+)$/\1/'
+    # Remove issue-number prefix (if present) and type prefix
+    echo "$plan_name" | sed -E 's/^[0-9]+-//; s/^(feature|enhance|fix|refactor|docs|chore|test)-//'
 }
 
 # Get plan name from file path

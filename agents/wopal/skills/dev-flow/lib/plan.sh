@@ -135,16 +135,18 @@ resolve_plan_file() {
 
 # Validate Plan naming convention
 # Usage: validate_plan_name <name>
-# Naming: <issue_number>-<type>-<slug>.md
+# Naming: <issue_number>-<type>-<slug>.md OR <type>-<slug>.md (no Issue)
 # Types: feature, enhance, fix, refactor, docs, chore, test
 validate_plan_name() {
     local name="$1"
 
-    if [[ ! "$name" =~ ^([0-9]+)-(feature|enhance|fix|refactor|docs|chore|test)-([a-z0-9-]+)$ ]]; then
+    # Support two formats: with Issue prefix or without
+    if [[ ! "$name" =~ ^([0-9]+)?-?(feature|enhance|fix|refactor|docs|chore|test)-([a-z0-9-]+)$ ]]; then
         log_error "Invalid plan name: $name"
         echo ""
         echo "Plan naming convention:"
-        echo "  <issue_number>-<type>-<slug>.md"
+        echo "  <issue_number>-<type>-<slug>.md  (with Issue)"
+        echo "  <type>-<slug>.md                 (no Issue)"
         echo ""
         echo "Types: feature, enhance, fix, refactor, docs, chore, test"
         echo "  - feature: new functionality"
@@ -156,7 +158,7 @@ validate_plan_name() {
         echo "Examples:"
         echo "  42-fix-task-wait-bug"
         echo "  15-feature-session-messages"
-        echo "  7-enhance-validate-phase"
+        echo "  refactor-optimize-files-table (no Issue)"
         return 1
     fi
 

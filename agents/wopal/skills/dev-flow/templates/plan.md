@@ -22,11 +22,11 @@
 <当前架构描述，为什么需要变更>
 <如有全局性风险，在此说明>
 
-## Affected Components
+## Affected Files
 
-| Component | Key Files | Role |
-|-----------|-----------|------|
-| <component> | `file1`, `file2` 或 `file:line` | <在此变更中的作用> |
+| Component | Files | Operation | Role |
+|-----------|-------|-----------|------|
+| <component> | `file1`, `file2` | 修改/创建/删除 | <在此变更中的作用> |
 
 ## In Scope
 
@@ -40,12 +40,6 @@
 列出本次不做的内容：
 
 - <本次不做的内容及原因>
-
-## Files
-
-| 文件 | 操作 | 说明 |
-|------|------|------|
-| `relative/path/to/file` | 修改或创建 | 简要说明 |
 
 ## Implementation
 

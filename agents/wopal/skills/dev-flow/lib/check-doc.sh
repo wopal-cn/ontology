@@ -208,7 +208,7 @@ check_doc_plan() {
     # 5. Required sections (all English titles)
     # ============================================
     local missing_sections=0
-    for section in "## Goal" "## In Scope" "## Out of Scope" "## Files" "## Implementation" "## Acceptance Criteria"; do
+    for section in "## Goal" "## In Scope" "## Out of Scope" "## Affected Files" "## Implementation" "## Acceptance Criteria"; do
         if grep -q "$section" "$plan_file"; then
             log_success "$section"
         else
@@ -221,7 +221,7 @@ check_doc_plan() {
     # ============================================
     # 5.1 Spike investigation sections (required for investigation completeness)
     # ============================================
-    for section in "## Technical Context" "## Affected Components"; do
+    for section in "## Technical Context" "## Affected Files"; do
         if grep -q "$section" "$plan_file"; then
             # Check section content is non-empty (extract between section header and next ##)
             local section_content
@@ -284,17 +284,17 @@ check_doc_plan() {
         ((issues++))
     fi
 
-    # ============================================
-    # 7. File list must not be empty
-    # ============================================
-    local file_section
-    file_section=$(grep -A 10 '^## Files' "$plan_file" || true)
-    if echo "$file_section" | grep -qE '(\- `|^\| .*\.|^\| `)' 2>/dev/null; then
-        log_success "File list populated"
-    else
-        echo "Empty file list"
-        ((issues++))
-    fi
+# ============================================
+# 7. Affected Files table must not be empty
+# ============================================
+local affected_files_section
+affected_files_section=$(grep -A 10 '^## Affected Files' "$plan_file" || true)
+if echo "$affected_files_section" | grep -qE '^\| .*`|^\| .*file' 2>/dev/null; then
+    log_success "Affected Files table populated"
+else
+    echo "Empty Affected Files table"
+    ((issues++))
+fi
 
     # ============================================
     # 8. Tasks must exist
@@ -394,7 +394,7 @@ check_doc_plan_quick() {
     fi
 
     # Check required sections exist
-    for section in "## Goal" "## In Scope" "## Files"; do
+    for section in "## Goal" "## In Scope" "## Affected Files"; do
         if grep -q "$section" "$plan_file"; then
             echo "  Has $section"
         else

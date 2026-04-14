@@ -2,9 +2,11 @@
 # Two paths:
 #   1. PR path: auto-archive when PR is merged
 #   2. No-PR path: requires validation/awaiting + --confirm (user confirmation)
-# Usage: flow.sh archive <issue> [--confirm]
+# Usage:
+#   flow.sh archive <issue> [--confirm]
+#   flow.sh archive <plan-name> [--confirm]
 cmd_archive() {
-    local issue_number=""
+    local input=""
     local confirm=false
 
     while [[ $# -gt 0 ]]; do
@@ -15,31 +17,40 @@ cmd_archive() {
                 ;;
             -*)
                 log_error "Unknown option: $1"
+                echo "Usage: flow.sh archive <issue-or-plan> [--confirm]"
                 exit 1
                 ;;
             *)
-                if [[ -z "$issue_number" ]]; then
-                    issue_number="$1"
+                if [[ -z "$input" ]]; then
+                    input="$1"
                 fi
                 shift
                 ;;
         esac
     done
 
-    if [[ -z "$issue_number" ]]; then
-        log_error "Issue number required"
-        echo "Usage: flow.sh archive <issue> [--confirm]"
+    if [[ -z "$input" ]]; then
+        log_error "Issue number or Plan name required"
+        echo "Usage: flow.sh archive <issue-or-plan> [--confirm]"
         exit 1
     fi
 
+    # Smart lookup: Issue number OR Plan name
     local plan_file
-    plan_file=$(find_plan_by_issue "$issue_number") || {
-        log_error "No plan found for Issue #$issue_number"
+    plan_file=$(find_plan "$input") || {
+        log_error "No plan found for: $input"
         exit 1
     }
 
+    local plan_name
+    plan_name=$(get_plan_name "$plan_file")
+
     local repo
     repo=$(get_space_repo)
+
+    # Extract Issue number (if plan has Issue link)
+    local issue_number
+    issue_number=$(grep "Issue.*#" "$plan_file" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
 
     # Check archive conditions:
     # 1. PR path: pr/opened label and PR is merged (auto-archive)
@@ -48,8 +59,8 @@ cmd_archive() {
     local archive_reason=""
     local needs_confirm=false
 
-    # PR path: check if PR is merged
-    if issue_has_label "$issue_number" "pr/opened" "$repo"; then
+    # PR path: check if PR is merged (only if Issue exists)
+    if [[ -n "$issue_number" ]] && issue_has_label "$issue_number" "pr/opened" "$repo"; then
         local pr_url
         pr_url=$(get_pr_url_from_issue "$issue_number" "$repo")
         
@@ -83,8 +94,8 @@ cmd_archive() {
         fi
     fi
 
-    # No-PR path: check validation/awaiting label
-    if issue_has_label "$issue_number" "validation/awaiting" "$repo"; then
+    # No-PR path (with Issue): check validation/awaiting label
+    if [[ -n "$issue_number" ]] && issue_has_label "$issue_number" "validation/awaiting" "$repo"; then
         needs_confirm=true
         
         if [[ "$confirm" != true ]]; then
@@ -95,7 +106,7 @@ cmd_archive() {
             echo "  $plan_file"
             echo ""
             echo "After verification, run:"
-            echo "  flow.sh archive $issue_number --confirm"
+            echo "  flow.sh archive $input --confirm"
             exit 0
         fi
         
@@ -112,16 +123,42 @@ cmd_archive() {
         add_validation_overlay_label "$issue_number" "passed" "$repo" >/dev/null 2>&1
     fi
 
+    # No Issue path: require --confirm directly
+    if [[ -z "$issue_number" ]]; then
+        needs_confirm=true
+        
+        if [[ "$confirm" != true ]]; then
+            echo ""
+            echo "Plan has no Issue link."
+            echo ""
+            echo "Please verify the implementation is complete:"
+            echo "  $plan_file"
+            echo ""
+            echo "After verification, run:"
+            echo "  flow.sh archive $plan_name --confirm"
+            exit 0
+        fi
+        
+        can_archive=true
+        archive_reason="user confirmed (no Issue)"
+    fi
+
     if [[ "$can_archive" != true ]]; then
-        log_error "Cannot archive: neither merged PR nor validation/awaiting found"
+        log_error "Cannot archive: neither merged PR nor validation confirmed"
         echo ""
-        echo "Complete first: flow.sh complete $issue_number"
-        echo "Or if awaiting validation: flow.sh archive $issue_number --confirm"
+        if [[ -n "$issue_number" ]]; then
+            echo "Complete first: flow.sh complete $input"
+            echo "Or if awaiting validation: flow.sh archive $input --confirm"
+        else
+            echo "Run: flow.sh archive $plan_name --confirm"
+        fi
         exit 1
     fi
 
-    # Sync Plan's checked AC to Issue body before archiving
-    sync_plan_to_issue "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
+    # Sync Plan's checked AC to Issue body before archiving (if Issue exists)
+    if [[ -n "$issue_number" ]]; then
+        sync_plan_to_issue "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
+    fi
 
     # Update status to done
     set_plan_status "$plan_file" "done" >/dev/null 2>&1
@@ -130,8 +167,15 @@ cmd_archive() {
     local archived_file
     archived_file=$(archive_plan "$plan_file" 2>&1)
 
-    # Close Issue (clears all flow labels)
-    close_issue "$issue_number" --repo "$repo" --comment "Plan archived: $archive_reason. Closing issue." >/dev/null 2>&1
+    # Update Issue Plan link to archived path (if Issue exists)
+    if [[ -n "$issue_number" && -n "$archived_file" ]]; then
+        update_issue_plan_link "$issue_number" "$archived_file" "$repo" >/dev/null 2>&1
+    fi
+
+    # Close Issue (clears all flow labels) - if Issue exists
+    if [[ -n "$issue_number" ]]; then
+        close_issue "$issue_number" --repo "$repo" --comment "Plan archived: $archive_reason. Closing issue." >/dev/null 2>&1
+    fi
 
     echo "Status: done"
     echo "Reason: $archive_reason"

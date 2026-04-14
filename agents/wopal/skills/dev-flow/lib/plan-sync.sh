@@ -209,5 +209,60 @@ ensure_issue_labels() {
     sync_project_label_group "$issue_number" "$project_label" "$repo"
 }
 
+# ============================================
+# Plan Link Update (after archive)
+# ============================================
+
+# Update Issue Plan link after archive
+# Usage: update_issue_plan_link <issue_number> <archived_file> [repo]
+# This updates the Plan link in Related Resources table to the archived path
+update_issue_plan_link() {
+    local issue_number="$1"
+    local archived_file="$2"
+    local repo
+    repo=$(_resolve_repo "${3:-}")
+    
+    if [[ ! -f "$archived_file" ]]; then
+        log_warn "Archived plan file not found: $archived_file"
+        return 1
+    fi
+    
+    if ! command -v gh &> /dev/null; then
+        log_warn "gh CLI not available, skipping Plan link update"
+        return 0
+    fi
+    
+    local plan_name
+    plan_name=$(basename "$archived_file" .md)
+    
+    # Build relative path from docs/products
+    # archived_file is like: /path/to/docs/products/ontology/plans/done/20260414-plan.md
+    # We need: ontology/plans/done/20260414-plan.md
+    local relative_path
+    local root_dir
+    root_dir=$(find_workspace_root)
+    relative_path=$(realpath --relative-to="$root_dir/docs/products" "$archived_file" 2>/dev/null || \
+        echo "ontology/plans/done/$(basename "$archived_file")")
+    
+    # Get current Issue body
+    local current_body
+    current_body=$(gh issue view "$issue_number" --repo "$repo" --json body --jq '.body')
+    
+    # Update Plan link in Related Resources table
+    # Pattern: | Plan | [plan-name](../docs/products/old-path) |
+    local new_body
+    new_body=$(echo "$current_body" | sed -E "s|\[$plan_name\]\([^)]*\)|[$plan_name](../docs/products/$relative_path)|")
+    
+    # If Plan link not found by name, try updating the whole row
+    if [[ "$new_body" == "$current_body" ]]; then
+        # Pattern: | Plan | [any-name](any-path) |
+        new_body=$(echo "$current_body" | sed -E "s|Plan \| \[([^]]+)\]\([^)]*\)|Plan | [$plan_name](../docs/products/$relative_path)|")
+    fi
+    
+    gh issue edit "$issue_number" --repo "$repo" --body "$new_body" >/dev/null && \
+        log_success "Issue #$issue_number Plan link updated to archived path" || \
+        log_warn "Failed to update Issue #$issue_number Plan link"
+}
+
 # Export marker for sourced mode
 true
