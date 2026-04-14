@@ -33,14 +33,14 @@ source "$SKILL_DIR/lib/labels.sh"
 # ============================================
 
 # Valid states in order (colon-separated for easy parsing)
-# 5-state model: investigating → planning → approved → executing → done
-STATES_LIST="investigating:planning:approved:executing:done"
+# 3-state model: planning → executing → done
+STATES_LIST="planning:executing:done"
 
 # Check if a state is valid
 _is_valid_state() {
     local state="$1"
     case "$state" in
-        investigating|planning|approved|executing|done)
+        planning|executing|done)
             return 0
             ;;
         *)
@@ -49,16 +49,14 @@ _is_valid_state() {
     esac
 }
 
-# Get state order (1-5)
+# Get state order (1-3)
 _get_state_order() {
     local state="$1"
     case "$state" in
-        investigating) echo 1 ;;
-        planning)      echo 2 ;;
-        approved)      echo 3 ;;
-        executing)     echo 4 ;;
-        done)          echo 5 ;;
-        *)             echo 0 ;;
+        planning)   echo 1 ;;
+        executing)  echo 2 ;;
+        done)       echo 3 ;;
+        *)          echo 0 ;;
     esac
 }
 
@@ -96,27 +94,25 @@ validate_transition() {
         return 0
     fi
 
-    # Check wildcard transition (any -> investigating, for reset)
-    if [[ "$new_status" == "investigating" ]]; then
+    # Check wildcard transition (any -> planning, for reset)
+    if [[ "$new_status" == "planning" ]]; then
         return 0
     fi
 
-    # Check specific transitions using case
+    # Check specific transitions using case (3-state model)
     case "${current_status}:${new_status}" in
-        investigating:planning|planning:approved|approved:executing|executing:done)
+        planning:executing|executing:done)
             return 0
             ;;
         *)
             echo "Error: Invalid transition: $current_status -> $new_status" >&2
             echo "Valid transitions from '$current_status':" >&2
             case "$current_status" in
-                investigating) echo "  investigating -> planning" >&2 ;;
-                planning)      echo "  planning -> approved (requires --confirm)" >&2 ;;
-                approved)      echo "  approved -> executing" >&2 ;;
-                executing)     echo "  executing -> done (after validation)" >&2 ;;
-                done)          echo "  (no further transitions)" >&2 ;;
+                planning)  echo "  planning -> executing (requires --confirm)" >&2 ;;
+                executing) echo "  executing -> done (after validation)" >&2 ;;
+                done)      echo "  (no further transitions)" >&2 ;;
             esac
-            echo "  * -> investigating (reset)" >&2
+            echo "  * -> planning (reset)" >&2
             return 1
             ;;
     esac
@@ -137,7 +133,7 @@ get_current_status() {
     status=$(grep -m1 '^\- \*\*Status\*\*:' "$plan_file" | sed 's/^.*: //')
 
     if [[ -z "$status" ]]; then
-        echo "investigating"  # Default to investigating
+        echo "planning"  # Default to planning
     else
         echo "$status"
     fi
@@ -178,12 +174,10 @@ update_plan_status() {
 
 # Sync Issue Label based on plan status
 # Usage: sync_issue_label <plan_file> <status>
-# Status mapping (5-state model):
-#   investigating -> status/planning
-#   planning      -> status/planning
-#   approved      -> status/approved
-#   executing     -> status/in-progress
-#   done          -> Issue closed
+# Status mapping (3-state model):
+#   planning  -> status/planning
+#   executing -> status/in-progress
+#   done      -> Issue closed
 sync_issue_label() {
     local plan_file="$1"
     local new_status="$2"
@@ -239,12 +233,10 @@ get_status_info() {
     order=$(_get_state_order "$status")
 
     case "$status" in
-        investigating) echo "$order:investigating:🔍" ;;
-        planning)      echo "$order:planning:📝" ;;
-        approved)      echo "$order:approved:✅" ;;
-        executing)     echo "$order:executing:🚀" ;;
-        done)          echo "$order:done:📦" ;;
-        *)             echo "0:unknown:❓" ;;
+        planning)  echo "$order:planning:📝" ;;
+        executing) echo "$order:executing:🚀" ;;
+        done)      echo "$order:done:📦" ;;
+        *)         echo "0:unknown:❓" ;;
     esac
 }
 
@@ -252,14 +244,12 @@ get_status_info() {
 # Usage: list_valid_states
 list_valid_states() {
     echo "Valid states (in order):"
-    echo "  1. investigating - Research and spike phase"
-    echo "  2. planning      - Writing plan document"
-    echo "  3. approved      - Plan approved, ready for execution"
-    echo "  4. executing     - Currently being executed"
-    echo "  5. done          - Archived"
+    echo "  1. planning  - Writing plan document (includes investigation)"
+    echo "  2. executing - Currently being executed"
+    echo "  3. done      - Archived"
     echo ""
     echo "Special transitions:"
-    echo "  * -> investigating - Reset from any state"
+    echo "  * -> planning - Reset from any state"
 }
 
 # Export functions for use in other scripts

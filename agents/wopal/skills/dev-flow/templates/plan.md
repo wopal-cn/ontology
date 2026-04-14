@@ -6,7 +6,7 @@
 {type_line}
 {project_line}
 - **Created**: {date}
-- **Status**: investigating
+- **Status**: planning
 
 ## Scope Assessment
 
