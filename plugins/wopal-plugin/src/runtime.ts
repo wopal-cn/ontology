@@ -2,7 +2,7 @@ import {
   readAndFormatRules,
   extractFilePathsFromMessages,
   type DiscoveredRule,
-} from "./utils.js";
+} from "./rules/index.js";
 import {
   extractLatestUserPrompt,
   extractSessionID,

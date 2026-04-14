@@ -8,7 +8,7 @@
 
 import type { PluginInput, Hooks } from "@opencode-ai/plugin";
 import { createOpencodeClient as createV2OpencodeClient } from "@opencode-ai/sdk/v2";
-import { discoverRuleFiles } from "./utils.js";
+import { discoverRuleFiles } from "./rules/index.js";
 import { OpenCodeRulesRuntime } from "./runtime.js";
 import { sessionStore } from "./session-store-instance.js";
 import { createDebugLog, createWarnLog } from "./debug.js";
