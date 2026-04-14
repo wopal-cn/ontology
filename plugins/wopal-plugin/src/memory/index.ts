@@ -5,7 +5,7 @@
  */
 
 export { MemoryStore } from "./store.js";
-export type { Memory, MemoryInput, MemoryCategory, QueryType } from "./store.js";
+export type { Memory, MemoryInput, MemoryCategory, MemoryUpdate, QueryType } from "./types.js";
 export { EmbeddingClient } from "./embedder.js";
 export { DistillLLMClient } from "./llm-client.js";
 
@@ -20,9 +20,17 @@ export {
 } from "./distill.js";
 export type {
   DistillResult,
-  ExtractResult,
   PreviewCandidate,
 } from "./distill.js";
+export type { ExtractResult } from "./prompts.js";
 export { MemoryRetriever } from "./retriever.js";
 export type { RetrieveOptions } from "./retriever.js";
 export { MemoryInjector } from "./injector.js";
+
+// Category exports
+export {
+  CATEGORY_LABELS,
+  TAG_TO_CATEGORY,
+  validateCategory,
+  getDefaultImportance,
+} from "./categories.js";
