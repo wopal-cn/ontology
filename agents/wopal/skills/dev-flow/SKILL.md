@@ -375,7 +375,7 @@ Plan 评审通过后，Agent 需判断是否更新 Issue：
 ## Plan 模板格式
 
 ```markdown
-# {project}-{type}-issue{N}-{slug}
+# {issue编号}-{type}-{slug}
 
 ## Metadata
 - **Issue**: #N
