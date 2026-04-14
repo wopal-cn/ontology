@@ -132,9 +132,18 @@ description: |
 
 ## 插件开发
 
-**参考**：`plugins/wopal-plugin/AGENTS.md`
+**详细规范**：`plugins/wopal-plugin/AGENTS.md`
 
-插件是 TypeScript 编写的 OpenCode 运行时扩展，提供自定义工具和事件钩子。
+插件是 TypeScript 编写的 OpenCode 运行时扩展，提供：
+
+| 能力 | 描述 |
+|------|------|
+| **规则注入** | 发现规则文件 → 匹配条件 → 注入系统提示词 |
+| **任务委派** | 非阻塞子会话启动、状态监控、双向通信 |
+| **记忆系统** | LanceDB 存储、语义检索、蒸馏注入 |
+| **上下文管理** | 会话摘要、session title 管理 |
+
+**部署机制**：通过 `.opencode/plugins/` symlink 自动发现，无需 `sync-to-wopal.py`。详见插件模块文档。
 
 ---
 
@@ -165,81 +174,4 @@ description: |
 
 **原则**：通用层优先，专用层补充(重名则覆盖通用层)。修改通用层影响所有 Agent。
 
----
 
-## 记忆系统设计
-
-记忆系统由两个子系统组成：**记忆蒸馏**（提取和存储长期记忆）和**上下文管理**（会话级状态管理）。
-
-### 数据流
-
-```
-用户消息 → distill_session（手动触发）→ 提取记忆 → MemoryStore（LanceDB）
-                                                        ↓
-用户消息 → buildEnrichedQuery ← 读 SessionContext ← context_manage（手动触发）
-              ↓
-         记忆检索 → 注入系统提示词
-```
-
-### 记忆蒸馏
-
-**职责**：从会话中提取有价值的信息，存入 LanceDB 长期记忆。
-
-| 组件 | 文件 | 职责 |
-|------|------|------|
-| DistillEngine | `memory/distill.ts` | 蒸馏核心逻辑：preview → confirm |
-| MemoryStore | `memory/store.ts` | LanceDB 存储，单层 body |
-| EmbeddingClient | `memory/embedder.ts` | OpenAI Embedding |
-| MemoryRetriever | `memory/retriever.ts` | 语义检索 |
-| MemoryInjector | `memory/injector.ts` | 格式化注入系统提示词 |
-
-**蒸馏流程**：
-1. `distill_session action=preview` — LLM 提取候选记忆
-2. 用户审查候选
-3. `distill_session action=confirm` — 去重后存入 LanceDB
-
-### 上下文管理
-
-**职责**：管理会话级状态（摘要、title），为记忆检索提供语义上下文。
-
-| 组件 | 文件 | 职责 |
-|------|------|------|
-| SessionContext | `memory/session-context.ts` | 状态模型 + 文件 I/O |
-| context_manage | `tools/context-manage.ts` | summary/status 子命令 |
-
-**SessionContext 模型**（`~/.wopal/memory/state/{sessionID}.json`）：
-
-```typescript
-interface SessionContext {
-  sessionID: string;
-  title: string | null;
-  distill?: {           // 蒸馏状态
-    messageCount: number;
-    extractedAt: string;
-    depth: "shallow" | "deep";
-  };
-  summary?: {           // 会话摘要
-    text: string;
-    messageCount: number;
-    generatedAt: string;
-  };
-}
-```
-
-**设计原则**：
-- 按功能模块分块，新增功能加新块，不改已有结构
-- 每个字段必须被后续流程读取并影响决策
-- 不做向后兼容迁移，旧格式文件直接清理
-
-**context_manage 工具**：
-- `action=summary`：LLM 生成 ≤50 字摘要 → 存入 SessionContext → 更新 session title
-- `action=status`：展示摘要/蒸馏状态 → 过时判断（新消息 > 20 条提示重新生成）
-
-### 职责边界
-
-| 关注点 | 归属 | 工具 |
-|--------|------|------|
-| 记忆提取和存储 | 蒸馏子系统 | `distill_session` |
-| 会话摘要和 title | 上下文管理 | `context_manage` |
-| 注入时的语义 query | 上下文管理（读缓存） | `buildEnrichedQuery` |
-| 历史状态清理 | 上下文管理 | `cleanupLegacyStateFiles` |
