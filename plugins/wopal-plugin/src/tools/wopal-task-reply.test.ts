@@ -33,6 +33,7 @@ function createMockTaskManager(
     getV2Client: vi.fn(() => v2Client),
     getServerUrl: vi.fn(() => serverUrl),
     releaseConcurrencySlot: vi.fn(),
+    reacquireSlotOnWakeUp: vi.fn(),
   }
 }
 
@@ -75,44 +76,65 @@ describe("wopal_task_reply", () => {
     expect(result).toBe("Error: Task not found or not owned by this session")
   })
 
-  it("task status is completed (not waiting): returns error", async () => {
-    const completedTask = createWaitingTask({ status: "completed" })
-    const mockManager = createMockTaskManager(completedTask)
+  it("task status is error (not waiting): reply works and re-acquires slot", async () => {
+    const errorTask = createWaitingTask({ status: "error" })
+    const mockManager = createMockTaskManager(errorTask)
     const execute = getExecute(createWopalReplyTool(mockManager as never))
 
     const result = await execute(
-      { task_id: completedTask.id, message: "test" },
+      { task_id: errorTask.id, message: "test" },
       { sessionID: parentSessionID },
     )
 
-    expect(result).toBe("Error: Task is completed. Only running and waiting tasks can receive replies.")
+    // error is the only terminal state, but reply still works
+    // (since task can be resumed after fixing the error)
+    expect(mockManager.reacquireSlotOnWakeUp).toHaveBeenCalled()
   })
 
   
 
-  it("idle task (running + idleNotified): sends message via promptAsync, clears idleNotified", async () => {
+  it("idle task (running + idleNotified): reply works without interrupt, interrupt also works", async () => {
     const mockClient = createMockClient()
-    const idleTask = createWaitingTask({ status: "running", idleNotified: true } as Partial<WopalTask>)
+    const idleTask = createWaitingTask({ status: "running", idleNotified: true, waitingConcurrencyKey: "default" } as Partial<WopalTask>)
     const mockManager = createMockTaskManager(idleTask, mockClient)
     const execute = getExecute(createWopalReplyTool(mockManager as never))
 
-    const result = await execute(
+    // Without interrupt, reply works (idleNotified task can be resumed without abort)
+    const resultWithoutInterrupt = await execute(
       { task_id: idleTask.id, message: "继续完善" },
       { sessionID: parentSessionID },
     )
 
-    expect(result).toBe(`Reply sent to task ${idleTask.id}. The background task will continue execution.`)
-    expect(mockClient.session.promptAsync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        path: { id: idleTask.sessionID },
-      }),
+    expect(resultWithoutInterrupt).toBe(`Reply sent to task ${idleTask.id}. The background task will continue execution.`)
+    expect(mockManager.reacquireSlotOnWakeUp).toHaveBeenCalled()
+    expect(mockClient.session.promptAsync).toHaveBeenCalled()
+    expect(idleTask.idleNotified).toBeUndefined()
+    expect(idleTask.status).toBe("running")
+    expect(idleTask.waitingReason).toBeUndefined()
+    // abort should NOT be called for idleNotified task without interrupt
+    expect(mockClient.session.abort).not.toHaveBeenCalled()
+
+    // Reset mock for interrupt test
+    mockClient.session.abort.mockClear()
+    mockClient.session.promptAsync.mockClear()
+    idleTask.idleNotified = true
+    idleTask.waitingConcurrencyKey = "default"
+
+    // With interrupt, reply also works (abort + promptAsync)
+    const resultWithInterrupt = await execute(
+      { task_id: idleTask.id, message: "继续完善", interrupt: true },
+      { sessionID: parentSessionID },
     )
+
+    expect(resultWithInterrupt).toBe(`Interrupt sent to task ${idleTask.id}. The background task will continue with new direction.`)
+    expect(mockClient.session.abort).toHaveBeenCalled()
+    expect(mockClient.session.promptAsync).toHaveBeenCalled()
     expect(idleTask.idleNotified).toBeUndefined()
     expect(idleTask.status).toBe("running")
     expect(idleTask.waitingReason).toBeUndefined()
   })
 
-  it("task status is waiting with valid message: calls promptAsync, status becomes running, returns success", async () => {
+  it("task status is waiting with valid message: calls promptAsync, status becomes running, re-acquires slot", async () => {
     const mockClient = createMockClient()
     const task = createWaitingTask()
     const mockManager = createMockTaskManager(task, mockClient)
@@ -124,6 +146,7 @@ describe("wopal_task_reply", () => {
     )
 
     expect(result).toBe(`Reply sent to task ${task.id}. The background task will continue execution.`)
+    expect(mockManager.reacquireSlotOnWakeUp).toHaveBeenCalled()
     expect(mockClient.session.promptAsync).toHaveBeenCalledWith(
       expect.objectContaining({
         path: { id: task.sessionID },

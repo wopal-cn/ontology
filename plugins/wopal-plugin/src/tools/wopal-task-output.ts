@@ -23,6 +23,42 @@ function formatTokenCount(n: number): string {
   return String(n)
 }
 
+interface TaskModelInfo {
+  providerID: string
+  modelID: string
+}
+
+async function getTaskModelInfo(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  client: any,
+  sessionID: string,
+): Promise<TaskModelInfo | null> {
+  try {
+    if (typeof client.session?.messages !== "function") return null
+    const messagesResult = await client.session.messages({
+      path: { id: sessionID },
+      query: { limit: 1 }
+    })
+    const messages = messagesResult?.data ?? []
+
+    // 找最后一条 assistant 消息获取模型信息
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lastAssistant = [...messages].reverse().find((m: any) =>
+      m?.info?.role === "assistant"
+    )
+    if (!lastAssistant?.info) return null
+
+    const providerID = lastAssistant.info.providerID ?? lastAssistant.info.model?.providerID
+    const modelID = lastAssistant.info.modelID ?? lastAssistant.info.model?.modelID
+    if (!providerID || !modelID) return null
+
+    return { providerID, modelID }
+  } catch (err) {
+    debugLog(`[modelInfo] error: ${err instanceof Error ? err.message : String(err)}`)
+    return null
+  }
+}
+
 async function getContextUsage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   client: any,
@@ -120,34 +156,18 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
       task_id: tool.schema.string().describe("Task ID returned by wopal_task"),
       section: tool.schema.enum(["tools", "reasoning", "text"]).optional().describe("Content section to retrieve: 'tools' (tool calls & results), 'reasoning' (thinking process), 'text' (text output). Omit for summary only."),
       last_n: tool.schema.number().optional().describe("Only output the last N messages. Default: all messages."),
-      action: tool.schema.enum(["complete"]).optional().describe("Action to perform: 'complete' marks task as completed (only for idle tasks)."),
     },
-    execute: async (args: { task_id: string; section?: OutputSection; last_n?: number; action?: "complete" }, context: ToolContext) => {
+    execute: async (args: { task_id: string; section?: OutputSection; last_n?: number }, context: ToolContext) => {
       if (!context.sessionID) {
         return "Current session ID is unavailable; cannot read task status."
       }
 
-      const { task_id, section, last_n, action } = args
+      const { task_id, section, last_n } = args
 
       const task = manager.getTaskForParent(task_id, context.sessionID)
 
       if (!task) {
         return `Task not found for current session: ${task_id}`
-      }
-
-      // Handle action="complete"
-      if (action === "complete") {
-        if (!task.idleNotified && task.status !== 'running') {
-          return `Task is not idle. Only idle tasks can be completed. Current status: ${task.status}`
-        }
-        const result = await manager.complete(task_id, context.sessionID)
-        if (result === 'not_found') {
-          return `Task not found: ${task_id}`
-        }
-        if (result === 'not_running') {
-          return `Task is not running: ${task_id}. Current status: ${task.status}`
-        }
-        // Success - continue to display output below
       }
 
       let result = `**Task:** ${task.id}\n`
@@ -156,45 +176,26 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
       result += `**Description:** ${task.description}\n`
       result += `**Agent:** ${task.agent}\n`
 
+      // 获取模型信息（仅当有 sessionID 时）
+      if (task.sessionID) {
+        const client = manager.getClient()
+        const modelInfo = await getTaskModelInfo(client, task.sessionID)
+        if (modelInfo) {
+          result += `**Model:** ${modelInfo.providerID}/${modelInfo.modelID}\n`
+        }
+      }
+
+      // 并发槽位状态
+      const concurrency = manager.getConcurrencyStatus()
+      result += `**Concurrency:** ${concurrency.used}/${concurrency.limit} used, ${concurrency.available} available\n`
+
       // idle task: awaiting Wopal judgment
       if (task.idleNotified) {
         result += `\n\n**Idle:** awaiting your judgment`
-        result += `\nUse wopal_task_output(action="complete") to accept, wopal_task_reply to redirect, or wopal_task_cancel to terminate.`
+        result += `\nUse wopal_task_reply to redirect, or wopal_task_interrupt to abort current execution.`
       }
 
-      if (task.status === 'completed' && task.sessionID) {
-        result += `\nTask completed at ${task.completedAt?.toISOString()}`
-
-        // Fetch and extract subagent output
-        const client = manager.getClient()
-        if (typeof client.session?.messages === "function") {
-          try {
-            const messagesResult = await client.session.messages({
-              path: { id: task.sessionID },
-            })
-
-            const error = getErrorMessage(messagesResult)
-            if (error) {
-              result += `\n\n---\n\nError fetching result: ${error}`
-            } else {
-              const messages = extractMessages(messagesResult)
-              const newMessages = consumeNewMessages(task.sessionID, messages)
-              const content = extractAssistantContent(newMessages)
-
-              if (newMessages.length === 0) {
-                result += `\n\n---\n\n(No new output since last check)`
-              } else {
-                result += `\n\n---\n\n${content || "(No text output)"}`
-              }
-            }
-          } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : String(err)
-            result += `\n\n---\n\nError fetching result: ${errorMsg}`
-          }
-        } else {
-          result += `\n\n---\n\n(Result extraction unavailable: session.messages not supported)`
-        }
-      } else if (task.status === 'error') {
+      if (task.status === 'error') {
         result += `\nError: ${task.error}`
 
         // 获取消息内容以便诊断失败原因
@@ -309,8 +310,6 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
         if (task.waitingReason) {
           result += `\n**Waiting reason:** ${task.waitingReason}`
         }
-      } else if (task.status === 'cancelled') {
-        result += `\nTask was cancelled at ${task.completedAt?.toISOString()}`
       }
 
       // section 模式：按分类获取内容

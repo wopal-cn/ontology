@@ -33,11 +33,14 @@ export function createContextManageTool(
 ): ToolDefinition {
   return tool({
     description:
-      "管理会话上下文状态。子命令: summary（生成摘要 + 更新 session title）, status（查看状态 + 过时判断）。summary 是内部基础设施：调用 LLM 生成 ≤50 字核心意图，用于 session title 管理和语义检索增强。不是会话回顾工具。status 显示当前摘要内容、title、以及是否过时（超过 20 条新消息则提示重新生成）。\n\n⚠️ Agent 禁止主动生成长格式会话摘要——那是 OpenCode compact 的职责，不是本工具的用途。",
+      "调用外部 LLM 模型生成当前会话摘要（≤50 字核心意图），并更新 session title。用于 session title 管理和语义检索增强。\n\n" +
+      "子命令: summary（调用 LLM 生成摘要 + 更新 title）, status（查看当前摘要状态 + 过时判断）。\n\n" +
+      "⚠️ 这是内部基础设施，不是会话回顾工具。Agent 禁止主动生成长格式会话摘要。" +
+      "⚠️ summary 调用一次即可，返回成功后不要重复调用。",
     args: {
       action: tool.schema
         .enum(["summary", "status"] as const)
-        .describe("子命令: 'summary' 生成摘要并更新 title, 'status' 查看当前状态"),
+        .describe("子命令: 'summary' 调用 LLM 生成摘要并更新 title, 'status' 查看当前状态"),
     },
     execute: async (args, context: ToolContext): Promise<string> => {
       const sessionID = context.sessionID;
@@ -147,13 +150,13 @@ ${truncatedText}
     saveSessionContext(newCtx);
 
     return [
-      "## 📝 Session Summary Generated",
+      "## ✅ Session Summary Generated",
       "",
       `**Summary:** ${cleanedSummary}`,
       `**Message Count:** ${messages.length}`,
       `**Generated At:** ${new Date().toISOString()}`,
       "",
-      "> This summary will be used to enrich memory retrieval queries.",
+      "> Important: This output is only visible to the calling agent. You must display the full content to the user.",
     ].join("\n");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

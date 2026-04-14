@@ -276,8 +276,8 @@ describe("SimpleTaskManager", () => {
     })
   })
 
-  describe("cancel", () => {
-    it("aborts session and marks cancelled", async () => {
+  describe("interrupt", () => {
+    it("aborts session but keeps status as running", async () => {
       const result = await manager.launch({
         description: "Test task",
         prompt: "Do something",
@@ -289,18 +289,17 @@ describe("SimpleTaskManager", () => {
         throw new Error("expected successful launch")
       }
 
-      const cancelled = await manager.cancel(result.taskId, "parent-1")
+      const interrupted = await manager.interrupt(result.taskId, "parent-1")
 
-      expect(cancelled).toBe("cancelled")
+      expect(interrupted).toBe("interrupted")
       expect(mockClient.session.abort).toHaveBeenCalledWith({
         path: { id: "child-session-1" },
       })
-      expect(manager.getTask(result.taskId)?.status).toBe("cancelled")
+      // interrupt only aborts, status remains running
+      expect(manager.getTask(result.taskId)?.status).toBe("running")
     })
 
-    it("still returns cancelled even when session.abort rejects", async () => {
-      // After the race condition fix, status is set before abort is called
-      // So abort failure doesn't affect the final status
+    it("still returns interrupted even when session.abort rejects", async () => {
       mockClient.session.abort.mockRejectedValueOnce(new Error("Abort failed"))
 
       const result = await manager.launch({
@@ -314,13 +313,14 @@ describe("SimpleTaskManager", () => {
         throw new Error("expected successful launch")
       }
 
-      const cancelled = await manager.cancel(result.taskId, "parent-1")
+      const interrupted = await manager.interrupt(result.taskId, "parent-1")
 
-      expect(cancelled).toBe("cancelled")
-      expect(manager.getTask(result.taskId)?.status).toBe("cancelled")
+      expect(interrupted).toBe("interrupted")
+      // status still running after interrupt
+      expect(manager.getTask(result.taskId)?.status).toBe("running")
     })
 
-    it("rejects cancellation from a different parent session", async () => {
+    it("rejects interruption from a different parent session", async () => {
       const result = await manager.launch({
         description: "Test task",
         prompt: "Do something",
@@ -332,13 +332,11 @@ describe("SimpleTaskManager", () => {
         throw new Error("expected successful launch")
       }
 
-      await expect(manager.cancel(result.taskId, "parent-2")).resolves.toBe("not_found")
+      await expect(manager.interrupt(result.taskId, "parent-2")).resolves.toBe("not_found")
       expect(mockClient.session.abort).not.toHaveBeenCalled()
     })
 
-    it("cancels task immediately, preventing race condition with completion", async () => {
-      // After the race condition fix, status is set to 'cancelled' BEFORE abort is called
-      // So markTaskCompletedBySession will not overwrite the status (it checks for 'running')
+    it("interrupt aborts session, task remains running", async () => {
       const abortDeferred = createDeferred<void>()
       mockClient.session.abort.mockReturnValueOnce(abortDeferred.promise)
 
@@ -353,18 +351,15 @@ describe("SimpleTaskManager", () => {
         throw new Error("expected successful launch")
       }
 
-      const cancelPromise = manager.cancel(result.taskId, "parent-1")
-      // This should be ignored because task is no longer 'running'
-      manager.markTaskCompletedBySession("child-session-1")
+      const interruptPromise = manager.interrupt(result.taskId, "parent-1")
       abortDeferred.resolve(undefined)
 
-      await expect(cancelPromise).resolves.toBe("cancelled")
-      expect(manager.getTask(result.taskId)?.status).toBe("cancelled")
+      await expect(interruptPromise).resolves.toBe("interrupted")
+      // interrupt keeps status as running
+      expect(manager.getTask(result.taskId)?.status).toBe("running")
     })
 
-    it("cancels task immediately, preventing race condition with error", async () => {
-      // After the race condition fix, status is set to 'cancelled' BEFORE abort is called
-      // So markTaskErrorBySession will not overwrite the status
+    it("interrupt does not block idle notification", async () => {
       const abortDeferred = createDeferred<void>()
       mockClient.session.abort.mockReturnValueOnce(abortDeferred.promise)
 
@@ -379,13 +374,12 @@ describe("SimpleTaskManager", () => {
         throw new Error("expected successful launch")
       }
 
-      const cancelPromise = manager.cancel(result.taskId, "parent-1")
-      // This should be ignored because task is no longer 'running'
-      manager.markTaskErrorBySession("child-session-1", "Session failed")
+      const interruptPromise = manager.interrupt(result.taskId, "parent-1")
       abortDeferred.resolve(undefined)
 
-      await expect(cancelPromise).resolves.toBe("cancelled")
-      expect(manager.getTask(result.taskId)?.status).toBe("cancelled")
+      await expect(interruptPromise).resolves.toBe("interrupted")
+      // interrupt keeps status as running
+      expect(manager.getTask(result.taskId)?.status).toBe("running")
     })
   })
 
@@ -417,7 +411,7 @@ describe("SimpleTaskManager", () => {
   })
 
   describe("cleanup", () => {
-    it("removes old completed tasks", async () => {
+    it("removes old error tasks", async () => {
       const result = await manager.launch({
         description: "Test task",
         prompt: "Do something",
@@ -434,7 +428,7 @@ describe("SimpleTaskManager", () => {
         throw new Error("expected task")
       }
 
-      task.status = "completed"
+      task.status = "error"
       task.completedAt = new Date(Date.now() - 4_000_000)
 
       manager.cleanup(3_600_000)
@@ -442,7 +436,7 @@ describe("SimpleTaskManager", () => {
       expect(manager.getTask(result.taskId)).toBeUndefined()
     })
 
-    it("keeps recent tasks", async () => {
+    it("keeps recent error tasks", async () => {
       const result = await manager.launch({
         description: "Test task",
         prompt: "Do something",
@@ -459,7 +453,7 @@ describe("SimpleTaskManager", () => {
         throw new Error("expected task")
       }
 
-      task.status = "completed"
+      task.status = "error"
       task.completedAt = new Date(Date.now() - 1_000)
 
       manager.cleanup(3_600_000)

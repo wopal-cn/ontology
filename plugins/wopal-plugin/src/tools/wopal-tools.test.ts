@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { createWopalCancelTool } from "./wopal-task-cancel.js"
+import { createWopalInterruptTool } from "./wopal-task-interrupt.js"
 import { createWopalOutputTool } from "./wopal-task-output.js"
 import { createWopalTaskTool } from "./wopal-task.js"
 
@@ -102,34 +102,6 @@ describe("wopal tools", () => {
       expect(manager.getTaskForParent).toHaveBeenCalledWith("task-1", "parent-2")
     })
 
-    it("describes completed tasks", async () => {
-      const manager = {
-        getTaskForParent: vi.fn().mockReturnValue({
-          id: "task-1",
-          sessionID: "session-1",
-          status: "completed",
-          description: "Test task",
-          agent: "general",
-          completedAt: new Date("2026-03-15T10:00:00.000Z"),
-        }),
-        getClient: vi.fn().mockReturnValue({
-          session: {
-            messages: vi.fn().mockResolvedValue({
-              data: [
-                { info: { role: "assistant" }, parts: [{ type: "text", text: "Task output" }] },
-              ],
-            }),
-          },
-        }),
-      }
-
-      const execute = getExecute(createWopalOutputTool(manager as never))
-      const output = await execute({ task_id: "task-1" }, { sessionID: "parent-1" })
-
-      expect(output).toContain("**Status:** completed")
-      expect(output).toContain("Task output")
-    })
-
     it("describes running tasks", async () => {
       const manager = {
         getTaskForParent: vi.fn().mockReturnValue({
@@ -138,6 +110,7 @@ describe("wopal tools", () => {
           description: "Test task",
           agent: "general",
         }),
+        getConcurrencyStatus: vi.fn().mockReturnValue({ used: 2, limit: 5, available: 3 }),
       }
 
       const execute = getExecute(createWopalOutputTool(manager as never))
@@ -156,6 +129,7 @@ describe("wopal tools", () => {
           agent: "general",
           error: "Something went wrong",
         }),
+        getConcurrencyStatus: vi.fn().mockReturnValue({ used: 2, limit: 5, available: 3 }),
       }
 
       const execute = getExecute(createWopalOutputTool(manager as never))
@@ -165,22 +139,23 @@ describe("wopal tools", () => {
       expect(output).toContain("Error: Something went wrong")
     })
 
-    it("describes cancelled tasks", async () => {
+    it("describes waiting tasks", async () => {
       const manager = {
         getTaskForParent: vi.fn().mockReturnValue({
           id: "task-1",
-          status: "cancelled",
+          status: "waiting",
           description: "Test task",
           agent: "general",
-          completedAt: new Date("2026-03-15T10:00:00.000Z"),
+          waitingReason: "question_detected",
         }),
+        getConcurrencyStatus: vi.fn().mockReturnValue({ used: 2, limit: 5, available: 3 }),
       }
 
       const execute = getExecute(createWopalOutputTool(manager as never))
       const output = await execute({ task_id: "task-1" }, { sessionID: "parent-1" })
 
-      expect(output).toContain("**Status:** cancelled")
-      expect(output).toContain("was cancelled")
+      expect(output).toContain("**Status:** waiting")
+      expect(output).toContain("**Waiting reason:** question_detected")
     })
 
     it("fails when context session id is missing", async () => {
@@ -196,62 +171,52 @@ describe("wopal tools", () => {
     })
   })
 
-  describe("wopal_task_cancel", () => {
+  describe("wopal_task_interrupt", () => {
     it("enforces ownership via current session", async () => {
       const manager = {
-        cancel: vi.fn().mockResolvedValue("not_found"),
+        interrupt: vi.fn().mockResolvedValue("not_found"),
       }
 
-      const execute = getExecute(createWopalCancelTool(manager as never))
+      const execute = getExecute(createWopalInterruptTool(manager as never))
       await expect(
         execute({ task_id: "task-1" }, { sessionID: "parent-2" }),
       ).resolves.toBe("Task not found for current session: task-1")
-      expect(manager.cancel).toHaveBeenCalledWith("task-1", "parent-2")
+      expect(manager.interrupt).toHaveBeenCalledWith("task-1", "parent-2")
     })
 
-    it("reports successful cancellation", async () => {
+    it("reports successful interrupt", async () => {
       const manager = {
-        cancel: vi.fn().mockResolvedValue("cancelled"),
+        interrupt: vi.fn().mockResolvedValue("interrupted"),
       }
 
-      const execute = getExecute(createWopalCancelTool(manager as never))
+      const execute = getExecute(createWopalInterruptTool(manager as never))
       const result = await execute({ task_id: "task-1" }, { sessionID: "parent-1" })
 
-      expect(result).toBe("Task task-1 cancelled.")
-    })
-
-    it("reports abort_failed", async () => {
-      const manager = {
-        cancel: vi.fn().mockResolvedValue("abort_failed"),
-      }
-
-      const execute = getExecute(createWopalCancelTool(manager as never))
-      const result = await execute({ task_id: "task-1" }, { sessionID: "parent-1" })
-
-      expect(result).toBe("Failed to cancel task-1: backend abort request failed.")
+      expect(result).toContain("task-1 interrupted")
+      expect(result).toContain("wopal_task_reply to resume")
     })
 
     it("reports not_running", async () => {
       const manager = {
-        cancel: vi.fn().mockResolvedValue("not_running"),
+        interrupt: vi.fn().mockResolvedValue("not_running"),
       }
 
-      const execute = getExecute(createWopalCancelTool(manager as never))
+      const execute = getExecute(createWopalInterruptTool(manager as never))
       const result = await execute({ task_id: "task-1" }, { sessionID: "parent-1" })
 
-      expect(result).toBe("Failed to cancel task-1: task is not running.")
+      expect(result).toBe("Failed to interrupt task-1: task is not running.")
     })
 
     it("fails when context session id is missing", async () => {
       const manager = {
-        cancel: vi.fn(),
+        interrupt: vi.fn(),
       }
 
-      const execute = getExecute(createWopalCancelTool(manager as never))
+      const execute = getExecute(createWopalInterruptTool(manager as never))
       await expect(
         execute({ task_id: "task-1" }, {}),
-      ).resolves.toBe("Current session ID is unavailable; cannot cancel task.")
-      expect(manager.cancel).not.toHaveBeenCalled()
+      ).resolves.toBe("Current session ID is unavailable; cannot interrupt task.")
+      expect(manager.interrupt).not.toHaveBeenCalled()
     })
   })
 })

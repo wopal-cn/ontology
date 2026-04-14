@@ -27,7 +27,8 @@ function createMockTaskManager(
       task && task.id === id && task.parentSessionID === parentID ? task : undefined,
     ),
     getClient: vi.fn(() => mockClient),
-    complete: vi.fn().mockResolvedValue("completed"),
+    getDirectory: vi.fn(() => "/test/dir"),
+    getConcurrencyStatus: vi.fn(() => ({ used: 2, limit: 5, available: 3 })),
   }
 }
 
@@ -60,7 +61,8 @@ describe("wopal_task_output", () => {
     )
 
     expect(result).toContain("**Idle:** awaiting your judgment")
-    expect(result).toContain("Use wopal_task_output(action=\"complete\") to accept")
+    expect(result).toContain("wopal_task_reply to redirect")
+    expect(result).toContain("wopal_task_interrupt to abort")
   })
 
   it("does not show idle status when idleNotified is false or undefined", async () => {
@@ -126,65 +128,5 @@ describe("wopal_task_output", () => {
 
     expect(result).toContain("**Status:** idle (awaiting judgment)")
     expect(result).not.toContain("**Status:** running")
-  })
-
-  it("action='complete' marks idle task as completed", async () => {
-    const mockClient = createMockClient()
-    const idleTask = createRunningTask({ idleNotified: true })
-    const mockManager = createMockTaskManager(idleTask, mockClient)
-    mockManager.complete.mockResolvedValue("completed")
-    const execute = getExecute(createWopalOutputTool(mockManager as never))
-
-    const result = await execute(
-      { task_id: idleTask.id, action: "complete" },
-      { sessionID: parentSessionID },
-    )
-
-    expect(mockManager.complete).toHaveBeenCalledWith(idleTask.id, parentSessionID)
-    expect(result).toContain("**Status:** idle (awaiting judgment)")
-  })
-
-  it("action='complete' returns error for non-idle non-running task", async () => {
-    const completedTask = createRunningTask({ status: "completed" as WopalTask["status"] })
-    const mockManager = createMockTaskManager(completedTask)
-    const execute = getExecute(createWopalOutputTool(mockManager as never))
-
-    const result = await execute(
-      { task_id: completedTask.id, action: "complete" },
-      { sessionID: parentSessionID },
-    )
-
-    expect(result).toContain("Task is not idle")
-    expect(result).toContain("Current status: completed")
-  })
-
-  it("action='complete' returns error when manager.complete returns 'not_found'", async () => {
-    const mockClient = createMockClient()
-    const idleTask = createRunningTask({ idleNotified: true })
-    const mockManager = createMockTaskManager(idleTask, mockClient)
-    mockManager.complete.mockResolvedValue("not_found")
-    const execute = getExecute(createWopalOutputTool(mockManager as never))
-
-    const result = await execute(
-      { task_id: idleTask.id, action: "complete" },
-      { sessionID: parentSessionID },
-    )
-
-    expect(result).toContain("Task not found")
-  })
-
-  it("action='complete' returns error when manager.complete returns 'not_running'", async () => {
-    const mockClient = createMockClient()
-    const idleTask = createRunningTask({ idleNotified: true })
-    const mockManager = createMockTaskManager(idleTask, mockClient)
-    mockManager.complete.mockResolvedValue("not_running")
-    const execute = getExecute(createWopalOutputTool(mockManager as never))
-
-    const result = await execute(
-      { task_id: idleTask.id, action: "complete" },
-      { sessionID: parentSessionID },
-    )
-
-    expect(result).toContain("Task is not running")
   })
 })

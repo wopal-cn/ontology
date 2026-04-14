@@ -172,7 +172,8 @@ export class SimpleTaskManager {
       this.debugLog(`[shutdown] aborting task: ${task.id}`)
       this.releaseConcurrencySlot(task)
       await this.abortSession(task.sessionID)
-      task.status = 'interrupt'
+      // Shutdown sets error status to mark task as terminated
+      task.status = 'error'
       task.error = 'Shutdown: task interrupted'
       task.completedAt = new Date()
     }
@@ -327,19 +328,15 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
     return this.tasks.get(taskId)
   }
 
+  /**
+   * Legacy method - session.idle events in runtime.ts now handle idle notification directly.
+   * This method is kept for backward compatibility but does nothing.
+   */
   markTaskCompletedBySession(sessionID: string): WopalTask | undefined {
     const task = this.findBySession(sessionID)
     if (!task || task.status !== 'running') {
-      if (task) {
-        this.debugLog(`[markCompleted] skipped: taskId=${task.id} status=${task.status} (not running)`)
-      }
       return undefined
     }
-
-    this.releaseConcurrencySlot(task)
-    task.status = 'completed'
-    task.completedAt = new Date()
-    this.debugLog(`[markCompleted] taskId=${task.id} sessionID=${sessionID}`)
     return task
   }
 
@@ -348,6 +345,13 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
     if (!task) {
       this.debugLog(`[markError] skipped: no task found for sessionID=${sessionID}`)
       return undefined
+    }
+
+    // Don't change status if task was already interrupted (idleNotified=true)
+    // The session.error event fires after abort, but interrupted tasks should stay running
+    if (task.idleNotified && task.status === 'running') {
+      this.debugLog(`[markError] skipped: taskId=${task.id} was interrupted (idleNotified=true), preserving running state`)
+      return task
     }
 
     if (!this.failTask(task, error)) {
@@ -375,58 +379,39 @@ this.debugLog(`[launch] session.create returned: ${JSON.stringify(session)}`)
     return task
   }
 
-  async cancel(id: string, parentSessionID: string): Promise<CancelResult> {
+  async interrupt(id: string, parentSessionID: string): Promise<CancelResult> {
     const task = this.getTaskForParent(id, parentSessionID)
     if (!task) {
-      this.debugLog(`[cancel] failed: taskId=${id} not found or ownership mismatch`)
+      this.debugLog(`[interrupt] failed: taskId=${id} not found or ownership mismatch`)
       return 'not_found'
     }
-    if (task.status !== 'running' && task.status !== 'waiting' && task.status !== 'pending') {
-      this.debugLog(`[cancel] failed: taskId=${id} status=${task.status}`)
+    if (task.status !== 'running') {
+      this.debugLog(`[interrupt] failed: taskId=${id} status=${task.status}`)
       return 'not_running'
     }
 
-    // 先设置状态，防止 abort 触发 session.idle 导致的竞态
+    // Mark idleNotified so session.error event won't change status
+    // This preserves running state for reply-based recovery
+    task.idleNotified = true
+    if (task.concurrencyKey) {
+      task.waitingConcurrencyKey = task.concurrencyKey
+    }
     this.releaseConcurrencySlot(task)
-    task.status = 'cancelled'
-    task.completedAt = new Date()
 
+    // 只 abort session，不改变状态
+    // abort 后状态仍为 running，等待用户 reply 唤醒
     if (task.sessionID) {
       try {
         await this.client.session.abort({
           path: { id: task.sessionID },
         })
+        this.debugLog(`[interrupt] aborted session for taskId=${id}`)
       } catch (err) {
-        // Ignore abort errors - task already marked as cancelled
+        this.debugLog(`[interrupt] abort error (task may already be idle): ${toErrorMessage(err)}`)
       }
     }
 
-    this.debugLog(`[cancel] taskId=${id}`)
-    return 'cancelled'
-  }
-
-  async complete(id: string, parentSessionID: string): Promise<'completed' | 'not_found' | 'not_running'> {
-    const task = this.getTaskForParent(id, parentSessionID)
-    if (!task) {
-      this.debugLog(`[complete] failed: taskId=${id} not found or ownership mismatch`)
-      return 'not_found'
-    }
-    if (task.status !== 'running') {
-      this.debugLog(`[complete] failed: taskId=${id} status=${task.status}`)
-      return 'not_running'
-    }
-
-    // Restore concurrencyKey from waitingConcurrencyKey if present (idle case)
-    if (task.waitingConcurrencyKey) {
-      task.concurrencyKey = task.waitingConcurrencyKey
-      delete task.waitingConcurrencyKey
-    }
-    this.releaseConcurrencySlot(task)
-    task.status = 'completed'
-    task.completedAt = new Date()
-
-    this.debugLog(`[complete] taskId=${id}`)
-    return 'completed'
+    return 'interrupted'
   }
 
   async notifyParent(taskId: string): Promise<void> {
@@ -634,8 +619,8 @@ Task is still running. Use \`wopal_task_output(task_id="${task.id}")\` for detai
     let cleanedCount = 0
 
     for (const [id, task] of this.tasks) {
-      // Terminal tasks: remove after maxAgeMs
-      if (['completed', 'error', 'cancelled', 'interrupt'].includes(task.status)) {
+      // Terminal tasks: only 'error' is terminal
+      if (task.status === 'error') {
         if (task.completedAt && now - task.completedAt.getTime() > maxAgeMs) {
           this.tasks.delete(id)
           if (task.sessionID) {
@@ -668,8 +653,9 @@ Task is still running. Use \`wopal_task_output(task_id="${task.id}")\` for detai
   }
 
   private failTask(task: WopalTask, error: string): boolean {
-    if (['completed', 'cancelled', 'error', 'interrupt'].includes(task.status)) {
-      this.debugLog(`[failTask] skipped: taskId=${task.id} status=${task.status} (already terminal)`)
+    // Only 'error' is terminal, but also check if already failed
+    if (task.status === 'error') {
+      this.debugLog(`[failTask] skipped: taskId=${task.id} status=${task.status} (already error)`)
       return false
     }
 
@@ -701,6 +687,38 @@ Task is still running. Use \`wopal_task_output(task_id="${task.id}")\` for detai
     if (task.concurrencyKey) {
       this.concurrency.release(task.concurrencyKey)
       task.concurrencyKey = undefined
+    }
+  }
+
+  /**
+   * Re-acquire concurrency slot when waking up an idle task via reply.
+   * This ensures the task takes a slot when resuming execution.
+   */
+  public reacquireSlotOnWakeUp(task: WopalTask): void {
+    if (task.status === 'waiting' || task.idleNotified) {
+      // Always tryAcquire to properly increment the counter
+      // waitingConcurrencyKey is just a saved string, not an active slot
+      if (this.concurrency.tryAcquire(this.CONCURRENCY_KEY, DEFAULT_CONCURRENCY_LIMIT)) {
+        task.concurrencyKey = this.CONCURRENCY_KEY
+        this.debugLog(`[reacquireSlot] taskId=${task.id} acquired slot`)
+      } else {
+        this.debugLog(`[reacquireSlot] taskId=${task.id} concurrency limit reached, proceeding anyway`)
+        // Proceed without slot - the task was already running and we're just resuming
+      }
+      // Clean up waitingConcurrencyKey regardless
+      delete task.waitingConcurrencyKey
+    }
+  }
+
+  /**
+   * Get concurrency slot usage for debugging.
+   */
+  getConcurrencyStatus(): { used: number; limit: number; available: number } {
+    const used = this.concurrency.getCount(this.CONCURRENCY_KEY)
+    return {
+      used,
+      limit: DEFAULT_CONCURRENCY_LIMIT,
+      available: DEFAULT_CONCURRENCY_LIMIT - used,
     }
   }
 

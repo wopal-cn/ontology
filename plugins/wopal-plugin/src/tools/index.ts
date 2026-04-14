@@ -6,7 +6,7 @@ import type { SessionStore } from "../session-store.js"
 import type { DistillEngine } from "../memory/distill.js"
 import { createWopalTaskTool } from "./wopal-task.js"
 import { createWopalOutputTool } from "./wopal-task-output.js"
-import { createWopalCancelTool } from "./wopal-task-cancel.js"
+import { createWopalInterruptTool } from "./wopal-task-interrupt.js"
 import { createWopalReplyTool } from "./wopal-task-reply.js"
 import { createWopalTaskDiffTool } from "./wopal-task-diff.js"
 import { createMemoryManageTool } from "./memory-manage.js"
@@ -23,7 +23,7 @@ export function createWopalTools(
   const tools: Record<string, ToolDefinition> = {
     wopal_task: createWopalTaskTool(manager),
     wopal_task_output: createWopalOutputTool(manager),
-    wopal_task_cancel: createWopalCancelTool(manager),
+    wopal_task_interrupt: createWopalInterruptTool(manager),
     wopal_task_reply: createWopalReplyTool(manager),
     wopal_task_diff: createWopalTaskDiffTool(manager),
   }
@@ -35,4 +35,7 @@ export function createWopalTools(
   return tools
 }
 
-export { createWopalTaskTool, createWopalOutputTool, createWopalCancelTool, createWopalReplyTool, createWopalTaskDiffTool, createMemoryManageTool }
+export { createWopalTaskTool, createWopalOutputTool, createWopalInterruptTool, createWopalReplyTool, createWopalTaskDiffTool, createMemoryManageTool }
+
+// Legacy aliases
+export const createWopalCancelTool = createWopalInterruptTool

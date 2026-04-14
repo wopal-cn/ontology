@@ -1,6 +1,10 @@
-export type WopalTaskStatus = 'pending' | 'running' | 'waiting' | 'completed' | 'error' | 'cancelled' | 'interrupt'
+export type WopalTaskStatus = 'pending' | 'running' | 'waiting' | 'error'
+
+// Note: 'error' is the only terminal state now
+// Task is a perpetual dialog channel - no 'completed', 'cancelled', 'interrupt' states
 
 export type ErrorCategory = 'timeout' | 'crash' | 'network' | 'cancelled' | 'unknown'
+// Note: 'cancelled' retained for backward compatibility with existing error handling code
 
 export interface TaskProgress {
   toolCalls: number
@@ -99,8 +103,10 @@ export interface LaunchFailure {
 
 export type LaunchOutput = LaunchSuccess | LaunchFailure
 
-export type CancelResult =
-  | 'cancelled'
+export type InterruptResult =
+  | 'interrupted'
   | 'not_found'
   | 'not_running'
-  | 'abort_failed'
+
+// Legacy alias for backward compatibility
+export type CancelResult = InterruptResult

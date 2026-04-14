@@ -58,11 +58,11 @@ async function replyQuestion(taskId: string, manager: SimpleTaskManager, client:
 
 export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition {
   return tool({
-    description: "Send a message to a background task to resume or redirect its execution. Works on waiting and idle (running+idleNotified) tasks.",
+    description: "Send a message to a background task to resume or redirect its execution. Works on any non-running task (waiting, idle, error). Reply re-acquires concurrency slot.",
     args: {
-      task_id: tool.schema.string().describe("The ID of the waiting task to reply to"),
+      task_id: tool.schema.string().describe("The ID of the task to reply to"),
       message: tool.schema.string().describe("The message to send to the background task"),
-      interrupt: tool.schema.boolean().optional().default(false).describe("Abort current execution and send correction"),
+      interrupt: tool.schema.boolean().optional().default(false).describe("Abort current execution and send correction (only for running tasks)"),
     },
     execute: async (args: { task_id: string; message: string; interrupt?: boolean }, context: ToolContext) => {
       const { task_id, message, interrupt = false } = args
@@ -77,8 +77,16 @@ export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition
         return "Error: Task not found or not owned by this session"
       }
 
-      if (task.status !== "waiting" && task.status !== "running") {
-        return `Error: Task is ${task.status}. Only running and waiting tasks can receive replies.`
+      // interrupt only works on running tasks
+      if (interrupt && task.status !== "running") {
+        return `Error: interrupt only works on running tasks. Task is ${task.status}. Use reply without interrupt to resume.`
+      }
+
+      // reply works on any non-running task (waiting, idle, or error)
+      // but not on running tasks (unless using interrupt mode)
+      // idleNotified tasks (running + idleNotified=true) can use reply without interrupt
+      if (!interrupt && task.status === "running" && !task.idleNotified) {
+        return `Error: Task is running. Use interrupt=true to abort and redirect, or wait for idle.`
       }
 
       if (!task.sessionID) {
@@ -91,10 +99,6 @@ export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition
 
       // Handle interrupt mode
       if (interrupt) {
-        if (task.status !== "running") {
-          return `Error: interrupt only works on running tasks. Task is ${task.status}. Waiting tasks don't need interrupt - just reply normally.`
-        }
-
         try {
           // Abort current execution
           if (typeof clientAny?.session?.abort === "function") {
@@ -134,6 +138,9 @@ export function createWopalReplyTool(manager: SimpleTaskManager): ToolDefinition
           return `Failed to send interrupt: ${err instanceof Error ? err.message : String(err)}`
         }
       }
+
+      // Re-acquire concurrency slot before resuming
+      manager.reacquireSlotOnWakeUp(task)
 
       try {
         if (task.pendingQuestionID) {
