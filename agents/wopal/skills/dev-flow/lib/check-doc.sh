@@ -219,28 +219,65 @@ check_doc_plan() {
     done
 
     # ============================================
-    # 5.1 Spike investigation sections (recommended)
+    # 5.1 Spike investigation sections (required for investigation completeness)
     # ============================================
     for section in "## Technical Context" "## Affected Components"; do
         if grep -q "$section" "$plan_file"; then
-            log_success "$section (spike investigation)"
+            # Check section content is non-empty (extract between section header and next ##)
+            local section_content
+            section_content=$(sed -n "/^$section/,/^##[^#]/p" "$plan_file" | sed '1d;$d' | grep -v '^$' || true)
+            if [[ -z "$section_content" ]]; then
+                echo "$section is empty (required for investigation completeness)"
+                ((issues++))
+            else
+                log_success "$section (spike investigation)"
+            fi
         else
-            log_warn "Missing $section (recommended for spike investigation)"
-            ((warnings++))
+            echo "Missing $section (required for spike investigation)"
+            ((issues++))
         fi
     done
 
     # ============================================
-    # 6. Check Scope Assessment section
+    # 6. Check Scope Assessment section (non-placeholder)
     # ============================================
     if grep -q '^## Scope Assessment' "$plan_file"; then
-        # Check for Complexity and Confidence
-        if grep -q '^\- \*\*Complexity\*\*:' "$plan_file" && \
-           grep -q '^\- \*\*Confidence\*\*:' "$plan_file"; then
-            log_success "## Scope Assessment"
-        else
+        # Extract Complexity and Confidence values
+        local complexity_line
+        complexity_line=$(grep '^\- \*\*Complexity\*\*:' "$plan_file" || true)
+        local confidence_line
+        confidence_line=$(grep '^\- \*\*Confidence\*\*:' "$plan_file" || true)
+        
+        if [[ -z "$complexity_line" || -z "$confidence_line" ]]; then
             echo "Scope Assessment missing Complexity or Confidence"
             ((issues++))
+        else
+            # Check for placeholder values (Low|Medium|High pattern)
+            local complexity_value
+            complexity_value=$(echo "$complexity_line" | sed 's/^.*: //')
+            local confidence_value
+            confidence_value=$(echo "$confidence_line" | sed 's/^.*: //')
+            
+            # Placeholder check: exact match of "Low|Medium|High" (template pattern)
+            if [[ "$complexity_value" == "Low|Medium|High" ]]; then
+                echo "Complexity not evaluated (placeholder: '$complexity_value')"
+                ((issues++))
+            elif [[ "$complexity_value" != "Low" && "$complexity_value" != "Medium" && "$complexity_value" != "High" ]]; then
+                echo "Complexity invalid: '$complexity_value' (expected: Low/Medium/High)"
+                ((issues++))
+            fi
+            
+            if [[ "$confidence_value" == "High|Medium|Low" ]]; then
+                echo "Confidence not evaluated (placeholder: '$confidence_value')"
+                ((issues++))
+            elif [[ "$confidence_value" != "High" && "$confidence_value" != "Medium" && "$confidence_value" != "Low" ]]; then
+                echo "Confidence invalid: '$confidence_value' (expected: High/Medium/Low)"
+                ((issues++))
+            fi
+            
+            if [[ $issues -eq 0 ]]; then
+                log_success "## Scope Assessment (Complexity: $complexity_value, Confidence: $confidence_value)"
+            fi
         fi
     else
         echo "Missing section: ## Scope Assessment"

@@ -1,21 +1,17 @@
 #!/bin/bash
-# dev-flow — 统一开发工作流 (5-state model)
+# dev-flow — 统一开发工作流 (3-state model)
 # Usage: flow.sh <command> <issue> [options]
 #
 # Commands:
-#   create              创建规范化的 Issue
-#   start <issue>       创建 Plan 并进入调查阶段
-#   spike <issue>       调查研究阶段
-#   plan <issue>        进入计划阶段
-#   approve <issue>     提交审批
-#   dev <issue>         开始执行
+#   new-issue           创建规范化的 Issue
+#   plan <issue>        创建 Plan 并进入规划阶段
+#   approve <issue>     提交审批 → 执行
 #   complete <issue>    标记完成
-#   validate <issue>    用户验证确认
-#   archive <issue>     归档并清理
+#   archive <issue>     归档
 #   status <issue>      查看任务状态
 #   list                列出进行中任务
 #   decompose-prd <prd> 从 PRD 创建 Issue
-#   reset <issue>       重置到 investigating 状态
+#   reset <issue>       重置到 planning 状态
 #   help                显示帮助
 
 set -e
@@ -157,13 +153,13 @@ get_plan_name() {
 # Command Implementations (sourced from cmd/)
 # ============================================
 
-# source cmd/ files (explicit order — utility.sh first: cmd_start calls cmd_help)
+# source cmd/ files (explicit order — utility.sh first)
 source "$SKILL_DIR/scripts/cmd/utility.sh"
-source "$SKILL_DIR/scripts/cmd/create.sh"
-source "$SKILL_DIR/scripts/cmd/planning.sh"
+source "$SKILL_DIR/scripts/cmd/new-issue.sh"
+source "$SKILL_DIR/scripts/cmd/plan.sh"
 source "$SKILL_DIR/scripts/cmd/approve.sh"
-source "$SKILL_DIR/scripts/cmd/execution.sh"
-source "$SKILL_DIR/scripts/cmd/closing.sh"
+source "$SKILL_DIR/scripts/cmd/complete.sh"
+source "$SKILL_DIR/scripts/cmd/archive.sh"
 source "$SKILL_DIR/scripts/cmd/query.sh"
 
 # ============================================
@@ -171,20 +167,22 @@ source "$SKILL_DIR/scripts/cmd/query.sh"
 # ============================================
 
 case "${1:-help}" in
-    create)         shift; cmd_create "$@" ;;
-    start)          shift; cmd_start "$@" ;;
-    spike)          shift; cmd_spike "$@" ;;
+    new-issue)      shift; cmd_new_issue "$@" ;;
     plan)           shift; cmd_plan "$@" ;;
     approve)        shift; cmd_approve "$@" ;;
-    dev)            shift; cmd_dev "$@" ;;
     complete)       shift; cmd_complete "$@" ;;
-    validate)       shift; cmd_validate "$@" ;;
     archive)        shift; cmd_archive "$@" ;;
     status)         shift; cmd_status "$@" ;;
     list)           shift; cmd_list "$@" ;;
     decompose-prd)  shift; cmd_decompose_prd "$@" ;;
     reset)          shift; cmd_reset "$@" ;;
     help|--help|-h) cmd_help ;;
+    # Old command compatibility (deprecated)
+    create)         shift; log_warn "'create' is deprecated, use 'new-issue'"; cmd_new_issue "$@" ;;
+    start)          shift; log_warn "'start' is deprecated, use 'plan'"; cmd_plan "$@" ;;
+    spike)          shift; log_warn "'spike' is deprecated (embedded in plan)"; exit 0 ;;
+    dev)            shift; log_warn "'dev' is deprecated, use 'approve --confirm'"; exit 0 ;;
+    validate)       shift; log_warn "'validate' is deprecated, use 'archive --confirm'"; exit 0 ;;
     *)
         log_error "Unknown command: $1"
         cmd_help

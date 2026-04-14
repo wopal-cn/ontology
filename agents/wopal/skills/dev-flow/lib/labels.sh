@@ -28,9 +28,9 @@ source "$SKILL_DIR/lib/common.sh"
 # Label Catalog (bash 3.x compatible)
 # ============================================
 
-# Status label names (5-state model)
+# Status label names (3-state model)
 get_status_label_names() {
-    echo "status/planning status/approved status/in-progress status/done"
+    echo "status/planning status/in-progress"
 }
 
 # Type label names
@@ -50,7 +50,7 @@ get_pr_label_names() {
 
 # All dev-flow label names
 get_all_flow_label_names() {
-    echo "status/planning status/approved status/in-progress status/done validation/awaiting validation/passed pr/opened"
+    echo "status/planning status/in-progress validation/awaiting validation/passed pr/opened"
 }
 
 # ============================================
@@ -64,10 +64,8 @@ _get_label_props() {
     local label_name="$1"
     case "$label_name" in
         # Status labels (main)
-        status/planning)    printf 'fbca04\tPlanning or investigating\n' ;;
-        status/approved)    printf '0e8a16\tPlan approved, ready to execute\n' ;;
+        status/planning)    printf 'fbca04\tPlanning\n' ;;
         status/in-progress) printf '1d76db\tCurrently in progress\n' ;;
-        status/done)        printf '5319e7\tCompleted\n' ;;
         # Validation sub-labels
         validation/awaiting) printf 'fef2c0\tAwaiting user validation\n' ;;
         validation/passed)   printf 'c2e0c6\tUser validation passed\n' ;;
@@ -141,18 +139,16 @@ issue_label_to_plan_type() {
 # Status to Label Mapping
 # ============================================
 
-# Map plan status to Issue label
+# Map plan status to Issue label (3-state model)
 # Usage: plan_status_to_issue_label <plan_status>
-# Output: status label or empty string
+# Output: status label or empty string (empty for done/closed)
 plan_status_to_issue_label() {
     local plan_status="$1"
     case "$plan_status" in
-        investigating) echo "status/planning" ;;
-        planning)      echo "status/planning" ;;
-        approved)      echo "status/approved" ;;
-        executing)     echo "status/in-progress" ;;
-        done)          echo "status/done" ;;
-        *)             echo "" ;;
+        planning)  echo "status/planning" ;;
+        executing) echo "status/in-progress" ;;
+        done)      echo "" ;;  # Issue closed, no status label
+        *)         echo "" ;;
     esac
 }
 
@@ -337,7 +333,7 @@ sync_status_label_group() {
     local desired_label="$2"
     local repo="${3:-}"
     sync_issue_label_group "$issue_number" "$desired_label" "$repo" \
-        "status/planning" "status/approved" "status/in-progress" "status/done"
+        "status/planning" "status/in-progress"
 }
 
 # ============================================
@@ -396,6 +392,33 @@ add_validation_label() {
     remove_issue_label "$issue_number" "validation/passed" "$repo"
     
     # Add new label
+    ensure_issue_label "$issue_number" "$label" "$repo"
+}
+
+# Add validation label as overlay (keep main status)
+# Usage: add_validation_overlay_label <issue_number> <label_type> [repo]
+# label_type: awaiting or passed
+add_validation_overlay_label() {
+    local issue_number="$1"
+    local label_type="$2"
+    local repo
+    repo=$(_labels_resolve_repo "${3:-}")
+    
+    case "$label_type" in
+        awaiting|passed) ;;
+        *)
+            log_error "Invalid validation label type: $label_type"
+            return 1
+            ;;
+    esac
+    
+    local label="validation/$label_type"
+    
+    # Remove other validation labels (keep status labels)
+    remove_issue_label "$issue_number" "validation/awaiting" "$repo"
+    remove_issue_label "$issue_number" "validation/passed" "$repo"
+    
+    # Add new validation label (overlay, main status preserved)
     ensure_issue_label "$issue_number" "$label" "$repo"
 }
 

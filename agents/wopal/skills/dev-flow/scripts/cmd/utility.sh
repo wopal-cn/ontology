@@ -128,7 +128,7 @@ cmd_decompose_prd() {
     fi
 }
 
-# cmd_reset: Reset plan to investigating
+# cmd_reset: Reset plan to planning (3-state model)
 cmd_reset() {
     local issue_number="$1"
 
@@ -147,7 +147,7 @@ cmd_reset() {
     local plan_name
     plan_name=$(get_plan_name "$plan_file")
 
-    log_warn "This will reset plan '$plan_name' to investigating status"
+    log_warn "This will reset plan '$plan_name' to planning status"
     log_warn "This is a destructive operation that will lose current progress"
     echo ""
     read -p "Are you sure? (y/N): " confirm
@@ -157,47 +157,48 @@ cmd_reset() {
         exit 0
     fi
 
-    set_plan_status "$plan_file" "investigating"
+    set_plan_status "$plan_file" "planning"
 
     echo ""
-    log_success "Plan reset to investigating: $plan_file"
+    log_success "Plan reset to planning: $plan_file"
 }
 
 # cmd_help: Show help
 cmd_help() {
     cat << 'EOF'
-dev-flow — 统一开发工作流 (5-state model)
+dev-flow — 统一开发工作流 (3-state model)
 
 Usage: flow.sh <command> <issue> [options]
 
 生命周期命令:
-  create --title "<title>" --project <name> --type <type> [options]
-                                    创建规范化的 Issue
-                                    可选: --goal, --background, --scope, --out-of-scope, --reference, --body
-  start <issue> [--project <name>] [--prd <path>]
-                                    创建 Plan 并进入调查阶段
-  spike <issue>                    调查研究阶段（保持 investigating）
-  plan <issue> [--check]           进入计划阶段
-  approve <issue> [--confirm] [--update-issue]
-                                    提交审批（用户确认后执行）
-  dev <issue> [--worktree]         开始执行
-  complete <issue> [--pr]          标记完成
-  validate <issue> --confirm       用户验证确认（无 PR 路径）
-  archive <issue>                  归档并清理
+  new-issue --title "<title>" --project <name> --type <type> [options]
+                                          创建规范化 Issue
+                                          可选: --goal, --background, --scope, --out-of-scope, --reference, --body
+  plan <issue> [--project <name>] [--prd <path>] [--check]
+                                          创建 Plan 并进入规划阶段（含调查）
+  approve <issue> --confirm [--worktree]
+                                          审批通过 → 进入执行阶段
+  complete <issue> [--pr]           完成开发，等待验收
+  archive <issue> [--confirm]       归档（PR merged 或用户确认）
 
 查询命令:
   status <issue>                   查看任务状态
   list                             列出进行中任务
   decompose-prd <prd> [--dry-run] [--project <n>]
-                                    从 PRD 创建 Issue
+                                          从 PRD 创建 Issue
 
 其他:
-  reset <issue>                    重置到 investigating 状态
+  reset <issue>                    重置到 planning 状态
   help                             显示帮助
 
-状态机 (5-state): investigating -> planning -> approved -> executing -> done
-                                              ↑                      ↑
-                                         用户确认审批              验证通过后归档
+状态机 (3-state): planning -> executing -> done
+                     ↑               ↑
+                创建 Plan       用户确认审批/验证
+
+Label 子状态:
+  validation/awaiting - 等待用户验证（叠加，不替换主状态）
+  validation/passed   - 用户验证通过（叠加）
+  pr/opened           - PR 已创建（叠加）
 
 选项说明:
   --project <name>   目标项目 (如: ontology, wopal-cli, space)
@@ -208,21 +209,30 @@ Usage: flow.sh <command> <issue> [options]
   --worktree         在隔离的 worktree 中执行
   --pr               完成时创建 PR
   --confirm          确认操作（仅限用户执行）
-  --update-issue     同步 Plan 到 Issue（Goal/Scope 有调整时使用）
   --check            仅运行文档检查
   --dry-run          预览模式
 
 示例:
-  # 创建 Issue（推荐方式）
-  flow.sh create --title "feat(wopal-cli): add skills remove" --project wopal-cli --type feature
+  # 创建 Issue
+  flow.sh new-issue --title "feat(cli): add skills remove" --project wopal-cli --type feature
   
-  # 完整工作流
-  flow.sh start 42 --project ontology
-  flow.sh spike 42
+  # 完整工作流（无 PR）
   flow.sh plan 42
   flow.sh approve 42 --confirm
-  flow.sh dev 42 --worktree
+  flow.sh complete 42
+  flow.sh archive 42 --confirm
+  
+  # 完整工作流（有 PR）
+  flow.sh plan 42
+  flow.sh approve 42 --confirm --worktree
   flow.sh complete 42 --pr
   flow.sh archive 42
+
+旧命令兼容:
+  create → new-issue
+  start → plan
+  spike → (已废弃，调查内嵌在 plan)
+  dev → (已废弃，approve --confirm 进入 executing)
+  validate → (已废弃，archive --confirm 处理验证)
 EOF
 }
