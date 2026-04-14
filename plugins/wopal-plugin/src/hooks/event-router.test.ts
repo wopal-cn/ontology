@@ -1,14 +1,16 @@
 import { describe, expect, it, vi } from "vitest"
-import { OpenCodeRulesRuntime } from "./runtime.js"
-import { SessionStore } from "./session-store.js"
+import { createEventRouter } from "./event-router.js"
+import { createHookContext } from "./index.js"
+import { SessionStore } from "../session-store.js"
 
-function createRuntime(taskManager: {
-  markTaskCompletedBySession: ReturnType<typeof vi.fn>
+function createEventRouterWithTaskManager(taskManager: {
+  markTaskCompletedBySession?: ReturnType<typeof vi.fn>
   markTaskErrorBySession: ReturnType<typeof vi.fn>
   markTaskWaitingBySession?: ReturnType<typeof vi.fn>
   notifyParent: ReturnType<typeof vi.fn>
   findBySession?: ReturnType<typeof vi.fn>
   getClient?: ReturnType<typeof vi.fn>
+  releaseConcurrencySlot?: ReturnType<typeof vi.fn>
 }) {
   const fullTaskManager = {
     findBySession: vi.fn().mockReturnValue(undefined),
@@ -18,22 +20,25 @@ function createRuntime(taskManager: {
       },
     }),
     markTaskWaitingBySession: vi.fn(),
+    markTaskCompletedBySession: vi.fn(),
+    releaseConcurrencySlot: vi.fn(),
     ...taskManager,
   }
-  return new OpenCodeRulesRuntime({
+  const sessionStore = new SessionStore({ max: 10 });
+  const ctx = {
     client: {
       session: {
         messages: vi.fn().mockResolvedValue({ data: [] }),
         promptAsync: vi.fn().mockResolvedValue(undefined),
       },
     },
-    directory: "/tmp",
-    projectDirectory: "/tmp",
-    ruleFiles: [],
-    sessionStore: new SessionStore({ max: 10 }),
+    sessionStore,
     debugLog: () => {},
+    taskDebugLog: () => {},
     taskManager: fullTaskManager as never,
-  })
+  };
+  const hooks = createEventRouter(ctx as never);
+  return { hooks, ctx, taskManager: fullTaskManager };
 }
 
 describe("OpenCodeRulesRuntime event handling", () => {
@@ -46,49 +51,47 @@ describe("OpenCodeRulesRuntime event handling", () => {
         parts: [{ type: "text", text: "Task completed successfully." }],
       },
     ]
-    const taskManager = {
-      findBySession: vi.fn().mockReturnValue(mockTask),
-      markTaskCompletedBySession: vi.fn(),
-      markTaskErrorBySession: vi.fn(),
-      markTaskWaitingBySession: vi.fn(),
-      notifyParent: vi.fn().mockResolvedValue(undefined),
-      releaseConcurrencySlot: vi.fn(),
-    }
-    const runtime = new OpenCodeRulesRuntime({
+
+    const sessionStore = new SessionStore({ max: 10 });
+    const ctx = {
       client: {
         session: {
           messages: vi.fn().mockResolvedValue({ data: mockMessages }),
           promptAsync: vi.fn().mockResolvedValue(undefined),
         },
       },
-      directory: "/tmp",
-      projectDirectory: "/tmp",
-      ruleFiles: [],
-      sessionStore: new SessionStore({ max: 10 }),
+      sessionStore,
       debugLog: () => {},
-      taskManager: taskManager as never,
-    })
+      taskDebugLog: () => {},
+      taskManager: {
+        findBySession: vi.fn().mockReturnValue(mockTask),
+        markTaskCompletedBySession: vi.fn(),
+        markTaskErrorBySession: vi.fn(),
+        markTaskWaitingBySession: vi.fn(),
+        notifyParent: vi.fn().mockResolvedValue(undefined),
+        releaseConcurrencySlot: vi.fn(),
+      } as never,
+    };
+    const hooks = createEventRouter(ctx as never);
 
-    await (runtime as unknown as { onEvent: (input: unknown) => Promise<void> }).onEvent({
+    await hooks.event({
       event: { type: "session.idle", properties: { sessionID: "child-1" } },
     })
 
-    expect(taskManager.findBySession).toHaveBeenCalledWith("child-1")
+    expect(ctx.taskManager.findBySession).toHaveBeenCalledWith("child-1")
     // Phase 3: idle sets idleNotified flag instead of markTaskCompletedBySession
     expect(mockTask.idleNotified).toBe(true)
-    expect(taskManager.markTaskCompletedBySession).not.toHaveBeenCalled()
-    expect(taskManager.notifyParent).toHaveBeenCalledWith("task-1")
+    expect(ctx.taskManager.markTaskCompletedBySession).not.toHaveBeenCalled()
+    expect(ctx.taskManager.notifyParent).toHaveBeenCalledWith("task-1")
   })
 
   it("marks running task errored on session.error and notifies parent", async () => {
-    const taskManager = {
-      markTaskCompletedBySession: vi.fn(),
+    const { hooks, taskManager } = createEventRouterWithTaskManager({
       markTaskErrorBySession: vi.fn().mockReturnValue({ id: "task-1" }),
       notifyParent: vi.fn().mockResolvedValue(undefined),
-    }
-    const runtime = createRuntime(taskManager)
+    })
 
-    await (runtime as unknown as { onEvent: (input: unknown) => Promise<void> }).onEvent({
+    await hooks.event({
       event: {
         type: "session.error",
         properties: { sessionID: "child-1", error: { code: "boom" } },
@@ -104,15 +107,13 @@ describe("OpenCodeRulesRuntime event handling", () => {
 
   it("does not process idle event for non-wopal_task session", async () => {
     // findBySession returns undefined means this is not a wopal_task child session
-    const taskManager = {
+    const { hooks, taskManager } = createEventRouterWithTaskManager({
       findBySession: vi.fn().mockReturnValue(undefined),
-      markTaskCompletedBySession: vi.fn(),
       markTaskErrorBySession: vi.fn(),
       notifyParent: vi.fn().mockResolvedValue(undefined),
-    }
-    const runtime = createRuntime(taskManager)
+    })
 
-    await (runtime as unknown as { onEvent: (input: unknown) => Promise<void> }).onEvent({
+    await hooks.event({
       event: { type: "session.idle", properties: { sessionID: "main-session" } },
     })
 
@@ -124,15 +125,13 @@ describe("OpenCodeRulesRuntime event handling", () => {
   it("does not notify when idle event arrives after task already finalized", async () => {
     // Task is in completed state (not running), so markTaskCompletedBySession returns undefined
     const completedTask = { id: "task-1", sessionID: "child-1", status: "completed" }
-    const taskManager = {
+    const { hooks, taskManager } = createEventRouterWithTaskManager({
       findBySession: vi.fn().mockReturnValue(completedTask),
-      markTaskCompletedBySession: vi.fn().mockReturnValue(undefined),
       markTaskErrorBySession: vi.fn(),
       notifyParent: vi.fn().mockResolvedValue(undefined),
-    }
-    const runtime = createRuntime(taskManager)
+    })
 
-    await (runtime as unknown as { onEvent: (input: unknown) => Promise<void> }).onEvent({
+    await hooks.event({
       event: { type: "session.idle", properties: { sessionID: "child-1" } },
     })
 
@@ -140,14 +139,12 @@ describe("OpenCodeRulesRuntime event handling", () => {
   })
 
   it("does not notify when error event arrives after task already finalized", async () => {
-    const taskManager = {
-      markTaskCompletedBySession: vi.fn(),
+    const { hooks, taskManager } = createEventRouterWithTaskManager({
       markTaskErrorBySession: vi.fn().mockReturnValue(undefined),
       notifyParent: vi.fn().mockResolvedValue(undefined),
-    }
-    const runtime = createRuntime(taskManager)
+    })
 
-    await (runtime as unknown as { onEvent: (input: unknown) => Promise<void> }).onEvent({
+    await hooks.event({
       event: {
         type: "session.error",
         properties: { sessionID: "child-1", error: "boom" },

@@ -1,15 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { OpenCodeRulesRuntime } from './runtime.js';
-import { SessionStore } from './session-store.js';
+import { createSystemTransformHooks } from './system-transform.js';
+import { createHookContext } from './index.js';
+import { SessionStore } from '../session-store.js';
 
-function createRuntime(opts?: {
+// Helper: create a hook context with mocked memory injector
+function createHooksWithMemory(opts?: {
   formatForSystem?: ReturnType<typeof vi.fn>;
   isEmpty?: ReturnType<typeof vi.fn>;
   isChildSession?: ReturnType<typeof vi.fn>;
 }) {
   const sessionStore = new SessionStore({ max: 10 });
-  const runtime = new OpenCodeRulesRuntime({
+  const ctx = createHookContext({
     client: {
       session: {
         messages: vi.fn().mockResolvedValue({ data: [] }),
@@ -30,25 +32,21 @@ function createRuntime(opts?: {
     } as any,
   });
 
-  if (opts?.isChildSession) {
-    (runtime as any).isChildSession = opts.isChildSession;
-  } else {
-    (runtime as any).isChildSession = vi.fn().mockResolvedValue(false);
-  }
+  const hooks = createSystemTransformHooks(ctx as never);
 
-  return { runtime, sessionStore };
+  return { hooks, sessionStore, ctx };
 }
 
 describe('OpenCodeRulesRuntime memory injection state', () => {
   it('stores injectedRawText after successful injection', async () => {
-    const { runtime, sessionStore } = createRuntime();
+    const { hooks, sessionStore } = createHooksWithMemory();
 
     sessionStore.upsert('ses_1', (state) => {
       state.lastUserPrompt = 'show me memory';
       state.needsMemoryInjection = true;
     });
 
-    const result = await (runtime as any).onSystemTransform(
+    const result = await hooks._onSystemTransform(
       { sessionID: 'ses_1', model: { providerID: 'test', modelID: 'test' } },
       { system: ['Base prompt.'] },
     );
@@ -58,7 +56,7 @@ describe('OpenCodeRulesRuntime memory injection state', () => {
   });
 
   it('clears injectedRawText when current turn skips memory injection', async () => {
-    const { runtime, sessionStore } = createRuntime();
+    const { hooks, sessionStore } = createHooksWithMemory();
 
     sessionStore.upsert('ses_2', (state) => {
       state.lastUserPrompt = '/memory list';
@@ -66,7 +64,7 @@ describe('OpenCodeRulesRuntime memory injection state', () => {
       state.injectedRawText = '<system-reminder>old memory</system-reminder>';
     });
 
-    const result = await (runtime as any).onSystemTransform(
+    const result = await hooks._onSystemTransform(
       { sessionID: 'ses_2', model: { providerID: 'test', modelID: 'test' } },
       { system: ['Base prompt.'] },
     );
@@ -76,7 +74,7 @@ describe('OpenCodeRulesRuntime memory injection state', () => {
   });
 
   it('clears injectedRawText when no relevant memories are found', async () => {
-    const { runtime, sessionStore } = createRuntime({
+    const { hooks, sessionStore } = createHooksWithMemory({
       formatForSystem: vi.fn().mockResolvedValue(undefined),
     });
 
@@ -86,7 +84,7 @@ describe('OpenCodeRulesRuntime memory injection state', () => {
       state.injectedRawText = '<system-reminder>old memory</system-reminder>';
     });
 
-    const result = await (runtime as any).onSystemTransform(
+    const result = await hooks._onSystemTransform(
       { sessionID: 'ses_3', model: { providerID: 'test', modelID: 'test' } },
       { system: ['Base prompt.'] },
     );
@@ -97,17 +95,18 @@ describe('OpenCodeRulesRuntime memory injection state', () => {
 
   it('skips memory injection for child sessions (task tool)', async () => {
     const formatForSystem = vi.fn().mockResolvedValue('<memory>');
-    const { runtime, sessionStore } = createRuntime({
+    const { hooks, sessionStore, ctx } = createHooksWithMemory({
       formatForSystem,
-      isChildSession: vi.fn().mockResolvedValue(true),
     });
+    // Override isChildSession
+    ctx.childSessionCache.set('ses_child', true);
 
     sessionStore.upsert('ses_child', (state) => {
       state.lastUserPrompt = 'do something';
       state.needsMemoryInjection = true;
     });
 
-    const result = await (runtime as any).onSystemTransform(
+    const result = await hooks._onSystemTransform(
       { sessionID: 'ses_child', model: { providerID: 'test', modelID: 'test' } },
       { system: ['Base prompt.'] },
     );
@@ -118,22 +117,21 @@ describe('OpenCodeRulesRuntime memory injection state', () => {
   });
 
   it('does not call buildEnrichedQuery for child sessions', async () => {
-    const { runtime, sessionStore } = createRuntime({
-      isChildSession: vi.fn().mockResolvedValue(true),
-    });
-
-    const buildEnrichedQuery = vi.spyOn(runtime as any, 'buildEnrichedQuery');
+    const { hooks, sessionStore, ctx } = createHooksWithMemory();
+    ctx.childSessionCache.set('ses_child2', true);
 
     sessionStore.upsert('ses_child2', (state) => {
       state.lastUserPrompt = 'hello';
       state.needsMemoryInjection = true;
     });
 
-    await (runtime as any).onSystemTransform(
+    const result = await hooks._onSystemTransform(
       { sessionID: 'ses_child2', model: { providerID: 'test', modelID: 'test' } },
       { system: ['Base prompt.'] },
     );
 
-    expect(buildEnrichedQuery).not.toHaveBeenCalled();
+    // For child sessions, should skip memory injection entirely
+    expect(result.system).toEqual(['Base prompt.']);
+    expect(sessionStore.get('ses_child2')?.injectedRawText).toBeUndefined();
   });
 });

@@ -11,11 +11,15 @@
 │                     index.ts (入口)                         │
 │              返回 { tool, event, hook, ... }               │
 ├─────────────────────────────────────────────────────────────┤
-│  运行时 (runtime.ts)            │  任务管理                 │
-│  ├── 规则注入(rules/)           │  simple-task-manager.ts   │
-│  ├── 记忆注入(memory/)          │  concurrency-manager.ts   │
-│  ├── 消息转换                   │  stuck-detector.ts        │
-│  └── 事件路由                   │  progress-tracker.ts      │
+│  hooks/ (钩子子系统)             │  任务管理                 │
+│  ├── index.ts (组装入口)         │  simple-task-manager.ts   │
+│  ├── system-transform.ts         │  concurrency-manager.ts   │
+│  ├── message-hooks.ts            │  stuck-detector.ts        │
+│  ├── event-router.ts             │  progress-tracker.ts      │
+│  ├── command-hooks.ts            │                           │
+│  ├── compaction.ts               │                           │
+│  ├── message-context.ts          │                           │
+│  └── mcp-tools.ts                │                           │
 ├─────────────────────────────────────────────────────────────┤
 │  诊断与检测                     │  通信辅助                  │
 │  ├── idle-diagnostic.ts        │  permission-proxy.ts      │
@@ -45,10 +49,11 @@
 ```
 
 **数据流**：
-1. **规则注入**：`rules/discoverer` → `rules/matcher` → `rules/formatter` → `runtime.ts`(systemTransform) → OpenCode
+1. **规则注入**：`rules/discoverer` → `rules/matcher` → `rules/formatter` → `hooks/system-transform` → OpenCode
 2. **任务委派**：`wopal_task` → `simple-task-manager` → 子会话 → `idle-diagnostic` → 状态更新
-3. **记忆注入**：`memory/store` → `memory/retriever` → `runtime.ts`(systemTransform) → OpenCode
+3. **记忆注入**：`memory/store` → `memory/retriever` → `hooks/system-transform` → OpenCode
 4. **上下文管理**：`context_manage` → `memory/session-context` → `buildEnrichedQuery`
+5. **事件路由**：`hooks/event-router` → 分发到对应 hook (message/command/compaction)
 
 **核心流程**：
 - **规则注入**：发现规则文件 → 匹配条件 → 注入系统提示词
@@ -68,7 +73,7 @@
 | **核心逻辑** | 任务管理、并发控制 | `src/simple-task-manager.ts`, `src/concurrency-manager.ts` |
 | **诊断模块** | Idle 状态诊断 | `src/idle-diagnostic.ts` |
 | **检测器** | Stuck 检测、循环检测、错误分类 | `src/stuck-detector.ts`, `src/loop-detector.ts`, `src/error-classifier.ts` |
-| **运行时** | 事件钩子、规则注入、消息转换 | `src/runtime.ts` |
+| **运行时** | 事件钩子、规则注入、消息转换 | `src/hooks/` |
 | **通信辅助** | 权限代理、问题中继 | `src/permission-proxy.ts`, `src/question-relay.ts` |
 | **测试** | 单元测试 | `src/*.test.ts`, `src/rules/*.test.ts` |
 
@@ -83,7 +88,17 @@ src/                              # 源码目录
 ├── index.ts                      # 入口
 ├── types.ts                      # 类型定义
 │
-├── runtime.ts                    # 运行时（事件路由、规则/记忆注入、消息转换）
+├── hooks/                        # 钩子子系统（#90 从 runtime.ts 拆分）
+│   ├── index.ts                  # HookContext + createAllHooks() 组装
+│   ├── system-transform.ts       # 系统提示词转换（规则+记忆注入）
+│   ├── message-hooks.ts          # 消息钩子（用户/助手消息处理）
+│   ├── event-router.ts           # 事件路由（分发到对应 hook）
+│   ├── command-hooks.ts          # 命令钩子（slash command 处理）
+│   ├── compaction.ts             # 上下文压缩处理
+│   ├── message-context.ts        # 消息上下文构建
+│   ├── mcp-tools.ts              # MCP 工具检测
+│   └── *.test.ts                 # 测试文件（含 integration.test.ts）
+│
 ├── simple-task-manager.ts        # 任务管理（状态、启动、监控、进度通知）
 │
 ├── rules/                        # 规则子系统（#88 从 utils.ts 拆分）
@@ -107,10 +122,8 @@ src/                              # 源码目录
 ├── debug.ts                      # 调试日志
 ├── session-store.ts              # 会话存储
 ├── session-store-instance.ts     # 会话存储实例
-├── message-context.ts            # 消息上下文
 ├── session-messages.ts           # 消息提取
 ├── session-cursor.ts             # 消息游标
-├── mcp-tools.ts                  # MCP 工具
 ├── test-helpers.ts               # 测试辅助
 │
 ├── memory/                       # 记忆子系统
@@ -156,17 +169,22 @@ src/
 │   ├── dedup.ts
 │   ├── prompts.ts
 │   └── types.ts
-├── hooks/                   # 从 runtime.ts 拆分
-│   ├── event-handler.ts
+├── hooks/                   # ✅ 已完成 (#90)
+│   ├── index.ts
 │   ├── system-transform.ts
-│   └── message-transform.ts
-├── tasks/                   # 从 simple-task-manager.ts 拆分
+│   ├── message-hooks.ts
+│   ├── event-router.ts
+│   ├── command-hooks.ts
+│   ├── compaction.ts
+│   ├── message-context.ts
+│   └── mcp-tools.ts
+├── tasks/                   # 🔴 待拆（从 simple-task-manager.ts）
 │   ├── manager.ts
 │   ├── launcher.ts
 │   └── monitor.ts
 
-scripts/                     # CLI 工具（从根目录移入）
-test/                        # 测试工具（从根目录移入）
+scripts/                     # 🔴 待移（根目录 *.ts 脚本）
+test/                        # 🔴 待移（测试工具）
 ```
 
 ### 拆分任务清单
@@ -175,8 +193,8 @@ test/                        # 测试工具（从根目录移入）
 |----------|--------|------|
 | `utils.ts` | `rules/` 目录 | ✅ 已完成 (#88) |
 | `distill.ts` + `store.ts` | memory 内部模块 | ✅ 已完成 (#89) |
-| `runtime.ts` | `hooks/` 目录 | 🔴 待拆 |
-| `simple-task-manager.ts` | `tasks/` 目录 | 🔴 待拆 |
+| `runtime.ts` | `hooks/` 目录 | ✅ 已完成 (#90) |
+| `simple-task-manager.ts` | `tasks/` 目录 | 🔴 待拆 (#91) |
 | 根目录 `*.ts` 脚本 | 移入 `scripts/` | 🔴 待移 |
 | `pnpm-lock.yaml` | 删除 | 🔴 待删 |
 | `pnpm-workspace.yaml` | 删除 | 🔴 待删 |

@@ -9,7 +9,7 @@
 import type { PluginInput, Hooks } from "@opencode-ai/plugin";
 import { createOpencodeClient as createV2OpencodeClient } from "@opencode-ai/sdk/v2";
 import { discoverRuleFiles } from "./rules/index.js";
-import { OpenCodeRulesRuntime } from "./runtime.js";
+import { createHookContext, createAllHooks } from "./hooks/index.js";
 import { sessionStore } from "./session-store-instance.js";
 import { createDebugLog, createWarnLog } from "./debug.js";
 import { SimpleTaskManager } from "./simple-task-manager.js";
@@ -113,7 +113,7 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
 
   const memory = await ensureMemorySystem(pluginInput.client, taskManager);
 
-  const runtime = new OpenCodeRulesRuntime({
+  const ctx = createHookContext({
     client: pluginInput.client,
     directory: pluginInput.directory,
     projectDirectory: pluginInput.directory,
@@ -124,7 +124,7 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
     memoryInjector: memory?.injector,
   });
 
-  const hooks = runtime.createHooks();
+  const hooks = createAllHooks(ctx);
 
   const tools = createWopalTools(taskManager, memory?.store, memory?.embedder, sessionStore, memory?.distillEngine, pluginInput.client);
 

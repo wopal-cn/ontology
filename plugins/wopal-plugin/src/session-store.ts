@@ -1,4 +1,4 @@
-import type { MessageWithInfo } from "./message-context.js";
+import type { MessageWithInfo } from "./hooks/message-context.js";
 
 export interface SessionState {
   contextPaths: Set<string>;

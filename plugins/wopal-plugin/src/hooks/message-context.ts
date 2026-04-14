@@ -1,5 +1,5 @@
 import path from "path";
-import type { Message, MessagePart } from "./rules/index.js";
+import type { Message, MessagePart } from "../rules/index.js";
 
 export interface MessagePartWithSession {
   type?: string;

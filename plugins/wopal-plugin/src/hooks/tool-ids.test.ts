@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { OpenCodeRulesRuntime } from "./runtime.js";
-import { SessionStore } from "./session-store.js";
+import { createSystemTransformHooks } from "./system-transform.js";
+import { createHookContext } from "./index.js";
+import { SessionStore } from "../session-store.js";
 
 describe("OpenCodeRulesRuntime.queryAvailableToolIDs", () => {
   it("augments tool ids with connected mcp capability ids", async () => {
-    const runtime = new OpenCodeRulesRuntime({
+    const ctx = createHookContext({
       client: {
         tool: { ids: async () => ({ data: ["bash"] }) },
         mcp: {
@@ -20,13 +21,14 @@ describe("OpenCodeRulesRuntime.queryAvailableToolIDs", () => {
       debugLog: () => {},
     });
 
-    const ids: string[] = await (runtime as any).queryAvailableToolIDs();
+    const hooks = createSystemTransformHooks(ctx as never);
+    const ids: string[] = await hooks._queryAvailableToolIDs();
     expect(ids).toContain("bash");
     expect(ids).toContain("mcp_context7");
   });
 
   it("handles missing mcp.status gracefully", async () => {
-    const runtime = new OpenCodeRulesRuntime({
+    const ctx = createHookContext({
       client: {
         tool: { ids: async () => ({ data: ["bash"] }) },
         // no mcp property
@@ -38,7 +40,8 @@ describe("OpenCodeRulesRuntime.queryAvailableToolIDs", () => {
       debugLog: () => {},
     });
 
-    const ids: string[] = await (runtime as any).queryAvailableToolIDs();
+    const hooks = createSystemTransformHooks(ctx as never);
+    const ids: string[] = await hooks._queryAvailableToolIDs();
     expect(ids).toContain("bash");
     // Should not throw, just not include mcp_ ids
   });
