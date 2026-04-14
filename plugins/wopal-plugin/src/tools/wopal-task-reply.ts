@@ -5,7 +5,7 @@ import { trackActivity } from "../tasks/progress-tracker.js"
 
 const debugLog = createDebugLog("[wopal-task]", "task")
 
-async function replyQuestion(taskId: string, manager: SimpleTaskManager, client: any, requestID: string, message: string) {
+async function replyQuestion(taskId: string, manager: SimpleTaskManager, client: Record<string, unknown>, requestID: string, message: string) {
   const v2Client = manager.getV2Client()
   if (typeof v2Client?.question?.reply === "function") {
     const result = await v2Client.question.reply({
@@ -21,8 +21,9 @@ async function replyQuestion(taskId: string, manager: SimpleTaskManager, client:
     return
   }
 
-  if (typeof client?.question?.reply === "function") {
-    await client.question.reply({
+  const questionClient = (client?.question ?? {}) as { reply?: (args: { requestID: string; answers: string[][] }) => Promise<unknown> }
+  if (typeof questionClient.reply === "function") {
+    await questionClient.reply({
       requestID,
       answers: [[message]],
     })
@@ -34,8 +35,9 @@ async function replyQuestion(taskId: string, manager: SimpleTaskManager, client:
     throw new Error("question.reply is unavailable")
   }
 
-  const clientAny = manager.getClient()
-  const internalFetch = (clientAny as any)?._client?.getConfig?.()?.fetch ?? globalThis.fetch
+  const clientAny = manager.getClient() as Record<string, unknown> | undefined
+  const internalClient = clientAny?._client as { getConfig?: () => { fetch?: typeof globalThis.fetch } } | undefined
+  const internalFetch = internalClient?.getConfig?.()?.fetch ?? globalThis.fetch
 
   const url = new URL(`/question/${requestID}/reply`, serverUrl)
   const response = await internalFetch(url.toString(), {

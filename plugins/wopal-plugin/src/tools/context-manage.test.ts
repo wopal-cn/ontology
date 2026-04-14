@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  clearPendingConfirmation,
-  getPendingConfirmation,
-  setPendingConfirmation,
+  _clearPendingConfirmation,
+  _getPendingConfirmation,
+  _setPendingConfirmation,
 } from '../memory/distill.js';
 import { createContextManageTool } from './context-manage.js';
 

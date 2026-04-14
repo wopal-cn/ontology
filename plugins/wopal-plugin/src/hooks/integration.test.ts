@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import os from "os";
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
-import { resetSessionState, getSeedCount, setSessionStateLimit, getSessionStateIDs, upsertSessionState, getSessionStateSnapshot } from "../test-helpers.js";
+import { resetSessionState, getSeedCount, upsertSessionState } from "../test-helpers.js"
 
 // Test directories - initialized in setupTestDirs
 let testDir: string;

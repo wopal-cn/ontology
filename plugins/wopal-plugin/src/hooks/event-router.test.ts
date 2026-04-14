@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
 import { createEventRouter } from "./event-router.js"
-import { createHookContext } from "./index.js"
 import { SessionStore } from "../session-store.js"
 
 function createEventRouterWithTaskManager(taskManager: {

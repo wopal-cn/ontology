@@ -51,10 +51,7 @@ let _memorySystem: {
   llm: import("./memory/llm-client").DistillLLMClient;
 } | null = null;
 
-async function ensureMemorySystem(
-  _client: unknown,
-  _taskManager: SimpleTaskManager,
-): Promise<typeof _memorySystem> {
+async function ensureMemorySystem(): Promise<typeof _memorySystem> {
   if (_memorySystem) return _memorySystem;
 
   try {
@@ -96,7 +93,8 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
   // Extract the internal fetch from v1 client (which uses Server.Default().fetch
   // to route requests to the in-process Hono server, bypassing real HTTP).
   // We must pass it to v2 client so question.reply reaches the Question service.
-  const internalFetch = (pluginInput.client as any)?._client?.getConfig?.()?.fetch ?? globalThis.fetch;
+  const client = pluginInput.client as unknown as { _client?: { getConfig?: () => { fetch?: typeof globalThis.fetch } } } | undefined
+  const internalFetch = client?._client?.getConfig?.()?.fetch ?? globalThis.fetch;
 
   const v2Client = createV2OpencodeClient({
     baseUrl: pluginInput.serverUrl.toString(),
@@ -111,7 +109,7 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
     pluginInput.serverUrl,
   );
 
-  const memory = await ensureMemorySystem(pluginInput.client, taskManager);
+  const memory = await ensureMemorySystem();
 
   const ctx = createHookContext({
     client: pluginInput.client,

@@ -130,3 +130,5 @@ export function createWarnLog(prefix = "[wopal-rules]"): LogFn {
     writeLog(`${prefix} [WARN]`, message);
   };
 }
+
+// DIFF-TEST-FINAL: 验证 v2 SDK 调用修复成功 [2026-04-14 17:04:24]

@@ -20,7 +20,7 @@ export default [
       ...typescriptPlugin.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': [
         'error',
-        { argsIgnorePattern: '^_' },
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
     },
   },
@@ -38,11 +38,12 @@ export default [
     },
     rules: {
       ...typescriptPlugin.configs.recommended.rules,
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/ban-types': 'off',
       '@typescript-eslint/no-unused-vars': [
         'error',
-        { argsIgnorePattern: '^_' },
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
-      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
 ];

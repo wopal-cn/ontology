@@ -117,7 +117,7 @@ export class DistillEngine {
     }
 
     const dedupResult = await performDeduplication(
-      extractResult.memories, this.store, this.embedder, this.llm, sessionID
+      extractResult.memories, this.store, this.embedder, this.llm
     );
 
     await this.writeDedupResult(dedupResult, sessionID, project);
@@ -190,7 +190,7 @@ export class DistillEngine {
 
     const dedupResult = await performDeduplication(
       candidates.map((c) => ({ category: c.category, body: c.body, tags: c.tags })),
-      this.store, this.embedder, this.llm, sessionID
+      this.store, this.embedder, this.llm
     );
 
     await this.writeDedupResult(dedupResult, sessionID, project);

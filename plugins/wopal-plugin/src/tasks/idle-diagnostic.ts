@@ -17,7 +17,7 @@ function extractAssistantText(message: SessionMessage): string {
   const texts: string[] = []
 
   for (const part of message.parts ?? []) {
-    if (part.type === "text" && part.text && !(part as any).synthetic) {
+    if (part.type === "text" && part.text && !part.synthetic) {
       texts.push(part.text)
     }
   }

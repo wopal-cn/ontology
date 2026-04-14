@@ -40,6 +40,7 @@ describe("wopal_task_diff", () => {
     const mockV2Client = {
       session: {
         diff: vi.fn().mockResolvedValue({ data: [] }),
+        messages: vi.fn().mockResolvedValue({ data: [] }),
       },
     }
     const mockManager = createMockTaskManager(task, mockV2Client)
@@ -50,9 +51,9 @@ describe("wopal_task_diff", () => {
       { sessionID: parentSessionID },
     )
 
-    expect(result).toBe("No file changes in this task.")
+    expect(result).toContain("No file changes in this task.")
     expect(mockV2Client.session.diff).toHaveBeenCalledWith({
-      query: { sessionID: task.sessionID },
+      sessionID: task.sessionID,
     })
   })
 
@@ -67,6 +68,7 @@ describe("wopal_task_diff", () => {
             { file: "src/old.ts", additions: 0, deletions: 5, status: "deleted" },
           ],
         }),
+        messages: vi.fn().mockResolvedValue({ data: [] }),
       },
     }
     const mockManager = createMockTaskManager(task, mockV2Client)
@@ -138,6 +140,7 @@ describe("wopal_task_diff", () => {
     const mockV2Client = {
       session: {
         diff: vi.fn().mockRejectedValue(new Error("API error")),
+        messages: vi.fn().mockResolvedValue({ data: [] }),
       },
     }
     const mockManager = createMockTaskManager(task, mockV2Client)

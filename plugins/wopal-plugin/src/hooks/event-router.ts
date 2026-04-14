@@ -38,7 +38,7 @@ export function createEventRouter(ctx: EventRouterHookContext) {
       }
     } else if (eventType === "message.part.updated") {
       const sessionID = props?.sessionID as string | undefined
-      const part = (props as any)?.part as { type?: string } | undefined
+      const part = props?.part as { type?: string } | undefined
       if (sessionID) {
         const task = ctx.taskManager?.findBySession(sessionID)
         if (task && task.status === "running") {
@@ -63,13 +63,13 @@ export function createEventRouter(ctx: EventRouterHookContext) {
       const diagnostic = await diagnoseIdleSession(sessionID)
 
       // Phase 3: 所有 idle 统一走 idleNotified 路径，判断权交给 Wopal
-      if (!(task as any).idleNotified && task.status === 'running') {
-        (task as any).idleNotified = true
+      if (!task.idleNotified && task.status === 'running') {
+        task.idleNotified = true
         // Release concurrency slot so new tasks can launch
-        if ((task as any).concurrencyKey) {
+        if (task.concurrencyKey) {
           ctx.taskManager.releaseConcurrencySlot(task)
-          ;(task as any).waitingConcurrencyKey = (task as any).concurrencyKey
-          ;(task as any).concurrencyKey = undefined
+          task.waitingConcurrencyKey = task.concurrencyKey
+          task.concurrencyKey = undefined
         }
         ctx.taskDebugLog(`task ${task.id} idle: verdict=${diagnostic.verdict}, reason=${diagnostic.reason}`)
         ctx.taskManager.notifyParent(task.id).catch(() => {})

@@ -81,7 +81,7 @@ describe("wopal_task_reply", () => {
     const mockManager = createMockTaskManager(errorTask)
     const execute = getExecute(createWopalReplyTool(mockManager as never))
 
-    const result = await execute(
+    const _result = await execute(
       { task_id: errorTask.id, message: "test" },
       { sessionID: parentSessionID },
     )

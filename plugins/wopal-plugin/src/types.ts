@@ -110,3 +110,5 @@ export type InterruptResult =
 
 // Legacy alias for backward compatibility
 export type CancelResult = InterruptResult
+
+// SNAPSHOT-TEST [2026-04-14 17:20:08]

@@ -2,6 +2,7 @@ import type {
   CancelResult,
   LaunchInput,
   LaunchOutput,
+  SessionMessage,
   WopalTask,
 } from "../types.js"
 import type { DebugLog } from "../debug.js"
@@ -465,7 +466,7 @@ Use \`wopal_task_output(task_id="${task.id}")\` to retrieve the result.
         m?.info?.role === "assistant" && m?.info?.tokens
       )
       if (!lastAssistant?.info?.tokens) {
-        const assistantCount = messages.filter((m: any) => m?.info?.role === "assistant").length
+        const assistantCount = messages.filter((m: SessionMessage) => m?.info?.role === "assistant").length
         ctxLog(`no assistant with tokens (total assistants: ${assistantCount})`)
         return null
       }

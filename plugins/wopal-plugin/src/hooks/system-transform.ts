@@ -76,7 +76,7 @@ export function createSystemTransformHooks(ctx: SystemTransformHookContext) {
       const client = ctx.client as Record<string, unknown>;
       const sessionApi = client?.session as Record<string, unknown> | undefined;
       if (sessionApi?.get && typeof sessionApi.get === "function") {
-        const result = await (sessionApi.get as Function)({ path: { id: sessionID } });
+        const result = await (sessionApi.get as (...args: unknown[]) => Promise<unknown>)({ path: { id: sessionID } });
         const data = (result as Record<string, unknown>)?.data as
           | Record<string, unknown>
           | undefined;

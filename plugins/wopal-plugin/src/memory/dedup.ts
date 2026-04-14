@@ -62,7 +62,6 @@ export async function performDeduplication(
   store: MemoryStore,
   embedder: EmbeddingClient,
   llm: DistillLLMClient,
-  _sessionID: string
 ): Promise<DedupResult> {
   const result: DedupResult = {
     create: [],
