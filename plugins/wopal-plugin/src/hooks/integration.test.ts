@@ -641,4 +641,53 @@ Follow testing best practices.`,
       }
     });
   });
+
+  it("does not require messages.transform to inject conditional rules", async () => {
+    // Arrange - create conditional rule
+    const originalEnv = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(testDir, ".config");
+
+    try {
+      writeFileSync(
+        path.join(globalRulesDir, "conditional.mdc"),
+        `---
+globs:
+  - "src/special/**/*"
+---
+
+Special rule content.`,
+      );
+
+      const { default: pluginDef } = await import("../index.js");
+      const plugin = (pluginDef as { server: Function }).server.bind(pluginDef);
+      const mockClient = { tool: { ids: vi.fn(async () => ({ data: [] })) } };
+      const hooks = await plugin({
+        client: mockClient as any,
+        project: {} as any,
+        directory: testDir,
+        worktree: testDir,
+        $: {} as any,
+        serverUrl: new URL("http://localhost"),
+      });
+
+      // Seed state directly (without calling messages.transform)
+      upsertSessionState("ses_x", (s) =>
+        s.contextPaths.add("src/special/a.txt"),
+      );
+
+      // Act: call system.transform directly
+      const systemTransform = hooks[
+        "experimental.chat.system.transform"
+      ] as any;
+      const result = await systemTransform(
+        { sessionID: "ses_x", model: { providerID: "test", modelID: "test" } },
+        { system: ["Base prompt."] },
+      );
+
+      // Assert - conditional rule should be included via sessionState
+      expect(result.system.join("\n")).toContain("Special rule content");
+    } finally {
+      process.env.XDG_CONFIG_HOME = originalEnv;
+    }
+  });
 });

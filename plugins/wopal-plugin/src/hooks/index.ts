@@ -1,6 +1,6 @@
 import { createDebugLog, type DebugLog } from "../debug.js";
 import type { SessionStore } from "../session-store.js";
-import type { SimpleTaskManager } from "../simple-task-manager.js";
+import type { SimpleTaskManager } from "../tasks/simple-task-manager.js";
 import type { MemoryInjector } from "../memory/index.js";
 import type { DiscoveredRule } from "../rules/index.js";
 import { createCommandHooks } from "./command-hooks.js";

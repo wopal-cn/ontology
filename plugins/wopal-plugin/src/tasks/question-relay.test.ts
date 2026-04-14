@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import { handleQuestionAsked, type QuestionAskedEvent } from "./question-relay.js"
 import type { SimpleTaskManager } from "./simple-task-manager.js"
-import type { WopalTask } from "./types.js"
+import type { WopalTask } from "../types.js"
 
 // Mock client factory
 function createMockClient() {

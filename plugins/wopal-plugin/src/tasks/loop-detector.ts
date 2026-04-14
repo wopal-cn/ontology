@@ -1,5 +1,5 @@
-import type { SessionMessage } from "./types.js"
-import { createDebugLog } from "./debug.js"
+import type { SessionMessage } from "../types.js"
+import { createDebugLog } from "../debug.js"
 
 const debugLog = createDebugLog("[wopal-task]", "task")
 

@@ -1,5 +1,5 @@
 import type { SimpleTaskManager } from "./simple-task-manager.js"
-import { createDebugLog, createWarnLog, type DebugLog } from "./debug.js"
+import { createDebugLog, createWarnLog, type DebugLog } from "../debug.js"
 
 const defaultDebugLog = createDebugLog("[wopal-task]", "task")
 const defaultWarnLog = createWarnLog("[wopal-task]")

@@ -12,7 +12,7 @@ import { discoverRuleFiles } from "./rules/index.js";
 import { createHookContext, createAllHooks } from "./hooks/index.js";
 import { sessionStore } from "./session-store-instance.js";
 import { createDebugLog, createWarnLog } from "./debug.js";
-import { SimpleTaskManager } from "./simple-task-manager.js";
+import { SimpleTaskManager } from "./tasks/simple-task-manager.js";
 import { createWopalTools } from "./tools/index.js";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";

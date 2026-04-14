@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { analyzeProgress } from "./progress-analyzer.js"
-import type { SessionMessage } from "./types.js"
+import type { SessionMessage } from "../types.js"
 
 describe("analyzeProgress", () => {
   describe("#given empty messages", () => {

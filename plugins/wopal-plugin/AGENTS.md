@@ -11,26 +11,42 @@
 │                     index.ts (入口)                         │
 │              返回 { tool, event, hook, ... }               │
 ├─────────────────────────────────────────────────────────────┤
-│  hooks/ (钩子子系统)             │  任务管理                 │
-│  ├── index.ts (组装入口)         │  simple-task-manager.ts   │
-│  ├── system-transform.ts         │  concurrency-manager.ts   │
-│  ├── message-hooks.ts            │  stuck-detector.ts        │
-│  ├── event-router.ts             │  progress-tracker.ts      │
-│  ├── command-hooks.ts            │                           │
-│  ├── compaction.ts               │                           │
-│  ├── message-context.ts          │                           │
-│  └── mcp-tools.ts                │                           │
+│  hooks/ (钩子子系统)             │  tasks/ (任务域)          │
+│  ├── index.ts (组装入口)         │  ├── manager.ts           │
+│  ├── system-transform.ts         │  ├── launcher.ts          │
+│  ├── message-hooks.ts            │  ├── monitor.ts           │
+│  ├── event-router.ts             │  ├── session-cursor.ts    │
+│  ├── command-hooks.ts            │  ├── session-messages.ts  │
+│  ├── compaction.ts               │  ├── progress-tracker.ts  │
+│  ├── message-context.ts          │  ├── progress-analyzer.ts │
+│  └── mcp-tools.ts                │  ├── stuck-detector.ts    │
+│                                  │  ├── loop-detector.ts     │
+│                                  │  ├── idle-diagnostic.ts   │
+│                                  │  ├── error-classifier.ts  │
+│                                  │  ├── concurrency-manager  │
+│                                  │  ├── simple-task-manager  │
+│                                  │  └── *.test.ts            │
 ├─────────────────────────────────────────────────────────────┤
-│  诊断与检测                     │  通信辅助                  │
-│  ├── idle-diagnostic.ts        │  permission-proxy.ts      │
-│  ├── error-classifier.ts       │  question-relay.ts        │
-│  └── loop-detector.ts          │  session-messages.ts      │
+│  通信辅助                       │  其他运行时                │
+│  ├── permission-proxy.ts        │  session-store.ts         │
+│  ├── question-relay.ts          │  session-store-instance   │
+│  ├── process-cleanup.ts         │  debug.ts                 │
 ├─────────────────────────────────────────────────────────────┤
 │  rules/ (规则子系统)            │  tools/ (OpenCode 工具)    │
 │  ├── discoverer.ts              │  ├── wopal-task.ts        │
 │  ├── matcher.ts                 │  ├── wopal-task-output.ts │
-│  ├── formatter.ts               │  ├── wopal-task-reply.ts  │
-│  └── path-extractor.ts          │  ├── wopal-task-interrupt │
+│  ├── formatter.ts               │  ├── output-helpers.ts    │
+│  └── path-extractor.ts          │  ├── wopal-task-reply.ts  │
+│                                 │  ├── wopal-task-interrupt │
+│                                 │  ├── wopal-task-diff.ts   │
+│                                 │  ├── memory-manage/       │
+│                                 │  │   ├── index.ts         │
+│                                 │  │   ├── crud.ts          │
+│                                 │  │   ├── distill.ts       │
+│                                 │  │   ├── formatters.ts    │
+│                                 │  │   └── *.test.ts        │
+│                                 │  ├── context-manage.ts    │
+│                                 │  └── distill-formatters   │
 ├─────────────────────────────────────────────────────────────┤
 │  memory/ (记忆系统)             │  utils/ (通用工具)        │
 │  ├── store.ts (418行)           │  debug.ts                 │
@@ -70,12 +86,10 @@
 |------|------|------|
 | **工具** | OpenCode 工具定义（7 个） | `src/tools/` |
 | **规则子系统** | 规则发现、匹配、格式化、路径提取 | `src/rules/` |
-| **核心逻辑** | 任务管理、并发控制 | `src/simple-task-manager.ts`, `src/concurrency-manager.ts` |
-| **诊断模块** | Idle 状态诊断 | `src/idle-diagnostic.ts` |
-| **检测器** | Stuck 检测、循环检测、错误分类 | `src/stuck-detector.ts`, `src/loop-detector.ts`, `src/error-classifier.ts` |
+| **任务域** | 任务管理、并发控制、诊断、检测 | `src/tasks/` |
 | **运行时** | 事件钩子、规则注入、消息转换 | `src/hooks/` |
 | **通信辅助** | 权限代理、问题中继 | `src/permission-proxy.ts`, `src/question-relay.ts` |
-| **测试** | 单元测试 | `src/*.test.ts`, `src/rules/*.test.ts` |
+| **测试** | 单元测试 | `src/*.test.ts`, `src/*/ *.test.ts` |
 
 ---
 
@@ -97,9 +111,23 @@ src/                              # 源码目录
 │   ├── compaction.ts             # 上下文压缩处理
 │   ├── message-context.ts        # 消息上下文构建
 │   ├── mcp-tools.ts              # MCP 工具检测
-│   └── *.test.ts                 # 测试文件（含 integration.test.ts）
+│   └── *.test.ts                 # 测试文件
 │
-├── simple-task-manager.ts        # 任务管理（状态、启动、监控、进度通知）
+├── tasks/                        # 任务域（#91 从根目录迁移）
+│   ├── manager.ts                # 任务管理器
+│   ├── launcher.ts               # 任务启动器
+│   ├── monitor.ts                # 任务监控器
+│   ├── session-cursor.ts         # 消息游标
+│   ├── session-messages.ts       # 消息提取
+│   ├── progress-tracker.ts       # 进度追踪
+│   ├── progress-analyzer.ts      # 进度分析
+│   ├── stuck-detector.ts         # Stuck 检测
+│   ├── loop-detector.ts          # 循环检测
+│   ├── idle-diagnostic.ts        # Idle 诊断
+│   ├── error-classifier.ts       # 错误分类
+│   ├── concurrency-manager.ts    # 并发控制
+│   ├── simple-task-manager.ts    # 简化任务管理入口
+│   └── *.test.ts                 # 测试文件
 │
 ├── rules/                        # 规则子系统（#88 从 utils.ts 拆分）
 │   ├── index.ts                  # 统一导出
@@ -109,21 +137,12 @@ src/                              # 源码目录
 │   ├── path-extractor.ts         # 路径提取
 │   └── *.test.ts                 # 测试文件
 │
-├── concurrency-manager.ts        # 并发控制
-├── stuck-detector.ts             # Stuck 检测
-├── progress-tracker.ts           # 进度追踪
-├── progress-analyzer.ts          # 进度分析
-├── error-classifier.ts           # 错误分类
-├── idle-diagnostic.ts            # Idle 诊断
-├── loop-detector.ts              # 循环检测
 ├── permission-proxy.ts           # 权限代理
 ├── question-relay.ts             # 问题中继
 ├── process-cleanup.ts            # 进程清理
 ├── debug.ts                      # 调试日志
 ├── session-store.ts              # 会话存储
 ├── session-store-instance.ts     # 会话存储实例
-├── session-messages.ts           # 消息提取
-├── session-cursor.ts             # 消息游标
 ├── test-helpers.ts               # 测试辅助
 │
 ├── memory/                       # 记忆子系统
@@ -145,11 +164,17 @@ src/                              # 源码目录
 └── tools/                        # OpenCode 工具定义
     ├── index.ts                  # 工具注册入口
     ├── wopal-task.ts             # 启动任务
-    ├── wopal-task-output.ts      # 查询状态/完成/输出
+    ├── wopal-task-output.ts      # 查询状态/完成/输出（已瘦身）
+    ├── output-helpers.ts         # 输出辅助函数（#91 拆分）
     ├── wopal-task-reply.ts       # 恢复/中断子会话
     ├── wopal-task-interrupt.ts   # 强制中断任务
     ├── wopal-task-diff.ts        # 查看任务文件变更
-    ├── memory-manage.ts          # 记忆 CRUD + 蒸馏（preview/confirm/cancel）
+    ├── memory-manage/            # 记忆管理工具（#91 拆分）
+    │   ├── index.ts              # 工具入口
+    │   ├── crud.ts               # CRUD 操作
+    │   ├── distill.ts            # 蒸馏操作
+    │   ├── formatters.ts         # 输出格式化
+    │   └── index.test.ts         # 测试文件
     ├── context-manage.ts         # 会话摘要 + 状态查询（summary/status）
     └── distill-formatters.ts     # 蒸馏输出格式化
 ```
@@ -178,13 +203,30 @@ src/
 │   ├── compaction.ts
 │   ├── message-context.ts
 │   └── mcp-tools.ts
-├── tasks/                   # 🔴 待拆（从 simple-task-manager.ts）
+├── tasks/                   # ✅ 已完成 (#91)
 │   ├── manager.ts
 │   ├── launcher.ts
-│   └── monitor.ts
-
-scripts/                     # 🔴 待移（根目录 *.ts 脚本）
-test/                        # 🔴 待移（测试工具）
+│   ├── monitor.ts
+│   ├── session-cursor.ts
+│   ├── session-messages.ts
+│   ├── progress-tracker.ts
+│   ├── progress-analyzer.ts
+│   ├── stuck-detector.ts
+│   ├── loop-detector.ts
+│   ├── idle-diagnostic.ts
+│   ├── error-classifier.ts
+│   ├── concurrency-manager.ts
+│   ├── simple-task-manager.ts
+│   └── *.test.ts (12 个)
+├── tools/                   # ✅ 已完成 (#91)
+│   ├── memory-manage/
+│   │   ├── index.ts
+│   │   ├── crud.ts
+│   │   ├── distill.ts
+│   │   ├── formatters.ts
+│   │   └── index.test.ts
+│   ├── output-helpers.ts
+│   └── wopal-task-output.ts (瘦身至 208 行)
 ```
 
 ### 拆分任务清单
@@ -194,10 +236,10 @@ test/                        # 🔴 待移（测试工具）
 | `utils.ts` | `rules/` 目录 | ✅ 已完成 (#88) |
 | `distill.ts` + `store.ts` | memory 内部模块 | ✅ 已完成 (#89) |
 | `runtime.ts` | `hooks/` 目录 | ✅ 已完成 (#90) |
-| `simple-task-manager.ts` | `tasks/` 目录 | 🔴 待拆 (#91) |
-| 根目录 `*.ts` 脚本 | 移入 `scripts/` | 🔴 待移 |
-| `pnpm-lock.yaml` | 删除 | 🔴 待删 |
-| `pnpm-workspace.yaml` | 删除 | 🔴 待删 |
+| 任务域文件 → `tasks/` | 13 源文件 + 12 测试 | ✅ 已完成 (#91) |
+| `memory-manage.ts` → `tools/memory-manage/` | 5 文件目录 | ✅ 已完成 (#91) |
+| `wopal-task-output.ts` 瘦身 | output-helpers.ts | ✅ 已完成 (#91) |
+| `index.test.ts` 独有用例迁移 | focused test files | ✅ 已完成 (#91) |
 
 ---
 

@@ -4,8 +4,8 @@ import {
   clearPendingConfirmation,
   getPendingConfirmation,
   setPendingConfirmation,
-} from '../memory/distill.js';
-import { createMemoryManageTool } from './memory-manage.js';
+} from '../../memory/distill.js';
+import { createMemoryManageTool } from './index.js';
 
 function getExecute(toolDefinition: unknown) {
   return (toolDefinition as { execute: (...args: unknown[]) => Promise<string> }).execute;

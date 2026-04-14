@@ -3,10 +3,10 @@ import type {
   LaunchInput,
   LaunchOutput,
   WopalTask,
-} from "./types.js"
-import type { DebugLog } from "./debug.js"
+} from "../types.js"
+import type { DebugLog } from "../debug.js"
 import type { IdleDiagnostic } from "./idle-diagnostic.js"
-import { createDebugLog } from "./debug.js"
+import { createDebugLog } from "../debug.js"
 import { checkStuckTasks, clearStuckState, DEFAULT_STUCK_TIMEOUT_MS } from "./stuck-detector.js"
 import { ConcurrencyManager } from "./concurrency-manager.js"
 import { registerManagerForCleanup, unregisterManagerForCleanup } from "./process-cleanup.js"

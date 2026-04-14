@@ -1,4 +1,4 @@
-import { createDebugLog } from "./debug.js"
+import { createDebugLog } from "../debug.js"
 
 const debugLog = createDebugLog("[wopal-task]", "task")
 

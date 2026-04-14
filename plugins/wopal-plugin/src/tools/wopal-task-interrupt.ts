@@ -1,5 +1,5 @@
 import { tool, type ToolContext, type ToolDefinition } from "@opencode-ai/plugin"
-import type { SimpleTaskManager } from "../simple-task-manager.js"
+import type { SimpleTaskManager } from "../tasks/simple-task-manager.js"
 
 export function createWopalInterruptTool(manager: SimpleTaskManager): ToolDefinition {
   return tool({

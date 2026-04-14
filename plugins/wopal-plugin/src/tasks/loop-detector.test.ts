@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { detectLoop } from "./loop-detector.js"
-import type { SessionMessage } from "./types.js"
+import type { SessionMessage } from "../types.js"
 
 describe("detectLoop", () => {
   describe("#given empty messages", () => {

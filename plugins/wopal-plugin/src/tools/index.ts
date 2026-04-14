@@ -1,5 +1,5 @@
 import type { ToolDefinition } from "@opencode-ai/plugin"
-import type { SimpleTaskManager } from "../simple-task-manager.js"
+import type { SimpleTaskManager } from "../tasks/simple-task-manager.js"
 import type { MemoryStore } from "../memory/store.js"
 import type { EmbeddingClient } from "../memory/embedder.js"
 import type { SessionStore } from "../session-store.js"
@@ -9,7 +9,7 @@ import { createWopalOutputTool } from "./wopal-task-output.js"
 import { createWopalInterruptTool } from "./wopal-task-interrupt.js"
 import { createWopalReplyTool } from "./wopal-task-reply.js"
 import { createWopalTaskDiffTool } from "./wopal-task-diff.js"
-import { createMemoryManageTool } from "./memory-manage.js"
+import { createMemoryManageTool } from "./memory-manage/index.js"
 
 export function createWopalTools(
   manager: SimpleTaskManager,

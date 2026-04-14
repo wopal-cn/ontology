@@ -1,4 +1,4 @@
-import type { WopalTask } from "./types.js"
+import type { WopalTask } from "../types.js"
 
 export const DEFAULT_STUCK_TIMEOUT_MS = 120_000 // 2 minutes
 

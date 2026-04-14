@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { getErrorMessage, extractMessages, extractAssistantContent, extractFullHistory } from "./session-messages.js"
-import type { SessionMessage, MessagesResult } from "./types.js"
+import type { SessionMessage, MessagesResult } from "../types.js"
 
 describe("getErrorMessage", () => {
   it("returns null for array input", () => {

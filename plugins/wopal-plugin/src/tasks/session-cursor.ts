@@ -1,4 +1,4 @@
-import type { SessionMessage } from "./types.js"
+import type { SessionMessage } from "../types.js"
 
 interface CursorState {
   lastKey?: string

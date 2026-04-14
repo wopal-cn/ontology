@@ -1,5 +1,5 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin"
-import type { SimpleTaskManager } from "../simple-task-manager.js"
+import type { SimpleTaskManager } from "../tasks/simple-task-manager.js"
 
 export function createWopalTaskTool(manager: SimpleTaskManager): ToolDefinition {
   return tool({

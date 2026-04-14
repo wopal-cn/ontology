@@ -1,8 +1,8 @@
 import type { SessionStore } from "../session-store.js";
-import type { SimpleTaskManager } from "../simple-task-manager.js";
+import type { SimpleTaskManager } from "../tasks/simple-task-manager.js";
 import type { DebugLog } from "../debug.js";
-import { trackActivity } from "../progress-tracker.js";
-import type { IdleDiagnostic } from "../idle-diagnostic.js";
+import { trackActivity } from "../tasks/progress-tracker.js";
+import type { IdleDiagnostic } from "../tasks/idle-diagnostic.js";
 
 export interface EventRouterHookContext {
   client: unknown;
@@ -106,7 +106,7 @@ export function createEventRouter(ctx: EventRouterHookContext) {
       ctx.taskDebugLog(`[permission.asked] event received: sessionID=${sessionID} id=${requestID} permission=${permission}`)
 
       if (sessionID && requestID && permission) {
-        const { handlePermissionAsked } = await import("../permission-proxy.js")
+        const { handlePermissionAsked } = await import("../tasks/permission-proxy.js")
         const patterns = props?.patterns as string[] | undefined
         await handlePermissionAsked(
           { sessionID, requestID, permission, ...(patterns ? { patterns } : {}) },
@@ -123,7 +123,7 @@ export function createEventRouter(ctx: EventRouterHookContext) {
       const requestID = props?.id as string | undefined
 
       if (sessionID && requestID && props?.questions) {
-        const { handleQuestionAsked } = await import("../question-relay.js")
+        const { handleQuestionAsked } = await import("../tasks/question-relay.js")
         const questions = props.questions as Array<{ header?: string; question?: string; options?: Array<{ label: string; description: string }> }>
         const firstQuestion = questions[0]
         if (firstQuestion) {
@@ -173,7 +173,7 @@ export function createEventRouter(ctx: EventRouterHookContext) {
       const messages = result?.data ?? []
       ctx.taskDebugLog(`diagnoseIdleSession: fetched ${messages.length} messages (limit: 10)`)
 
-      const { diagnoseIdle } = await import("../idle-diagnostic.js")
+      const { diagnoseIdle } = await import("../tasks/idle-diagnostic.js")
       return diagnoseIdle(messages)
     } catch (err) {
       ctx.taskDebugLog(`diagnoseIdleSession error: ${err}`)

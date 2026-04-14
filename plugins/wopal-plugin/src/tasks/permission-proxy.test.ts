@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { handlePermissionAsked, type PermissionAskedEvent } from "./permission-proxy.js"
 import type { SimpleTaskManager } from "./simple-task-manager.js"
-import type { WopalTask } from "./types.js"
+import type { WopalTask } from "../types.js"
 
 function createV1MockClient() {
   return {

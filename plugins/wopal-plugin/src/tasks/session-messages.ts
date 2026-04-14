@@ -1,4 +1,4 @@
-import type { SessionMessage, MessagesResult } from "./types.js"
+import type { SessionMessage, MessagesResult } from "../types.js"
 
 function isSessionMessage(value: unknown): value is SessionMessage {
   return typeof value === "object" && value !== null

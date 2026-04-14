@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { consumeNewMessages, clearCursor, getCursorCount } from "./session-cursor.js"
-import type { SessionMessage } from "./types.js"
+import type { SessionMessage } from "../types.js"
 
 describe("session-cursor", () => {
   beforeEach(() => {

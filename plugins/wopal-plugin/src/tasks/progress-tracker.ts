@@ -1,4 +1,4 @@
-import type { WopalTask } from "./types.js"
+import type { WopalTask } from "../types.js"
 
 const MEANINGFUL_PART_TYPES = new Set(["tool", "text"])
 

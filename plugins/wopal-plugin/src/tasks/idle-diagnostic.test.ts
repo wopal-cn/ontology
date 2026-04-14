@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { diagnoseIdle, buildContextSummary } from "./idle-diagnostic.js"
-import type { SessionMessage } from "./types.js"
+import type { SessionMessage } from "../types.js"
 
 function createAssistantMessage(
   finish: string | undefined,
