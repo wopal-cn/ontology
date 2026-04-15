@@ -81,13 +81,20 @@ _issue_section_value() {
 build_issue_body_from_plan() {
     local plan_file="$1"
     local plan_name="$2"
-    local goal background in_scope out_of_scope acceptance_criteria
+    local goal background in_scope out_of_scope acceptance_criteria project plan_path
 
     goal=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Goal" 5 | sed '/^$/d')" "一句话描述" "<目标描述>")
     background=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Technical Context" 20 | sed '/^$/d')" "<当前架构" "<背景描述>")
-    in_scope=$(_issue_section_value "$(_extract_plan_section "$plan_file" "In Scope" 15)" "" "- [ ] 范围项 1" "-")
-    out_of_scope=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Out of Scope" 10)" "<本次不做" "- 不做的项（原因）")
-    acceptance_criteria=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Acceptance Criteria" 15)" "" "- [ ] 验收条件 1" "-")
+    in_scope=$(_issue_section_value "$(_extract_plan_section "$plan_file" "In Scope" 50)" "" "- 范围项 1" "-")
+    out_of_scope=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Out of Scope" 20)" "<本次不做" "- 不做的项（原因）")
+    acceptance_criteria=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Acceptance Criteria" 40)" "" "- 验收条件 1" "-")
+    project=$(get_plan_project "$plan_file")
+
+    if [[ -n "$project" ]]; then
+        plan_path="docs/products/${project}/plans/${plan_name}.md"
+    else
+        plan_path="docs/products/plans/${plan_name}.md"
+    fi
 
     cat <<EOF
 ## Goal
@@ -114,7 +121,7 @@ $acceptance_criteria
 
 | Resource | Link |
 |----------|------|
-| Plan | [$plan_name](../docs/products/plans/$plan_name.md) |
+| Plan | [$plan_name]($plan_path) |
 EOF
 }
 
@@ -249,14 +256,14 @@ update_issue_plan_link() {
     current_body=$(gh issue view "$issue_number" --repo "$repo" --json body --jq '.body')
     
     # Update Plan link in Related Resources table
-    # Pattern: | Plan | [plan-name](../docs/products/old-path) |
+    # Pattern: | Plan | [plan-name](docs/products/old-path) |
     local new_body
-    new_body=$(echo "$current_body" | sed -E "s|\[$plan_name\]\([^)]*\)|[$plan_name](../docs/products/$relative_path)|")
+    new_body=$(echo "$current_body" | sed -E "s|\[$plan_name\]\([^)]*\)|[$plan_name](docs/products/$relative_path)|")
     
     # If Plan link not found by name, try updating the whole row
     if [[ "$new_body" == "$current_body" ]]; then
         # Pattern: | Plan | [any-name](any-path) |
-        new_body=$(echo "$current_body" | sed -E "s|Plan \| \[([^]]+)\]\([^)]*\)|Plan | [$plan_name](../docs/products/$relative_path)|")
+        new_body=$(echo "$current_body" | sed -E "s|Plan \| \[([^]]+)\]\([^)]*\)|Plan | [$plan_name](docs/products/$relative_path)|")
     fi
     
     gh issue edit "$issue_number" --repo "$repo" --body "$new_body" >/dev/null && \

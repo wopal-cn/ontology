@@ -24,18 +24,22 @@ compatibility:
 
 # dev-flow
 
-## CRITICAL: `--confirm` Flag Is Human-Only
+## CRITICAL: Dangerous Operations Require Human Authorization
 
-The `--confirm` flag is a **human gate**. Under **no circumstances** should the agent:
+The agent **must obtain explicit user authorization before executing**:
 
-- Execute `flow.sh approve <plan> --confirm` on behalf of the user
-- Execute `flow.sh archive <plan> --confirm` on behalf of the user
+| Command | Reason | Authorization Required |
+|---------|---------|------------------------|
+| `flow.sh approve <plan> --confirm` | Human gate for planning → executing | User says "approved", "审批通过" |
+| `flow.sh archive <plan> --confirm` | Human gate for executing → done | User says "validation passed", "验证通过" |
+| `flow.sh reset <plan>` | **Destructive**: loses all progress | User says "reset", "重置", explicitly confirming loss |
+
+Under **no circumstances** should the agent:
+- Execute these commands on behalf of the user without authorization
 - Ask the user to let the agent run these commands
 - Bypass the check by proceeding without confirmation
 
-If the user has not explicitly confirmed (by saying "approved", "validation passed", etc.), the agent **must stop and wait**.
-
-This is a non-negotiable safety control — it ensures a human explicitly authorizes every transition from planning to execution and from execution to archive.
+If the user has not explicitly authorized, the agent **must stop and wait**.
 
 ## CRITICAL: State Machine Compliance
 
@@ -324,8 +328,8 @@ Plan 中的 `## Acceptance Criteria` 分为两层：
 - [x] 单元测试通过  ← complete 会校验此子章节
 
 ### User Validation
-- [ ] 重启后功能正常  ← 用户 archive 前手动打勾
-- [ ] UI 交互确认     ← archive --confirm 会校验此子章节
+- 重启后功能正常  ← 用户确认项，纯文本格式
+- UI 交互确认     ← archive --confirm 会校验此子章节
 ```
 
 | 子章节 | 校验时机 | 打勾者 |
@@ -396,12 +400,12 @@ check-doc 强制验证：
 | Scope Assessment | Complexity、Confidence | approve 前（非占位符校验） |
 | Goal | 一句话目标 | approve 前 |
 | Technical Context | 架构描述、变更原因、风险 | approve 前（非空校验） |
+| In Scope / Out of Scope | 边界界定（纯文本列表，无 checkbox） | approve 前 |
 | Affected Files | Component + Files + Operation + Role 表格 | approve 前（非空校验） |
-| In Scope / Out of Scope | 边界界定 | approve 前 |
 | Implementation | Task 分解，每 Task 有 Files、Changes、Verification | approve 前 |
 | Delegation Strategy | 批次划分、执行者、依赖 | 可选（简单任务填 N/A） |
-| Test Plan | 测试用例、回归验证、调整策略 | approve 前 |
-| Acceptance Criteria | Agent 验证项（checkbox）+ 用户确认项 | approve 前 |
+| Test Plan | 单元/集成/E2E 测试分类、回归验证、调整策略 | approve 前 |
+| Acceptance Criteria | Agent 验证项（checkbox）+ 用户确认项（纯文本） | approve 前 |
 
 ## 错误处理
 

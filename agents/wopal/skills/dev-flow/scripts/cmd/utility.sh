@@ -157,17 +157,19 @@ cmd_reset() {
     local plan_name
     plan_name=$(get_plan_name "$plan_file")
 
-    log_warn "This will reset plan '$plan_name' to planning status"
-    log_warn "This is a destructive operation that will lose current progress"
-    echo ""
-    read -p "Are you sure? (y/N): " confirm
+    log_warn "Resetting plan '$plan_name' to planning status (destructive)"
+    update_plan_status "$plan_file" "planning"
 
-    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-        echo "Aborted."
-        exit 0
+    # Sync Issue label back to status/planning (if Issue exists)
+    local issue_number
+    issue_number=$(grep "Issue.*#" "$plan_file" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
+    
+    if [[ -n "$issue_number" ]]; then
+        local repo
+        repo=$(get_space_repo)
+        sync_status_label_group "$issue_number" "status/planning" "$repo" >/dev/null 2>&1
+        log_info "Issue #$issue_number label reset to status/planning"
     fi
-
-    set_plan_status "$plan_file" "planning"
 
     echo ""
     log_success "Plan reset to planning: $plan_file"
@@ -238,11 +240,5 @@ Label 子状态:
   flow.sh complete 42 --pr
   flow.sh archive 42
 
-旧命令兼容:
-  create → new-issue
-  start → plan
-  spike → (已废弃，调查内嵌在 plan)
-  dev → (已废弃，approve --confirm 进入 executing)
-  validate → (已废弃，archive --confirm 处理验证)
 EOF
 }

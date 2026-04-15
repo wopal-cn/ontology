@@ -167,7 +167,7 @@ build_structured_issue_body() {
     local out_of_scope_text
     local body
 
-    in_scope_text=$(_format_issue_list "$scope" "- [ ] " $'- [ ] 范围项 1\n- [ ] 范围项 2')
+    in_scope_text=$(_format_issue_list "$scope" "- " $'- 范围项 1\n- 范围项 2')
     out_of_scope_text=$(_format_issue_list "$out_of_scope" "- " "- 不做的项（原因）")
 
     body="## Goal
@@ -188,7 +188,7 @@ $out_of_scope_text
 
 ## Acceptance Criteria
 
-- [ ] 待 plan 细化后填充
+待 plan 阶段细化
 
 ## Related Resources
 

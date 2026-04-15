@@ -175,7 +175,7 @@ cmd_plan() {
         create_plan "$plan_name" --project "$project" --issue "$issue_number" --type "$plan_type" ${prd_path:+--prd "$prd_path"} ${deep_flag} >/dev/null
 
         plan_rel_path="docs/products/${project}/plans/${plan_name}.md"
-        update_issue_link "$issue_number" "$repo" "plan" "[${plan_name}](../${plan_rel_path})"
+        update_issue_link "$issue_number" "$repo" "plan" "[${plan_name}](${plan_rel_path})"
         ensure_issue_labels "$issue_number" "$plan_file" "$repo"
 
         echo "Plan: $plan_file"

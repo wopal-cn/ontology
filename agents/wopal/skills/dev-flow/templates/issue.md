@@ -8,8 +8,8 @@
 
 ## In Scope
 
-- [ ] 范围项 1
-- [ ] 范围项 2
+- 范围项 1
+- 范围项 2
 
 ## Out of Scope
 
@@ -17,11 +17,10 @@
 
 ## Acceptance Criteria
 
-- [ ] 验收条件 1
-- [ ] 验收条件 2
+待 plan 阶段细化
 
 ## Related Resources
 
 | Resource | Link |
 |----------|------|
-| Plan | [plan-name](../docs/...) |
+| Plan | [plan-name](docs/products/{project}/plans/plan-name.md) |

@@ -54,10 +54,7 @@ cmd_approve() {
     local current_status
     current_status=$(get_current_status "$plan_file")
 
-    # Validate transition: planning -> executing (3-state model)
-    if ! validate_transition "$current_status" "executing"; then
-        exit 1
-    fi
+    # State machine validates transition in update_plan_status
 
     # Run check-doc first (capture output, only show on failure)
     local check_output
@@ -80,8 +77,8 @@ cmd_approve() {
     local repo
     repo=$(get_space_repo)
 
-    # Update status to executing
-    set_plan_status "$plan_file" "executing" >/dev/null 2>&1
+    # Update status to executing (using state machine)
+    update_plan_status "$plan_file" "executing" >/dev/null 2>&1
 
     # Sync Issue if plan has Issue link
     local issue_number

@@ -160,8 +160,8 @@ cmd_archive() {
         sync_plan_to_issue "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
     fi
 
-    # Update status to done
-    set_plan_status "$plan_file" "done" >/dev/null 2>&1
+    # Update status to done (using state machine)
+    update_plan_status "$plan_file" "done" >/dev/null 2>&1
 
     # Archive plan file
     local archived_file
@@ -169,12 +169,16 @@ cmd_archive() {
 
     # Update Issue Plan link to archived path (if Issue exists)
     if [[ -n "$issue_number" && -n "$archived_file" ]]; then
-        update_issue_plan_link "$issue_number" "$archived_file" "$repo" >/dev/null 2>&1
+        if ! update_issue_plan_link "$issue_number" "$archived_file" "$repo" 2>&1; then
+            log_warn "Failed to update Issue Plan link"
+        fi
     fi
 
     # Close Issue (clears all flow labels) - if Issue exists
     if [[ -n "$issue_number" ]]; then
-        close_issue "$issue_number" --repo "$repo" --comment "Plan archived: $archive_reason. Closing issue." >/dev/null 2>&1
+        if ! close_issue "$issue_number" --repo "$repo" --comment "Plan archived: $archive_reason. Closing issue."; then
+            log_warn "Failed to close Issue #$issue_number"
+        fi
     fi
 
     echo "Status: done"
