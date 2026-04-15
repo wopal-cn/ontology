@@ -76,8 +76,11 @@ export function createWopalTaskDiffTool(manager: SimpleTaskManager): ToolDefinit
           }
         }
 
+        const directory = manager.getDirectory()
+        debugLog(`[diff] calling session.diff with sessionID=${task.sessionID} directory=${directory}`)
         const result = await v2Client.session.diff({
           sessionID: task.sessionID,
+          directory,
         })
         debugLog(`[diff] raw result: ${JSON.stringify(result)}`)
 

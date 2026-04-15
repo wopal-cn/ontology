@@ -63,31 +63,95 @@ _resolve_repo() {
 # Slug Generation
 # ============================================
 
-# Generate slug from title (kebab-case)
+# Generate slug from title description part
 # Usage: title_to_slug "<title>"
-# Output: kebab-case slug (max 50 chars)
+# Output: kebab-case slug from description (max 50 chars)
 title_to_slug() {
     local title="$1"
-    
-    # Remove type prefix, keep scope: "feat(scope): title" → "(scope): title" → "scope-title"
-    title=$(echo "$title" | sed -E 's/^([a-z]+)(\([^)]+\))?:\s*/\2/')
-    title=$(echo "$title" | tr -d '()')
-    
+
+    # Extract description part: remove type(scope): prefix
+    local description
+    description=$(echo "$title" | sed -E 's/^[a-z]+(\([^)]+\))?:\s*//')
+
     # Convert to slug
     local slug
-    slug=$(echo "$title" | tr '[:upper:]' '[:lower:]' | \
+    slug=$(echo "$description" | tr '[:upper:]' '[:lower:]' | \
         sed 's/[^a-z0-9]/-/g' | \
         sed 's/--*/-/g' | \
         sed 's/^-//' | \
         sed 's/-$//' | \
         cut -c1-50)
-    
+
     # If slug is empty or too short, use md5 hash fallback
     if [[ -z "$slug" || ${#slug} -lt 3 ]]; then
-        slug=$(echo "$1" | md5 | cut -c1-8)
+        slug=$(echo "$title" | md5 | cut -c1-8)
+    fi
+
+    echo "$slug"
+}
+
+# ============================================
+# Issue Title Validation
+# ============================================
+
+# Validate issue title format and length
+# Usage: validate_issue_title "<title>"
+# Returns: 0 on valid, 1 on invalid (outputs error message)
+# Format: <type>(<scope>): <description>
+# Constraints:
+#   - type must be valid (feat/fix/refactor/docs/test/chore/enhance)
+#   - description ≤ 50 chars
+#   - total title ≤ 72 chars
+validate_issue_title() {
+    local title="$1"
+    
+    # Check basic format: type(scope): description or type: description
+    if ! echo "$title" | grep -qE '^[a-z]+(\([^)]+\))?:\s*.+$'; then
+        log_error "Invalid title format. Expected: <type>(<scope>): <description>"
+        log_error "Example: feat(cli): add skills remove command"
+        log_error "Your title: $title"
+        return 1
     fi
     
-    echo "$slug"
+    # Extract type
+    local type
+    type=$(echo "$title" | sed -E 's/^([a-z]+)(\([^)]+\))?:.*/\1/')
+    
+    # Validate type
+    case "$type" in
+        feat|fix|refactor|docs|test|chore|enhance)
+            ;;
+        *)
+            log_error "Invalid type: $type"
+            log_error "Valid types: feat, fix, refactor, docs, test, chore, enhance"
+            return 1
+            ;;
+    esac
+    
+    # Extract description (after type(scope): )
+    local description
+    description=$(echo "$title" | sed -E 's/^[a-z]+(\([^)]+\))?:\s*//')
+    
+    # Check description length (≤ 50 chars)
+    if [[ ${#description} -gt 50 ]]; then
+        log_error "Description too long: ${#description} chars (max 50)"
+        log_error "Description: $description"
+        return 1
+    fi
+    
+    # Check total title length (≤ 72 chars)
+    if [[ ${#title} -gt 72 ]]; then
+        log_error "Title too long: ${#title} chars (max 72)"
+        return 1
+    fi
+    
+    # Check description is not empty
+    if [[ -z "$description" ]]; then
+        log_error "Description cannot be empty"
+        return 1
+    fi
+    
+    return 0
 }
 
 # ============================================
@@ -361,6 +425,9 @@ create_issue() {
     [[ -z "$title" ]] && { log_error "Missing --title"; return 1; }
     [[ -z "$project" ]] && { log_error "Missing --project"; return 1; }
     [[ -z "$type" ]] && { log_error "Missing --type"; return 1; }
+
+    # Validate title format and length
+    validate_issue_title "$title" || return 1
 
     local plan_type
     plan_type=$(normalize_plan_type "$type") || {

@@ -61,43 +61,65 @@ export async function getContextUsage(
   sessionID: string,
   directory: string,
 ): Promise<string | null> {
+  const ctxLog = (msg: string) => debugLog(`[ctxUsage:${sessionID.slice(0, 8)}] ${msg}`)
   try {
-    if (typeof client.session?.messages !== "function") return null
+    if (typeof client.session?.messages !== "function") {
+      ctxLog("no session.messages API")
+      return null
+    }
     const messagesResult = await client.session.messages({
       path: { id: sessionID },
     })
     const messages = messagesResult?.data ?? []
+    ctxLog(`fetched ${messages.length} messages`)
 
     // 找最后一条 assistant 消息（含 tokens 字段）
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const lastAssistant = [...messages].reverse().find((m: any) =>
       m?.info?.role === "assistant" && m?.info?.tokens
     )
-    if (!lastAssistant?.info?.tokens) return null
+    if (!lastAssistant?.info?.tokens) {
+      const assistantCount = messages.filter((m: { info?: { role?: string } }) => m?.info?.role === "assistant").length
+      ctxLog(`no assistant with tokens (total assistants: ${assistantCount})`)
+      return null
+    }
 
     const tokens = lastAssistant.info.tokens
     const used = (tokens.input ?? 0) + (tokens.cache?.read ?? 0)
-    if (used === 0) return null
+    if (used === 0) {
+      ctxLog("tokens.input=0 (step still streaming)")
+      return null
+    }
 
     // 获取 model context limit
-    if (typeof client.config?.providers !== "function") return null
+    if (typeof client.config?.providers !== "function") {
+      ctxLog("no config.providers API")
+      return null
+    }
     const providersResult = await client.config.providers({
       query: { directory },
     })
     const providers = providersResult?.data?.providers ?? []
     const providerID = lastAssistant.info.providerID ?? lastAssistant.info.model?.providerID
     const modelID = lastAssistant.info.modelID ?? lastAssistant.info.model?.modelID
-    if (!providerID || !modelID) return null
+    if (!providerID || !modelID) {
+      ctxLog(`missing IDs: providerID=${providerID ?? 'undefined'} modelID=${modelID ?? 'undefined'}`)
+      return null
+    }
 
     const provider = providers.find((p: { id: string }) => p.id === providerID)
     const contextLimit = provider?.models?.[modelID]?.limit?.context
-    if (!contextLimit) return null
+    if (!contextLimit) {
+      ctxLog(`no context limit for ${providerID}/${modelID}`)
+      return null
+    }
 
     const pct = Math.round((used / contextLimit) * 100)
     const warn = pct > 45 ? " ⚠️" : ""
+    ctxLog(`${used}/${contextLimit} = ${pct}%`)
     return `Context: ${pct}% used (${formatTokenCount(used)}/${formatTokenCount(contextLimit)})${warn}`
   } catch (err) {
-    debugLog(`[contextUsage] error: ${err instanceof Error ? err.message : String(err)}`)
+    ctxLog(`error: ${err instanceof Error ? err.message : String(err)}`)
     return null
   }
 }
