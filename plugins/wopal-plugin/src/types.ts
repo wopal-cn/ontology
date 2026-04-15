@@ -72,6 +72,10 @@ export interface SessionMessage {
     modelID?: string
     providerID?: string
     variant?: string
+    tokens?: {
+      input?: number
+      cache?: { read?: number }
+    }
   }
   parts?: Array<{
     type?: string

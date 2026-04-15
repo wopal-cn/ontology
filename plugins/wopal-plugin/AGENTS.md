@@ -113,7 +113,7 @@ src/                              # 源码目录
 │   ├── mcp-tools.ts              # MCP 工具检测
 │   └── *.test.ts                 # 测试文件
 │
-├── tasks/                        # 任务域（#91 从根目录迁移）
+├── tasks/                        # 任务域（#91 从根目录迁移，含散件归位）
 │   ├── manager.ts                # 任务管理器
 │   ├── launcher.ts               # 任务启动器
 │   ├── monitor.ts                # 任务监控器
@@ -127,6 +127,9 @@ src/                              # 源码目录
 │   ├── error-classifier.ts       # 错误分类
 │   ├── concurrency-manager.ts    # 并发控制
 │   ├── simple-task-manager.ts    # 简化任务管理入口
+│   ├── permission-proxy.ts       # 权限代理（散件归位）
+│   ├── question-relay.ts         # 问题中继（散件归位）
+│   ├── process-cleanup.ts        # 进程清理（散件归位）
 │   └── *.test.ts                 # 测试文件
 │
 ├── rules/                        # 规则子系统（#88 从 utils.ts 拆分）
@@ -137,9 +140,6 @@ src/                              # 源码目录
 │   ├── path-extractor.ts         # 路径提取
 │   └── *.test.ts                 # 测试文件
 │
-├── permission-proxy.ts           # 权限代理
-├── question-relay.ts             # 问题中继
-├── process-cleanup.ts            # 进程清理
 ├── debug.ts                      # 调试日志
 ├── session-store.ts              # 会话存储
 ├── session-store-instance.ts     # 会话存储实例
