@@ -200,6 +200,43 @@ flow.sh new-issue \
 
 **必须使用 `flow.sh new-issue`**，禁止直接用 `gh issue create`。
 
+## Issue 标题规范
+
+**格式**: `<type>(<scope>): <description>`
+
+| 元素 | 规则 | 示例 |
+|------|------|------|
+| `type` | 必选，见下方类型表 | `feat`, `fix` |
+| `scope` | 可选，括号包裹，对应项目名 | `(cli)` |
+| `description` | 必选，英文祈使句，≤50 chars | `add skills remove` |
+
+**合法类型**:
+
+| type | 用途 | Issue label |
+|------|------|-------------|
+| `feat` | 新功能 | `type/feature` |
+| `fix` | Bug 修复 | `type/bug` |
+| `refactor` | 重构（不改变功能） | `type/refactor` |
+| `docs` | 文档更新 | `type/docs` |
+| `test` | 测试相关 | `type/test` |
+| `chore` | 构建/工具 | `type/chore` |
+| `enhance` | 功能增强 | `type/feature` |
+
+**长度限制**:
+- `description`: ≤ 50 characters
+- 整体标题: ≤ 72 characters
+
+**示例**:
+- ✅ `feat(cli): add skills remove command`
+- ✅ `fix(plugin): handle expired tokens gracefully`
+- ✅ `refactor: unify plan status management`（无 scope）
+- ❌ `添加 skills remove 功能`（中文、无 type）
+- ❌ `feat: This is a very long description exceeding fifty characters limit`（过长）
+
+**Plan 名称提取**:
+从 `<description>` 部分提取 slug（去掉 type/scope），转 kebab-case。
+例如: `feat(cli): add skills remove` → Plan 名称: `feat-add-skills-remove`
+
 ## Plan 调查阶段
 
 `plan` 命令包含调查子阶段：

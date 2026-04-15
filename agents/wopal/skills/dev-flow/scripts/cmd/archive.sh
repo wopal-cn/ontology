@@ -88,7 +88,22 @@ cmd_archive() {
         fi
     fi
 
-    # Commit + push archived plan so the GitHub link works
+    # Check if project has uncommitted changes (prompt agent to commit manually)
+    local project
+    project=$(get_plan_project "$plan_file")
+    local project_has_changes=false
+    if [[ -n "$project" ]]; then
+        local project_dir="$root_dir/projects/$project"
+        if [[ -d "$project_dir/.git" ]]; then
+            local project_status
+            project_status=$(git -C "$project_dir" status --porcelain 2>/dev/null || echo "")
+            if [[ -n "$project_status" ]]; then
+                project_has_changes=true
+            fi
+        fi
+    fi
+
+    # Commit + push archived plan in space repo so the GitHub link works
     local root_dir
     root_dir=$(find_workspace_root)
     if command -v git &> /dev/null && [[ -d "$root_dir/.git" ]]; then
@@ -111,5 +126,18 @@ cmd_archive() {
     echo "File: $archived_file"
     if [[ -n "$issue_number" ]]; then
         echo "Issue: #$issue_number (closed)"
+    fi
+
+    if [[ "$project_has_changes" == true ]]; then
+        local plan_type
+        plan_type=$(get_plan_type "$plan_file")
+        echo ""
+        echo "⚠️  Project $project has uncommitted changes. Please commit and push manually:"
+        echo "  cd $root_dir/projects/$project"
+        if [[ -n "$issue_number" ]]; then
+            echo "  git add <files> && git commit -m \"${plan_type}: #$issue_number <description>\" && git push"
+        else
+            echo "  git add <files> && git commit -m \"${plan_type}: <description>\" && git push"
+        fi
     fi
 }
