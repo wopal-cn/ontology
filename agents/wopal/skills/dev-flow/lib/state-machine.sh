@@ -120,7 +120,7 @@ validate_transition() {
 
 # Get current status from Plan file
 # Usage: get_current_status <plan_file>
-# Output: status string (e.g., "investigating", "executing")
+# Output: status string (e.g., "planning", "executing")
 get_current_status() {
     local plan_file="$1"
 

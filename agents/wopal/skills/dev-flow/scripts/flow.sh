@@ -234,12 +234,6 @@ case "${1:-help}" in
     decompose-prd)  shift; cmd_decompose_prd "$@" ;;
     reset)          shift; cmd_reset "$@" ;;
     help|--help|-h) cmd_help ;;
-    # Old command compatibility (deprecated)
-    create)         shift; log_warn "'create' is deprecated, use 'new-issue'"; cmd_new_issue "$@" ;;
-    start)          shift; log_warn "'start' is deprecated, use 'plan'"; cmd_plan "$@" ;;
-    spike)          shift; log_warn "'spike' is deprecated (embedded in plan)"; exit 0 ;;
-    dev)            shift; log_warn "'dev' is deprecated, use 'approve --confirm'"; exit 0 ;;
-    validate)       shift; log_warn "'validate' is deprecated, use 'archive --confirm'"; exit 0 ;;
     *)
         log_error "Unknown command: $1"
         cmd_help

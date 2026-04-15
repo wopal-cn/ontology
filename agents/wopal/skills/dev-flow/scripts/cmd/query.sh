@@ -69,7 +69,7 @@ cmd_status() {
     fi
 
     echo ""
-    echo "State Machine (5-state): investigating -> planning -> approved -> executing -> done"
+    echo "State Machine (3-state): planning -> executing -> done"
     echo "               Current: $status"
 }
 
@@ -87,7 +87,7 @@ cmd_list() {
 
     local issues
     issues=$(gh issue list --repo "$repo" --state open \
-        --search 'label:status/planning OR label:status/approved OR label:status/in-progress' \
+        --search 'label:status/planning OR label:status/in-progress' \
         --json number,title,labels \
         --jq '.[] | "\(.number)|\(.title)|\(.labels | map(.name) | join(","))"' 2>/dev/null)
 
@@ -102,7 +102,6 @@ cmd_list() {
         for label in ${labels//,/ }; do
             case "$label" in
                 status/planning)    status_label="planning" ;;
-                status/approved)    status_label="approved" ;;
                 status/in-progress) status_label="executing" ;;
             esac
         done
