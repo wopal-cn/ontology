@@ -1,5 +1,7 @@
-# cmd_complete: Mark execution complete with validation label overlay
-# Label change: validation/awaiting is added as overlay (main status preserved)
+# cmd_complete: Mark execution complete and transition to verifying phase
+# 4-state model: executing -> verifying
+# Label change: status/in-progress -> status/verifying
+# Agent Verification AC synced to Issue body
 # Usage:
 #   flow.sh complete <issue> [--pr]
 #   flow.sh complete <plan-name> [--pr]
@@ -46,17 +48,23 @@ cmd_complete() {
     local current_status
     current_status=$(get_current_status "$plan_file")
 
-    # Must be in executing state
+    # Must be in executing state (4-state model)
     if [[ "$current_status" != "executing" ]]; then
         log_error "Plan must be in executing state to complete"
         echo "Current status: $current_status"
+        echo ""
+        if [[ "$current_status" == "planning" ]]; then
+            echo "Run: flow.sh approve $input --confirm"
+        elif [[ "$current_status" == "verifying" ]]; then
+            echo "Run: flow.sh verify $input --confirm"
+        fi
         exit 1
     fi
 
-    # Check Acceptance Criteria
+    # Check Agent Verification Acceptance Criteria
     if ! check_acceptance_criteria "$plan_file"; then
         echo ""
-        log_error "Cannot complete: Acceptance Criteria not satisfied"
+        log_error "Cannot complete: Agent Verification not satisfied"
         echo ""
         echo "Please complete the remaining items and update the Plan file:"
         echo "  $plan_file"
@@ -76,6 +84,15 @@ cmd_complete() {
     local issue_number
     issue_number=$(grep "Issue.*#" "$plan_file" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
 
+    # ============================================
+    # STATE TRANSITION: executing -> verifying
+    # ============================================
+    
+    log_step "Transitioning state: executing -> verifying"
+    
+    # Update Plan status to verifying
+    update_plan_status "$plan_file" "verifying" >/dev/null 2>&1
+
     # Two paths: with PR or without PR
     if [[ "$create_pr" == true ]]; then
         # With PR path: add pr/opened label (overlay)
@@ -85,22 +102,49 @@ cmd_complete() {
         fi
         
         if [[ -n "$issue_number" ]]; then
+            # Sync Issue status label to verifying
+            local status_label
+            status_label=$(plan_status_to_issue_label "verifying")
+            sync_status_label_group "$issue_number" "$status_label" "$repo" >/dev/null 2>&1
+            
+            # Add PR label overlay
             add_pr_label "$issue_number" "$repo" >/dev/null 2>&1
+            
+            # Create PR
             create_pr "$issue_number" --project "$project" --base main >/dev/null 2>&1
+            
+            # Sync Agent Verification AC to Issue body
+            sync_plan_to_issue "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
         else
             # No Issue: create PR without Issue reference
             create_pr_for_plan "$plan_name" --project "$project" --base main >/dev/null 2>&1
         fi
 
-        echo "Status: complete (PR opened)"
-        echo "Next: flow.sh archive $plan_name"
+        echo "Status: verifying (PR opened)"
+        echo ""
+        echo "等待 PR merge，用户确认后，由 agent 执行:"
+        echo "  flow.sh verify $plan_name --confirm"
     else
-        # Without PR path: add validation/awaiting label as overlay (keep status/in-progress)
+        # Without PR path: transition to verifying (main state)
         if [[ -n "$issue_number" ]]; then
-            add_validation_overlay_label "$issue_number" "awaiting" "$repo" >/dev/null 2>&1
+            # Sync Issue status label to verifying
+            local status_label
+            status_label=$(plan_status_to_issue_label "verifying")
+            sync_status_label_group "$issue_number" "$status_label" "$repo" >/dev/null 2>&1
+            
+            # Sync Agent Verification AC to Issue body
+            sync_plan_to_issue "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
         fi
 
-        echo "Status: complete (awaiting validation)"
-        echo "Next: flow.sh archive $plan_name --confirm"
+        echo "Status: verifying"
+        echo ""
+        echo "实施完成，等待用户验证。"
+        echo ""
+        echo "用户验证 User Validation 后，由 agent 执行:"
+        echo "  flow.sh verify $plan_name --confirm"
+        echo ""
+        if [[ -n "$issue_number" ]]; then
+            echo "Issue: #$issue_number"
+        fi
     fi
 }

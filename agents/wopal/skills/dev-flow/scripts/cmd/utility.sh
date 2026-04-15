@@ -137,7 +137,7 @@ cmd_decompose_prd() {
     fi
 }
 
-# cmd_reset: Reset plan to planning (3-state model)
+# cmd_reset: Reset plan to planning (4-state model)
 # Usage: flow.sh reset <issue-or-plan>
 cmd_reset() {
     local input="$1"
@@ -161,6 +161,7 @@ cmd_reset() {
     update_plan_status "$plan_file" "planning"
 
     # Sync Issue label back to status/planning (if Issue exists)
+    # Also clear old verification/verifying labels
     local issue_number
     issue_number=$(grep "Issue.*#" "$plan_file" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
     
@@ -169,6 +170,9 @@ cmd_reset() {
         repo=$(get_space_repo)
         sync_status_label_group "$issue_number" "status/planning" "$repo" >/dev/null 2>&1
         log_info "Issue #$issue_number label reset to status/planning"
+        
+        # Clear PR label if present
+        remove_issue_label "$issue_number" "pr/opened" "$repo" >/dev/null 2>&1 || true
     fi
 
     echo ""
@@ -178,39 +182,46 @@ cmd_reset() {
 # cmd_help: Show help
 cmd_help() {
     cat << 'EOF'
-dev-flow — 统一开发工作流 (3-state model)
+dev-flow — 统一开发工作流 (4-state model)
 
 Usage: flow.sh <command> <issue> [options]
 
 生命周期命令:
   new-issue --title "<title>" --project <name> --type <type> [options]
-                                          创建规范化 Issue
-                                          可选: --goal, --background, --scope, --out-of-scope, --reference, --body
+                                           创建规范化 Issue
+                                           可选: --goal, --background, --scope, --out-of-scope, --reference, --body
   plan <issue> [--project <name>] [--prd <path>] [--check]
-                                          创建 Plan 并进入规划阶段（含调查）
+                                           创建 Plan 并进入规划阶段（含调查）
   approve <issue> --confirm [--worktree]
-                                          审批通过 → 进入执行阶段
-  complete <issue> [--pr]           完成开发，等待验收
-  archive <issue> [--confirm]       归档（PR merged 或用户确认）
+                                           审批通过 → 进入执行阶段
+                                           ⚠️ 收到用户审批授权后由 agent 执行
+  complete <issue> [--pr]           完成开发 → 进入验证阶段
+  verify <issue> --confirm          用户验证通过 → 完成
+                                           ⚠️ 收到用户验证授权后由 agent 执行
+  archive <issue>                   归档收尾（Plan 已 done）
 
 查询命令:
   status <issue>                   查看任务状态
   list                             列出进行中任务
   decompose-prd <prd> [--dry-run] [--project <n>]
-                                          从 PRD 创建 Issue
+                                           从 PRD 创建 Issue
 
 其他:
   reset <issue>                    重置到 planning 状态
   help                             显示帮助
 
-状态机 (3-state): planning -> executing -> done
-                     ↑               ↑
-                创建 Plan       用户确认审批/验证
+状态机 (4-state): planning -> executing -> verifying -> done
+                      ↑               ↑               ↑
+                 创建 Plan       审批通过        用户验证通过
 
-Label 子状态:
-  validation/awaiting - 等待用户验证（叠加，不替换主状态）
-  validation/passed   - 用户验证通过（叠加）
-  pr/opened           - PR 已创建（叠加）
+Label 状态映射:
+  planning   -> status/planning
+  executing  -> status/in-progress
+  verifying  -> status/verifying
+  done       -> Issue closed
+
+Overlay Labels:
+  pr/opened  - PR 已创建（叠加在 verifying 上）
 
 选项说明:
   --project <name>   目标项目 (如: ontology, wopal-cli, space)
@@ -218,11 +229,9 @@ Label 子状态:
   --title "<title>"  Issue 标题
   --body "<body>"    Issue 内容
   --prd <path>       关联的 PRD 文件路径
-  --worktree         在隔离的 worktree 中执行
+  --worktree         在隔离的 worktree 中执行（前置检查优先）
   --pr               完成时创建 PR
-  --confirm          确认操作（仅限用户执行）
-  --check            仅运行文档检查
-  --dry-run          预览模式
+  --confirm          用户授权确认（由 agent 执行，不是让用户执行脚本）
 
 示例:
   # 创建 Issue
@@ -232,12 +241,15 @@ Label 子状态:
   flow.sh plan 42
   flow.sh approve 42 --confirm
   flow.sh complete 42
-  flow.sh archive 42 --confirm
+  flow.sh verify 42 --confirm
+  flow.sh archive 42
   
   # 完整工作流（有 PR）
   flow.sh plan 42
   flow.sh approve 42 --confirm --worktree
   flow.sh complete 42 --pr
+  # 等待 PR merge 且用户确认后
+  flow.sh verify 42 --confirm
   flow.sh archive 42
 
 EOF

@@ -5,11 +5,11 @@
 #   source lib/labels.sh
 #
 # Provides:
-#   - Label catalog (status/type/project/validation/pr)
+#   - Label catalog (status/type/project/pr)
 #   - Type normalization and mapping
 #   - Status/Project to label mapping
 #   - Label CRUD and group sync operations
-#   - Validation/PR label helpers
+#   - PR label helpers
 #
 # Guard: DEV_FLOW_LABELS_LOADED
 
@@ -28,19 +28,14 @@ source "$SKILL_DIR/lib/common.sh"
 # Label Catalog (bash 3.x compatible)
 # ============================================
 
-# Status label names (3-state model)
+# Status label names (4-state model)
 get_status_label_names() {
-    echo "status/planning status/in-progress"
+    echo "status/planning status/in-progress status/verifying"
 }
 
 # Type label names
 get_type_label_names() {
     echo "type/feature type/bug type/refactor type/docs type/chore"
-}
-
-# Validation label names
-get_validation_label_names() {
-    echo "validation/awaiting validation/passed"
 }
 
 # PR label names
@@ -50,7 +45,7 @@ get_pr_label_names() {
 
 # All dev-flow label names
 get_all_flow_label_names() {
-    echo "status/planning status/in-progress validation/awaiting validation/passed pr/opened"
+    echo "status/planning status/in-progress status/verifying pr/opened"
 }
 
 # ============================================
@@ -63,12 +58,10 @@ get_all_flow_label_names() {
 _get_label_props() {
     local label_name="$1"
     case "$label_name" in
-        # Status labels (main)
+        # Status labels (main - 4-state)
         status/planning)    printf 'fbca04\tPlanning\n' ;;
         status/in-progress) printf '1d76db\tCurrently in progress\n' ;;
-        # Validation sub-labels
-        validation/awaiting) printf 'fef2c0\tAwaiting user validation\n' ;;
-        validation/passed)   printf 'c2e0c6\tUser validation passed\n' ;;
+        status/verifying)   printf '5319e7\tAwaiting user verification\n' ;;
         # PR sub-labels
         pr/opened)          printf 'bfdadc\tPR created, awaiting review\n' ;;
         # Type labels
@@ -136,19 +129,20 @@ issue_label_to_plan_type() {
 }
 
 # ============================================
-# Status to Label Mapping
+# Status to Label Mapping (4-state model)
 # ============================================
 
-# Map plan status to Issue label (3-state model)
+# Map plan status to Issue label (4-state model)
 # Usage: plan_status_to_issue_label <plan_status>
 # Output: status label or empty string (empty for done/closed)
 plan_status_to_issue_label() {
     local plan_status="$1"
     case "$plan_status" in
-        planning)  echo "status/planning" ;;
-        executing) echo "status/in-progress" ;;
-        done)      echo "" ;;  # Issue closed, no status label
-        *)         echo "" ;;
+        planning)   echo "status/planning" ;;
+        executing)  echo "status/in-progress" ;;
+        verifying)  echo "status/verifying" ;;
+        done)       echo "" ;;  # Issue closed, no status label
+        *)          echo "" ;;
     esac
 }
 
@@ -323,7 +317,7 @@ sync_issue_label_group() {
 }
 
 # ============================================
-# Status Label Group Sync
+# Status Label Group Sync (4-state model)
 # ============================================
 
 # Sync status label group (remove all other status labels, add desired)
@@ -333,7 +327,7 @@ sync_status_label_group() {
     local desired_label="$2"
     local repo="${3:-}"
     sync_issue_label_group "$issue_number" "$desired_label" "$repo" \
-        "status/planning" "status/in-progress"
+        "status/planning" "status/in-progress" "status/verifying"
 }
 
 # ============================================
@@ -362,64 +356,6 @@ sync_project_label_group() {
     local repo="${3:-}"
     sync_issue_label_group "$issue_number" "$desired_label" "$repo" \
         "project/ontology" "project/wopal-cli" "project/space"
-}
-
-# ============================================
-# Validation Label Helpers
-# ============================================
-
-# Add validation label to issue
-# Usage: add_validation_label <issue_number> <label_type> [repo]
-# label_type: awaiting or passed
-add_validation_label() {
-    local issue_number="$1"
-    local label_type="$2"
-    local repo
-    repo=$(_labels_resolve_repo "${3:-}")
-
-    case "$label_type" in
-        awaiting|passed) ;;
-        *)
-            log_error "Invalid validation label type: $label_type"
-            return 1
-            ;;
-    esac
-
-    local label="validation/$label_type"
-    
-    # Remove other validation labels first
-    remove_issue_label "$issue_number" "validation/awaiting" "$repo"
-    remove_issue_label "$issue_number" "validation/passed" "$repo"
-    
-    # Add new label
-    ensure_issue_label "$issue_number" "$label" "$repo"
-}
-
-# Add validation label as overlay (keep main status)
-# Usage: add_validation_overlay_label <issue_number> <label_type> [repo]
-# label_type: awaiting or passed
-add_validation_overlay_label() {
-    local issue_number="$1"
-    local label_type="$2"
-    local repo
-    repo=$(_labels_resolve_repo "${3:-}")
-    
-    case "$label_type" in
-        awaiting|passed) ;;
-        *)
-            log_error "Invalid validation label type: $label_type"
-            return 1
-            ;;
-    esac
-    
-    local label="validation/$label_type"
-    
-    # Remove other validation labels (keep status labels)
-    remove_issue_label "$issue_number" "validation/awaiting" "$repo"
-    remove_issue_label "$issue_number" "validation/passed" "$repo"
-    
-    # Add new validation label (overlay, main status preserved)
-    ensure_issue_label "$issue_number" "$label" "$repo"
 }
 
 # ============================================
@@ -455,13 +391,6 @@ clear_all_flow_labels() {
     local status_labels
     status_labels=$(get_status_label_names)
     for label in $status_labels; do
-        remove_issue_label "$issue_number" "$label" "$repo"
-    done
-
-    # Remove validation labels
-    local validation_labels
-    validation_labels=$(get_validation_label_names)
-    for label in $validation_labels; do
         remove_issue_label "$issue_number" "$label" "$repo"
     done
 

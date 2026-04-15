@@ -3,17 +3,16 @@ name: dev-flow
 description: |
   **统一开发工作流 — Issue 驱动或 Plan 驱动的开发任务必须使用此技能。**
   
-  提供协议驱动、状态机强制的 Issue → Plan → 执行 → 验证 完整流程。
+  提供 4-state 状态机强制的完整开发流程：planning → executing → verifying → done
   
-  **必须使用本技能的场景**（即使未明确提及）：
-  - 任何涉及 GitHub Issue 的开发任务（#N、Issue N、"这个 issue"、"那个任务"）
+  **必须使用本技能的场景**：
+  - 任何涉及 GitHub Issue 的开发任务（#N、"这个 issue"、"那个任务"）
   - 用户说"做/开发/处理/搞定/完成"某个功能或 bug
   - 用户要求"开始开发"、"继续开发"、"执行计划"、"归档计划"
   - 用户要求创建、修改、管理 Plan 文件
   - 用户说"写个方案"、"出个计划"、"怎么实现"
   - 从 PRD 分解任务、创建 Issue
-  - 用户提到 "dev-flow"、"开发流程"、"Plan 管理"
-  - **无 Issue 的快速开发**：用户直接说"做个 plan"或"写个方案"（跳过 Issue）
+  - **无 Issue 快速开发**：用户直接说"做个 plan"
   
   **协议依赖**: git-worktrees 技能（可选，用于隔离开发）
 compatibility:
@@ -24,428 +23,226 @@ compatibility:
 
 # dev-flow
 
-## CRITICAL: Dangerous Operations Require Human Authorization
-
-The agent **must obtain explicit user authorization before executing**:
-
-| Command | Reason | Authorization Required |
-|---------|---------|------------------------|
-| `flow.sh approve <plan> --confirm` | Human gate for planning → executing | User says "approved", "审批通过" |
-| `flow.sh archive <plan> --confirm` | Human gate for executing → done | User says "validation passed", "验证通过" |
-| `flow.sh reset <plan>` | **Destructive**: loses all progress | User says "reset", "重置", explicitly confirming loss |
-
-Under **no circumstances** should the agent:
-- Execute these commands on behalf of the user without authorization
-- Ask the user to let the agent run these commands
-- Bypass the check by proceeding without confirmation
-
-If the user has not explicitly authorized, the agent **must stop and wait**.
-
-## CRITICAL: State Machine Compliance
-
-The agent **must strictly follow** the state machine sequence:
+## 状态机 (4-State Model)
 
 ```
-plan → approve --confirm → complete → archive --confirm
+planning → executing → verifying → done
+     ↑          ↑           ↑         ↑
+ 创建 Plan   审批通过    用户验证通过   归档收尾
 ```
 
-| Phase | Agent Action | Human Gate |
-|-------|---------------|------------|
-| Implementation | Execute after `approve --confirm` | `approve --confirm` |
-| Validation | Run tests, verify changes, mark Acceptance Criteria **immediately** per item | `archive --confirm` |
-
-### Verification Discipline
-
-1. **Mark Progress Immediately**: Each completed verification item must be marked `[x]` in the Plan file **right away**, not batched at the end
-2. **Clean Up Test Data**: Test Issues created during verification must be **deleted** (not closed) after use:
-   ```bash
-   gh issue delete <issue> --repo <repo> --yes
-   ```
-3. **No Skipping**: Never skip validation phase or proceed to `archive` without user confirmation
-
-## 状态机 (3-State Model)
-
-```
-planning → executing → done
-     ↑         ↑         ↑
- 创建 Plan  用户确认审批  验证/PR merged
-```
-
-| 状态 | 含义 | Label（有 Issue 时） |
-|------|------|-------|
+| 状态 | 含义 | Issue Label |
+|------|------|-------------|
 | `planning` | 规划编写（含调查） | `status/planning` |
-| `executing` | 执行中 | `status/in-progress` |
-| `done` | 已归档 | Issue closed |
+| `executing` | 执行实施中 | `status/in-progress` |
+| `verifying` | 实施完成，等待用户验证 | `status/verifying` |
+| `done` | 已完成，等待归档 | Issue 未关闭 |
 
-### Label 子状态机制（有 Issue 时）
+**关键设计**：
+- Plan Status 与 Issue 主状态标签 1:1 对应
+- `complete` 触发 `executing -> verifying` 状态跃迁
+- `verify --confirm` 是用户验证门（PR / 无 PR 两条路径统一）
+- `archive` 仅做归档收尾，不承担用户确认职责
 
-| 类别 | Label | 含义 |
-|------|-------|------|
-| 验证 | `validation/awaiting` | 等待用户验证（叠加，不替换主状态） |
-| 验证 | `validation/passed` | 验证通过（叠加） |
-| PR | `pr/opened` | PR 已创建（叠加） |
+## 人类授权门
 
-## 命令
+Agent **必须等待用户明确授权后才执行**：
+
+| 命令 | 授权时机 | 用户表达 |
+|------|----------|----------|
+| `flow.sh approve <plan> --confirm` | 审批通过 | "审批通过"、"approved" |
+| `flow.sh verify <plan> --confirm` | 用户验证通过（无 PR） | "验证通过"、"validation passed" |
+| `flow.sh reset <plan>` | 重置（破坏性） | "重置"、"reset" |
+
+**禁止行为**：
+- 未经授权执行带 `--confirm` 的命令
+- 告诉用户"你自己执行这个脚本"
+- 跳过验证门直接推进状态
+
+## 命令流
 
 ```bash
-# 创建 Issue（可选，跳过则直接用 plan）
-flow.sh new-issue --title "<title>" --project <name> --type <type> [options]
-# 可选参数: --goal, --background, --scope, --out-of-scope, --reference, --body
+# Issue 驱动模式
+flow.sh plan <issue> [--project <name>] [--check]       # 创建 Plan
+flow.sh approve <issue> --confirm [--worktree]          # 审批 → executing
+flow.sh complete <issue> [--pr]                         # 完成 → verifying
+flow.sh verify <issue> --confirm                        # 用户验证 → done（无 PR）
+flow.sh archive <issue>                                 # 归档
 
-# 生命周期（两种模式）
-# 模式 1: Issue 驱动
-flow.sh plan <issue> [--project <name>] [--check]      # 创建 Plan（含调查）
-flow.sh approve <issue> --confirm [--worktree]         # 审批 → 执行
-flow.sh complete <issue> [--pr]                        # 完成
-flow.sh archive <issue> [--confirm]                    # 归档
-
-# 模式 2: 无 Issue（快速开发）
-flow.sh plan --title "<title>" --project <name> --type <type> [--check]
+# 无 Issue 快速开发模式
+flow.sh plan --title "<title>" --project <name> --type <type>
 flow.sh approve <plan-name> --confirm [--worktree]
 flow.sh complete <plan-name> [--pr]
-flow.sh archive <plan-name> --confirm
-
-# 查询
-flow.sh status <issue-or-plan>                         # 查看状态
-flow.sh list                                           # 列出任务
-flow.sh reset <issue-or-plan>                          # 重置到 planning
-flow.sh decompose-prd <prd> [--dry-run]                # 从 PRD 创建 Issue
+flow.sh verify <plan-name> --confirm                    # 无 PR 路径用户验证门
+flow.sh archive <plan-name>
 ```
 
 ### 参数说明
 
 | 参数 | 含义 |
 |------|------|
-| `<issue>` | Issue 编号（数字，如 `93`） |
-| `<plan-name>` | Plan 名称（如 `refactor-optimize-files-table`） |
-| `<issue-or-plan>` | 智能识别：数字 → Issue，字符串 → Plan |
 | `--check` | 验证 Plan 合规性（不创建） |
-| `--worktree` | 创建隔离开发环境 |
+| `--worktree` | 创建隔离开发环境（前置检查优先） |
 | `--pr` | 完成时创建 PR |
-| `--confirm` | **人工确认**（Agent 禁止执行） |
-
-## plan 命令要求
-
-### Issue 驱动模式
-
-运行 `flow.sh plan <issue>` 前，Issue 必须有 `project/*` label，否则会报错并显示修复指引。
-
-示例：
-```bash
-# 添加项目 label
-gh issue edit <issue> --add-label 'project/ontology'
-```
-
-### 无 Issue 模式
-
-运行 `flow.sh plan --title ...` 时，必须提供：
-- `--title "<title>"` — Plan 标题
-- `--project <name>` — 目标项目
-- `--type <type>` — 类型（feature/fix/refactor/docs/chore/test）
-
-示例：
-```bash
-flow.sh plan --title "优化 Affected Files 表格" --project ontology --type refactor
-```
-
-## 创建 Issue
-
-**必须使用 `flow.sh new-issue`**，禁止直接用 `gh issue create`。
-
-### 参数
-
-| 参数 | 必填 | 说明 |
-|------|------|------|
-| `--title` | ✅ | Issue 标题，格式：`<type>(<scope>): <description>` |
-| `--project` | ✅ | 目标项目名（格式：`[a-z0-9-]+`） |
-| `--type` | ✅ | 类型：`feature`、`fix`、`refactor`、`docs`、`chore` |
-| `--goal` | ❌ | 一句话目标 |
-| `--background` | ❌ | 背景描述 |
-| `--scope` | ❌ | 范围项（逗号分隔） |
-| `--out-of-scope` | ❌ | 不做的项（逗号分隔） |
-| `--reference` | ❌ | 研究报告路径 |
-| `--body` | ❌ | 完整 body（结构化参数优先） |
-
-### 自动添加的 Labels
-
-- `status/planning` — 初始状态
-- `type/*` — 根据 `--type` 参数
-- `project/*` — 根据 `--project` 参数
-
-### Issue 标题 scope 规范
-
-`--title` 中的 `(<scope>)` 应使用**组件级名称**（如 `dev-flow`、`wopal-cli`、`plan-sync`），避免使用大类名（如 `skills`、`commands`）。
-
-```bash
-# ✅ 精确 scope
---title "refactor(dev-flow): 优化 plan 模板与验收流程"
---title "feat(wopal-cli): add skills remove command"
-
-# ❌ 过宽 scope
---title "refactor(skills): 优化 plan 模板与验收流程"
---title "feat(cli): add skills remove command"
-```
-
-### 示例
-
-```bash
-# 基本用法（使用模板）
-flow.sh new-issue \
-  --title "feat(wopal-cli): add skills remove command" \
-  --project wopal-cli \
-  --type feature
-
-# 结构化参数（一步填入讨论结果）
-flow.sh new-issue \
-  --title "feat(mac-reminder): 个人待办技能" \
-  --project ontology \
-  --type feature \
-  --goal "为 Wopal 提供个人待办管理，通过 macOS Reminders App 实现" \
-  --background "经调研 AppleScript 可直接操作 Reminders App，JXA 有超时问题排除" \
-  --scope "AppleScript 封装脚本, SKILL.md, 安装部署与 E2E 验证" \
-  --out-of-scope "优先级排序, 依赖管理, 本地文件存储"
-```
-
-**Issue Body 模板**：见 `templates/issue.md`
+| `--confirm` | **用户授权确认**（Agent 收到授权后执行） |
 
 ## 验证路径
 
 ```
 executing
     │
-    ├── complete --pr ──→ pr/opened ──→ PR merged ──→ archive
+    ├── complete --pr ──→ verifying + pr/opened
+    │       │
+    │       └── PR merged + 用户确认 ──→ verify --confirm ──→ done
     │
-    └── complete ──→ validation/awaiting（叠加）
-                              │
-                              └── archive --confirm ──→ done
+    └── complete ──→ verifying
+            │
+            └── verify --confirm ──→ done
+                    │
+                    └── archive ──→ 归档收尾
 ```
 
-| 场景 | 命令 | 验证方式 | 归档条件 |
-|------|------|----------|----------|
-| 有 PR | `complete --pr` | PR review | PR merged（自动归档） |
-| 无 PR | `complete` | 用户验证 | `validation/awaiting` + `--confirm` |
+| 场景 | 用户验证门 | 归档条件 |
+|------|------------|----------|
+| **有 PR** | `verify --confirm`（前提：PR merged） | PR merged + 用户确认 → `archive` |
+| **无 PR** | `verify --confirm` | 用户验证通过 → `archive` |
 
-## Issue 与 PR 仓库分离
-
-**设计决策**：Issue 在空间仓库统一管理，PR 在项目仓库创建。
-
-| 资源 | 仓库 | 原因 |
-|------|------|------|
-| **Issue** | `sampx/wopal-space` | 跨项目任务统一追踪 |
-| **PR** | 项目仓库（如 `wopal-cn/wopal-cli`） | 代码提交在项目 |
-
-### 关键流程
-
-1. **Plan 必须有 `Target Project`** → 指定代码变更在哪个项目
-2. **创建 PR 时**：
-   - 从 Plan 读取 `Target Project`
-   - 获取项目目录的 git remote
-   - 在项目仓库创建 PR
-3. **更新 Issue 时**：
-   - PR URL 写入 Issue body（空间仓库）
-   - Label 更新在空间仓库
-
-### PR 状态检测（archive）
-
-`archive` 命令从 Issue body 解析 PR URL：
-- 格式：`| PR | https://github.com/owner/repo/pull/123 |`
-- 从 URL 提取 owner/repo 和 PR 号
-- 用 `gh pr view --json mergedAt` 检测是否 merged
-
-## Labels 管理
-
-**设计**：`plan` 命令自动补全缺失的 labels，无需 AI 手动添加。
-
-### Label 体系（3-state model）
+## Label 体系
 
 | 类别 | Labels | 用途 |
 |------|--------|------|
-| **status** | `status/planning` → `status/in-progress` | 主状态（单一互斥） |
+| **status** | `status/planning` → `status/in-progress` → `status/verifying` | 主状态（单一互斥） |
 | **type** | `type/feature`, `type/bug`, `type/refactor`, `type/docs`, `type/chore` | 任务类型 |
 | **project** | `project/ontology`, `project/wopal-cli`, `project/space` | 目标项目 |
-| **validation** | `validation/awaiting`, `validation/passed` | 验证子状态（叠加） |
 | **pr** | `pr/opened` | PR 子状态（叠加） |
 
-### 自动补全时机
+**已移除**: `validation/awaiting`, `validation/passed` — 验证现在是主状态 `verifying`
 
-`plan` 命令执行时：
-1. 从 Issue title 解析 type（`feat:` → `type/feature`）
-2. 从 Issue body 或 `--project` 参数获取 project
-3. 自动添加 `status/planning` + `type/*` + `project/*`
+## 状态映射表
 
-## 标准工作流程
+| 命令 | Plan 状态 | Issue Label |
+|------|----------|-------------|
+| `plan` | `planning` | `status/planning` |
+| `approve --confirm` | `executing` | `status/in-progress` |
+| `complete` | `verifying` | `status/verifying` |
+| `complete --pr` | `verifying` | `status/verifying` + `pr/opened` |
+| `verify --confirm`（无 PR） | `done` | 保持（等待 archive） |
+| `verify --confirm`（PR merged） | `done` | 保持（等待 archive） |
+| `archive` | 归档文件 | Issue closed |
 
-**模式 1: Issue 驱动（推荐用于正式任务）**
-```
-1. plan <issue>        → AI 创建 Plan + 调查研究 + 编写 (status: planning)
-2. approve <issue>     → AI 提交审批，暂停等待
-    用户确认后 → approve <issue> --confirm [--worktree]
-3. complete <issue>    → AI 完成，添加验证 Label 或创建 PR
-    无 PR → 用户验证后执行 archive --confirm
-    有 PR → 等待 PR merge
-4. archive <issue>     → AI 归档 (status: done)
-```
+## 安全检查
 
-**模式 2: 无 Issue（适用于快速开发/原型/临时任务）**
-```
-1. plan --title "<title>" --project <name> --type <type>
-    → AI 创建 Plan + 编写 (status: planning)
-2. approve <plan-name> → AI 提交审批，暂停等待
-    用户确认后 → approve <plan-name> --confirm [--worktree]
-3. complete <plan-name> [--pr]
-    → AI 完成（无 Issue label 管理）
-4. archive <plan-name> --confirm
-    → 用户确认后归档 (status: done)
-```
+### approve 前置检查
 
-**差异对比**：
+`approve --confirm` 在状态推进前执行：
+1. **目标项目 git 脏工作区检查** — 有未提交变更则阻断并提示风险
+2. **worktree 创建**（若 `--worktree`）— 失败则保持 `planning` 状态
 
-| 特性 | Issue 驱动 | 无 Issue |
-|------|-----------|----------|
-| Issue 状态同步 | ✅ 自动同步 Label | ❌ 跳过 |
-| PR 关联 | ✅ PR URL 写入 Issue | ❌ PR 无 Issue ref |
-| 验证 Label | ✅ validation/awaiting | ❌ 直接用 --confirm |
-| 适用场景 | 正式任务、跨项目追踪 | 快速原型、临时优化 |
+**顺序保证**：所有前置检查成功后才推进状态，防止失败污染状态。
 
-## AI 使用要点
+### approve 评审 commit
 
-### 两个暂停点
+评审通过后自动提交 Plan 变更，保证评审对象稳定：
+- 仅提交 Plan 文件变更
+- 提交信息：`review: approve plan <plan-name>`
+- 回显 commit hash 便于追溯
 
-| 命令 | 触发者 | AI 行为 |
-|------|--------|---------|
-| `approve --confirm` | 用户 | 执行 `approve` 后**暂停**，等用户确认 |
-| `archive --confirm` | 用户 | 执行 `complete` 后**暂停**，等用户验证 |
-
-### Acceptance Criteria（分层）
-
-Plan 中的 `## Acceptance Criteria` 分为两层：
+## Acceptance Criteria 分层
 
 ```
 ## Acceptance Criteria
 
 ### Agent Verification
-- [x] 代码构建通过  ← Agent 完成 complete 前必须打勾
-- [x] 单元测试通过  ← complete 会校验此子章节
+- [x] 代码构建通过  ← Agent 完成，complete 前校验
+- [x] 单元测试通过
 
 ### User Validation
-- 重启后功能正常  ← 用户确认项，纯文本格式
-- UI 交互确认     ← archive --confirm 会校验此子章节
+- 重启后功能正常    ← 用户确认，verify --confirm 前
+- UI 交互确认
 ```
 
-| 子章节 | 校验时机 | 打勾者 |
+| 子章节 | 校验时机 | 执行者 |
 |--------|----------|--------|
-| `### Agent Verification` | `complete` | Agent |
-| `### User Validation` | `archive --confirm` | 用户 |
+| `### Agent Verification` | `complete` | Agent 打勾 |
+| `### User Validation` | `verify --confirm` | 用户确认（纯文本） |
 
-旧 Plan 无子章节时，`complete` 退化为检查整个 AC（向后兼容）。
+## 标准工作流
 
-### 实施后强制流程
+**Issue 驱动（正式任务）**：
+```
+1. plan <issue>           → AI 创建 Plan + 调查 (status: planning)
+2. approve <issue>        → AI 提交审批，暂停
+   用户授权后 → approve <issue> --confirm [--worktree]
+3. complete <issue>       → AI 完成 → verifying
+4. verify <issue>         → AI 提示用户验证
+   用户验证后 → verify <issue> --confirm
+5. archive <issue>        → AI 归档
+```
 
-Agent 完成所有 Task 实施后，**必须**按以下顺序执行：
+**PR 路径**：
+```
+complete <issue> --pr → verifying + pr/opened
+等待 PR merge + 用户确认
+verify <issue> --confirm → done
+archive <issue> → 归档
+```
 
-1. **逐项验证 Agent Verification AC** → 每验证一项立即在 Plan 中打勾 `[x]`
-2. **执行 `flow.sh complete <issue>`** → 校验 Agent Verification 是否全部勾选
-3. **输出完成报告**，暂停等用户验证
+## 创建 Issue
 
-禁止跳过验证直接 complete，禁止批量打勾不实际验证。
+```bash
+flow.sh new-issue \
+  --title "feat(cli): add skills remove" \
+  --project wopal-cli \
+  --type feature \
+  --goal "一句话目标" \
+  --scope "范围项 1, 范围项 2"
+```
 
-### 最佳实践
+**必须使用 `flow.sh new-issue`**，禁止直接用 `gh issue create`。
 
-- **plan 阶段**：随时用 `--check` 验证格式
-- **Issue 标题**：使用类型前缀（`fix:`, `feat:`, `docs:`）
-- **worktree**：复杂功能用 `--worktree` 隔离
+## Plan 调查阶段
 
-## plan 命令阶段：调查 + 编写
+`plan` 命令包含调查子阶段：
+1. 识别组件、阅读源文件
+2. 映射当前架构、识别代码路径
+3. 评估复杂度、识别风险
+4. 检查现有模式、查看测试
+5. 确定 Issue 类型
 
-plan 命令包含两个子阶段（AI 自然衔接，无显式切换）：
-
-### 调查子阶段（10 步 Spike 流程）
-
-1. **识别组件** - 确定涉及的模块/子系统，阅读代码确认
-2. **彻底阅读源文件** - 理解逻辑，跟踪调用链
-3. **映射当前架构** - 组件交互、数据流、边界
-4. **识别精确代码路径** - 文件路径和行号
-5. **评估复杂度**：Low/Medium/High
-6. **识别风险与边界情况** - 权衡、需人类输入的决策
-7. **检查现有模式** - 类似功能实现方式
-8. **查看测试** - 测试模式、覆盖率
-9. **检查架构文档** - docs/ 相关文档
-10. **确定 Issue 类型** - feat/fix/refactor/chore/perf/docs
-
-### 编写子阶段
-
-基于调查结果填充 Plan 章节：
-- Scope Assessment：Complexity、Confidence
-- Technical Context：架构描述、变更原因、风险
-- Affected Files：表格（Component + Files + Operation + Role）
-- In Scope/Out of Scope
-- Implementation：Task 分解
-- Test Plan
-
-### approve 时验证调查充分性
-
-check-doc 强制验证：
+`approve` 时 `check-doc` 验证调查充分性：
 - Technical Context 非空
 - Affected Files 至少一行
-- Complexity/Confidence 已填写（非占位符）
-- 每个 Task 有 Files 和 Verification
-
-## Plan 结构
-
-完整模板：`templates/plan.md`（由 `flow.sh plan` 填充生成）
-
-| 章节 | 用途 | 必填时机 |
-|------|------|----------|
-| Metadata | Issue 编号、类型、状态 | 始终（自动填充） |
-| Scope Assessment | Complexity、Confidence | approve 前（非占位符校验） |
-| Goal | 一句话目标 | approve 前 |
-| Technical Context | 架构描述、变更原因、风险 | approve 前（非空校验） |
-| In Scope / Out of Scope | 边界界定（纯文本列表，无 checkbox） | approve 前 |
-| Affected Files | Component + Files + Operation + Role 表格 | approve 前（非空校验） |
-| Implementation | Task 分解，每 Task 有 Files、Changes、Verification | approve 前 |
-| Delegation Strategy | 批次划分、执行者、依赖 | 可选（简单任务填 N/A） |
-| Test Plan | 单元/集成/E2E 测试分类、回归验证、调整策略 | approve 前 |
-| Acceptance Criteria | Agent 验证项（checkbox）+ 用户确认项（纯文本） | approve 前 |
+- Complexity/Confidence 已填写
 
 ## 错误处理
 
 | 错误 | 解决 |
 |------|------|
-| `Invalid transition` | 按顺序执行命令 |
+| `Invalid transition` | 按状态顺序执行 |
 | `Plan not found` | 先运行 `plan` |
-| `check-doc failed` | 修复 Plan 后重新 `plan --check` |
-
-## 状态映射表
-
-| 命令 | Plan 状态 | Issue Labels |
-|------|----------|-------------|
-| `new-issue` | 无 | `status/planning` + `type/*` + `project/*` |
-| `plan` | `planning` | `status/planning`（不变） |
-| `approve --confirm` | `executing` | `status/in-progress`（替换） |
-| `complete` | `executing` | `status/in-progress` + `validation/awaiting`（叠加） |
-| `complete --pr` | `executing` | `status/in-progress` + `pr/opened`（叠加） |
-| `archive` | `done` | closed |
+| `check-doc failed` | 修复 Plan 后 `plan --check` |
+| `dirty workspace` | 先提交或用 `--worktree` |
 
 ## 示例
 
 ```
 用户: 帮我开发 Issue #14
 
-AI: 
+AI:
   flow.sh plan 14
-  [调查研究 + 编写 Plan...]
-  flow.sh plan 14 --check
+  [调查 + 编写...]
   flow.sh approve 14
-  ⚠️ 暂停，等待审批确认
+  ⚠️ 等待审批
 
 用户: 审批通过
 
 AI: flow.sh approve 14 --confirm --worktree
     [执行实施...]
     flow.sh complete 14
-    ⚠️ 暂停，等待验证
+    ⚠️ 等待用户验证
 
 用户: 验证通过
 
-AI: flow.sh archive 14 --confirm
+AI: flow.sh verify 14 --confirm
+    flow.sh archive 14
 ```

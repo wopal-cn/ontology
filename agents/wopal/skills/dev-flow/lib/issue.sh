@@ -580,7 +580,6 @@ EOF
     log_success "PR created: $pr_url"
 
     # Update Issue in space repo
-    gh issue edit "$issue_number" --repo "$space_repo" --add-label "status/in-review" >/dev/null 2>/dev/null || true
     update_issue_link "$issue_number" "$space_repo" "pr" "$pr_url"
 }
 

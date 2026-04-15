@@ -33,14 +33,14 @@ source "$SKILL_DIR/lib/labels.sh"
 # ============================================
 
 # Valid states in order (colon-separated for easy parsing)
-# 3-state model: planning → executing → done
-STATES_LIST="planning:executing:done"
+# 4-state model: planning → executing → verifying → done
+STATES_LIST="planning:executing:verifying:done"
 
 # Check if a state is valid
 _is_valid_state() {
     local state="$1"
     case "$state" in
-        planning|executing|done)
+        planning|executing|verifying|done)
             return 0
             ;;
         *)
@@ -49,13 +49,14 @@ _is_valid_state() {
     esac
 }
 
-# Get state order (1-3)
+# Get state order (1-4)
 _get_state_order() {
     local state="$1"
     case "$state" in
         planning)   echo 1 ;;
         executing)  echo 2 ;;
-        done)       echo 3 ;;
+        verifying)  echo 3 ;;
+        done)       echo 4 ;;
         *)          echo 0 ;;
     esac
 }
@@ -99,18 +100,19 @@ validate_transition() {
         return 0
     fi
 
-    # Check specific transitions using case (3-state model)
+    # Check specific transitions using case (4-state model)
     case "${current_status}:${new_status}" in
-        planning:executing|executing:done)
+        planning:executing|executing:verifying|verifying:done)
             return 0
             ;;
         *)
             echo "Error: Invalid transition: $current_status -> $new_status" >&2
             echo "Valid transitions from '$current_status':" >&2
             case "$current_status" in
-                planning)  echo "  planning -> executing (requires --confirm)" >&2 ;;
-                executing) echo "  executing -> done (after validation)" >&2 ;;
-                done)      echo "  (no further transitions)" >&2 ;;
+                planning)   echo "  planning -> executing (requires --confirm)" >&2 ;;
+                executing)  echo "  executing -> verifying (after complete)" >&2 ;;
+                verifying)  echo "  verifying -> done (requires verify --confirm)" >&2 ;;
+                done)       echo "  (no further transitions)" >&2 ;;
             esac
             echo "  * -> planning (reset)" >&2
             return 1
@@ -120,7 +122,7 @@ validate_transition() {
 
 # Get current status from Plan file
 # Usage: get_current_status <plan_file>
-# Output: status string (e.g., "planning", "executing")
+# Output: status string (e.g., "planning", "executing", "verifying")
 get_current_status() {
     local plan_file="$1"
 
@@ -174,9 +176,10 @@ update_plan_status() {
 
 # Sync Issue Label based on plan status
 # Usage: sync_issue_label <plan_file> <status>
-# Status mapping (3-state model):
+# Status mapping (4-state model):
 #   planning  -> status/planning
 #   executing -> status/in-progress
+#   verifying -> status/verifying
 #   done      -> Issue closed
 sync_issue_label() {
     local plan_file="$1"
@@ -233,10 +236,11 @@ get_status_info() {
     order=$(_get_state_order "$status")
 
     case "$status" in
-        planning)  echo "$order:planning:📝" ;;
-        executing) echo "$order:executing:🚀" ;;
-        done)      echo "$order:done:📦" ;;
-        *)         echo "0:unknown:❓" ;;
+        planning)   echo "$order:planning:📝" ;;
+        executing)  echo "$order:executing:🚀" ;;
+        verifying)  echo "$order:verifying:🔍" ;;
+        done)       echo "$order:done:📦" ;;
+        *)          echo "0:unknown:❓" ;;
     esac
 }
 
@@ -244,9 +248,10 @@ get_status_info() {
 # Usage: list_valid_states
 list_valid_states() {
     echo "Valid states (in order):"
-    echo "  1. planning  - Writing plan document (includes investigation)"
-    echo "  2. executing - Currently being executed"
-    echo "  3. done      - Archived"
+    echo "  1. planning   - Writing plan document (includes investigation)"
+    echo "  2. executing  - Currently being executed"
+    echo "  3. verifying  - Execution complete, awaiting user verification"
+    echo "  4. done       - Archived"
     echo ""
     echo "Special transitions:"
     echo "  * -> planning - Reset from any state"

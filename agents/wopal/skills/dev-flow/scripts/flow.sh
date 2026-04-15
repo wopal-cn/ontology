@@ -1,12 +1,13 @@
 #!/bin/bash
-# dev-flow — 统一开发工作流 (3-state model)
+# dev-flow — 统一开发工作流 (4-state model)
 # Usage: flow.sh <command> <issue> [options]
 #
 # Commands:
 #   new-issue           创建规范化的 Issue
 #   plan <issue>        创建 Plan 并进入规划阶段
 #   approve <issue>     提交审批 → 执行
-#   complete <issue>    标记完成
+#   complete <issue>    完成开发 → 验证阶段
+#   verify <issue>      用户验证 → 完成
 #   archive <issue>     归档
 #   status <issue>      查看任务状态
 #   list                列出进行中任务
@@ -38,7 +39,6 @@ source "$SKILL_DIR/lib/check-doc.sh"
 # ============================================
 
 PLAN_PROJECT=""
-
 ROOT_DIR="$(find_workspace_root)"
 
 # ============================================
@@ -216,6 +216,7 @@ source "$SKILL_DIR/scripts/cmd/new-issue.sh"
 source "$SKILL_DIR/scripts/cmd/plan.sh"
 source "$SKILL_DIR/scripts/cmd/approve.sh"
 source "$SKILL_DIR/scripts/cmd/complete.sh"
+source "$SKILL_DIR/scripts/cmd/verify.sh"
 source "$SKILL_DIR/scripts/cmd/archive.sh"
 source "$SKILL_DIR/scripts/cmd/query.sh"
 
@@ -228,6 +229,7 @@ case "${1:-help}" in
     plan)           shift; cmd_plan "$@" ;;
     approve)        shift; cmd_approve "$@" ;;
     complete)       shift; cmd_complete "$@" ;;
+    verify)         shift; cmd_verify "$@" ;;
     archive)        shift; cmd_archive "$@" ;;
     status)         shift; cmd_status "$@" ;;
     list)           shift; cmd_list "$@" ;;

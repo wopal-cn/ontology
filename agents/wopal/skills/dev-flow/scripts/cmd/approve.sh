@@ -1,8 +1,11 @@
 # cmd_approve: Approve plan and transition to executing phase
-# 3-state model: planning -> executing -> done
+# 4-state model: planning -> executing -> verifying -> done
 # --confirm triggers state transition to executing
 # --worktree creates isolated worktree for execution
 # Issue sync is automatic when plan has Issue link
+#
+# CRITICAL: Plan 文件有未提交变更时由 agent 手动 commit, 脚本不生成 commit message
+#
 # Usage:
 #   flow.sh approve <issue> [--confirm] [--worktree]
 #   flow.sh approve <plan-name> [--confirm] [--worktree]
@@ -56,6 +59,14 @@ cmd_approve() {
 
     # State machine validates transition in update_plan_status
 
+    # Extract Issue number (if plan has Issue link)
+    local issue_number
+    issue_number=$(grep "Issue.*#" "$plan_file" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
+
+    local plan_relative_path
+    plan_relative_path=$(realpath --relative-to="$ROOT_DIR" "$plan_file" 2>/dev/null || \
+        echo "${plan_file#$ROOT_DIR/}")
+
     # Run check-doc first (capture output, only show on failure)
     local check_output
     check_output=$(check_doc_plan "$plan_file" 2>&1)
@@ -67,23 +78,184 @@ cmd_approve() {
         exit 1
     fi
 
+    # ============================================
+    # Plan 文件检查（无论 confirm 与否都必须通过）
+    # ============================================
+    # Plan 变更必须由 agent 手动 commit（agent 了解方案内容，由它写 commit message）。
+    # 脚本检测到 Plan 有未提交变更时阻断，提示 agent 先手动 commit。
+    # ============================================
+
+    local plan_git_status
+    plan_git_status=$(git -C "$ROOT_DIR" status --porcelain -- "$plan_relative_path" 2>/dev/null || echo "")
+
+    if [[ -n "$plan_git_status" ]]; then
+        log_error "方案文件有未提交变更，必须先手动 commit 才能继续审批"
+        echo ""
+        echo "未提交文件:"
+        echo "$plan_git_status" | while read -r line; do
+            echo "  $line"
+        done
+        echo ""
+        echo "请根据方案内容编写 commit message 后手动提交:"
+        echo "  cd $ROOT_DIR"
+        echo "  git add $(echo "$plan_relative_path" | sed 's/ /\\ /g')"
+        echo "  git commit -m \"你的 commit message\""
+        echo "然后重新执行: flow.sh approve $input"
+        echo ""
+        exit 1
+    fi
+
+    # ============================================
+    # Plan push 检测（Issue link 需要文件存在于 GitHub）
+    # ============================================
+    
+    if [[ -n "$issue_number" ]]; then
+        local plan_pushed
+        plan_pushed=$(git -C "$ROOT_DIR" branch --contains "$plan_relative_path" 2>/dev/null | grep -q "origin/main" && echo "true" || echo "false")
+        
+        # Check if commit is ahead of origin
+        local ahead_count
+        ahead_count=$(git -C "$ROOT_DIR" rev-list --count origin/main..HEAD 2>/dev/null || echo "0")
+        
+        if [[ "$ahead_count" -gt 0 ]]; then
+            log_error "方案文件已 commit 但未 push，Issue 链接无法打开"
+            echo ""
+            echo "请先 push 后再审批:"
+            echo "  cd $ROOT_DIR && git push"
+            echo ""
+            echo "然后重新执行: flow.sh approve $input"
+            exit 1
+        fi
+    fi
+
     # If no --confirm, wait for user confirmation
     if [[ "$confirm" != true ]]; then
         echo "Status: awaiting approval"
         echo "Plan validated. Next: flow.sh approve $input --confirm"
+        echo ""
+        echo "收到用户审批授权后，由 agent 执行:"
+        echo "  flow.sh approve $input --confirm"
         exit 0
     fi
 
+    # ============================================
+    # PRE-FLIGHT CHECKS (before state transition)
+    # ============================================
+
     local repo
     repo=$(get_space_repo)
+
+    local project
+    project=$(get_plan_project "$plan_file")
+
+    # --- Pre-flight Check 1: Target Project dirty workspace ---
+    local project_dir="$ROOT_DIR/projects/$project"
+    local dirty_workspace=false
+
+    if [[ -n "$project" && -d "$project_dir" ]]; then
+        local git_status
+        git_status=$(cd "$project_dir" && git status --porcelain 2>/dev/null || echo "")
+        if [[ -n "$git_status" ]]; then
+            dirty_workspace=true
+        fi
+    fi
+
+    # --- Pre-flight Check 2: Worktree creation (if requested) ---
+    local worktree_created=false
+    local stashed=false
+    local branch=""
+
+    if [[ "$use_worktree" == true ]]; then
+        if [[ -z "$project" ]]; then
+            log_error "Cannot create worktree: no Target Project in plan"
+            exit 1
+        fi
+
+        local slug
+        slug=$(extract_slug "$plan_name")
+
+        if [[ -n "$issue_number" ]]; then
+            branch="issue-${issue_number}-${slug}"
+        else
+            branch="${slug}"
+        fi
+
+        # Stash dirty workspace changes before worktree creation
+        if [[ "$dirty_workspace" == true ]]; then
+            log_warn "目标项目 $project 有未提交的变更，自动 stash 以创建 worktree"
+            if ! (cd "$project_dir" && git stash push -m "dev-flow: stash before worktree for #$issue_number" >/dev/null 2>&1); then
+                log_error "Stash 失败，无法继续创建 worktree"
+                exit 1
+            fi
+            stashed=true
+            log_success "已 stash 未提交变更"
+        fi
+
+        local worktree_script="$SKILL_DIR/../git-worktrees/scripts/worktree.sh"
+        if [[ ! -f "$worktree_script" ]]; then
+            log_warn "git-worktrees skill not found, skipping worktree creation"
+        else
+            log_step "Pre-flight: creating worktree..."
+            log_info "Project: $project, Branch: $branch"
+
+            if bash "$worktree_script" create "$project" "$branch" --no-install --no-test 2>&1; then
+                worktree_created=true
+                log_success "Worktree created successfully"
+
+                # Restore stashed changes to main workspace
+                if [[ "$stashed" == true ]]; then
+                    if (cd "$project_dir" && git stash pop >/dev/null 2>&1); then
+                        log_success "已恢复之前 stash 的变更"
+                    else
+                        log_warn "Stash restore 失败，变更仍在 stash 中: cd $project_dir && git stash list"
+                    fi
+                fi
+            else
+                log_error "Worktree creation failed - aborting approve"
+
+                # Restore stashed changes on failure
+                if [[ "$stashed" == true ]]; then
+                    (cd "$project_dir" && git stash pop >/dev/null 2>&1) || true
+                    log_warn "已恢复之前 stash 的变更"
+                fi
+
+                echo ""
+                echo "Plan 状态保持 planning，未进入 executing"
+                echo "请检查 worktree 创建失败原因后重试"
+                exit 1
+            fi
+        fi
+    elif [[ "$dirty_workspace" == true ]]; then
+        # No --worktree but dirty workspace: block and warn
+        local git_status
+        git_status=$(cd "$project_dir" && git status --porcelain 2>/dev/null || echo "")
+
+        log_error "目标项目 $project 有未提交的变更"
+        echo ""
+        echo "未提交文件列表:"
+        echo "$git_status" | head -10 | while read -r line; do
+            echo "  $line"
+        done
+        echo ""
+        echo "风险: 新任务与旧变更混在一起会污染当前 Issue，增加回滚与验证成本"
+        echo ""
+        echo "建议处理方式:"
+        echo "  1. 先提交当前变更: cd $project_dir && git add . && git commit"
+        echo "  2. 改用 worktree 隔离: flow.sh approve $input --confirm --worktree（会自动 stash 旧变更）"
+        echo ""
+        exit 1
+    fi
+
+    # ============================================
+    # STATE TRANSITION (only after all checks pass)
+    # ============================================
+
+    log_step "Transitioning state: planning -> executing"
 
     # Update status to executing (using state machine)
     update_plan_status "$plan_file" "executing" >/dev/null 2>&1
 
     # Sync Issue if plan has Issue link
-    local issue_number
-    issue_number=$(grep "Issue.*#" "$plan_file" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
-
     if [[ -n "$issue_number" ]]; then
         # Sync Issue status label (planning -> in-progress)
         local status_label
@@ -97,40 +269,15 @@ cmd_approve() {
         ensure_issue_labels "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
     fi
 
-    # Create worktree if requested
-    if [[ "$use_worktree" == true ]]; then
-        local project
-        project=$(get_plan_project "$plan_file")
-
-        if [[ -z "$project" ]]; then
-            log_error "Cannot create worktree: no Target Project in plan"
-            exit 1
-        fi
-
-        local slug
-        slug=$(extract_slug "$plan_name")
-
-        # Branch naming: with Issue prefix or just slug
-        local branch
-        if [[ -n "$issue_number" ]]; then
-            branch="issue-${issue_number}-${slug}"
-        else
-            branch="${slug}"
-        fi
-
-        local worktree_script="$SKILL_DIR/../git-worktrees/scripts/worktree.sh"
-        if [[ ! -f "$worktree_script" ]]; then
-            log_warn "git-worktrees skill not found, skipping worktree creation"
-        else
-            log_step "Creating worktree..."
-            log_info "Project: $project, Branch: $branch"
-            bash "$worktree_script" create "$project" "$branch" --no-install --no-test
-        fi
-    fi
-
     echo "Status: executing"
     if [[ -n "$issue_number" ]]; then
         echo "Issue: #$issue_number"
     fi
+    if [[ "$worktree_created" == true ]]; then
+        echo "Worktree: $ROOT_DIR/.worktrees/${branch}"
+    fi
+    echo ""
     echo "Next: flow.sh complete $plan_name"
+    echo ""
+    echo "实施完成后，执行: flow.sh complete $plan_name"
 }

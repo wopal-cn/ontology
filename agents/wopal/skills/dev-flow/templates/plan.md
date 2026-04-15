@@ -93,7 +93,7 @@
 
 <!--
   模块间协作验证，如：
-  - 命令流程测试（plan → approve → complete）
+  - 命令流程测试（plan → approve → complete → verify）
   - 状态机转换测试
   - Issue/Plan 同步测试
 -->
@@ -105,7 +105,7 @@
 
 <!--
   端到端流程验证，如：
-  - 完整 dev-flow 流程（create → archive）
+  - 完整 dev-flow 流程（plan → approve → complete → verify → archive）
   - 用户实际场景模拟
 -->
 
@@ -145,7 +145,6 @@
 
 <!-- 
   ⚠️ 强制要求：Agent 完成实施后必须验证并打勾
-  这些是 Agent 可以自动完成的验证项（代码验证、测试通过、构建成功等）
   flow.sh complete 会校验此子章节的 checkbox 是否全部勾选
 -->
 - [ ] <Agent 可验证项 1：如代码构建通过>
@@ -154,8 +153,8 @@
 ### User Validation
 
 <!-- 
-  用户确认项：flow.sh archive --confirm 前需用户验证
-  纯文本格式，无需 checkbox。Agent 完成后提示用户，等验证完成后执行 archive
+  用户确认项：flow.sh verify --confirm 前需用户验证
+  纯文本格式，无需 checkbox
 -->
 - <用户验证项 1：如重启后功能正常>
 - <用户验证项 2：如 UI 交互确认>

@@ -407,7 +407,7 @@ archive_plan() {
     local archived_file="$done_dir/${archive_date}-${plan_name}"
     mv "$plan_file" "$archived_file"
 
-    log_success "Plan archived: $archived_file"
+    log_success "Plan archived: $archived_file" >&2
 
     echo "$archived_file"
 }
