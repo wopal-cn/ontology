@@ -8,13 +8,14 @@ function getExecute(toolDefinition: unknown) {
 
 function createMockTaskManager(
   task?: WopalTask,
-  v2Client?: { session?: { diff?: ReturnType<typeof vi.fn> } },
+  v2Client?: { session?: { diff?: ReturnType<typeof vi.fn>; messages?: ReturnType<typeof vi.fn> } },
 ) {
   return {
     getTaskForParent: vi.fn((id: string, parentID: string) =>
       task && task.id === id && task.parentSessionID === parentID ? task : undefined,
     ),
     getV2Client: vi.fn(() => v2Client),
+    getDirectory: vi.fn(() => "/test/dir"),
   }
 }
 
@@ -54,6 +55,7 @@ describe("wopal_task_diff", () => {
     expect(result).toContain("No file changes in this task.")
     expect(mockV2Client.session.diff).toHaveBeenCalledWith({
       sessionID: task.sessionID,
+      directory: "/test/dir",
     })
   })
 

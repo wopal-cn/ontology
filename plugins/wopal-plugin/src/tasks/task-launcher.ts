@@ -165,7 +165,13 @@ export async function launchTask(
 
   void Promise.resolve(promptResult).catch(async (err: unknown) => {
     const error = `Background task execution failed: ${toErrorMessage(err)}`
-    debugLog(`[launch] promptAsync error for ${taskId}: ${error}`)
+    debugLog(`[launch] promptAsync error for ${taskId}: idleNotified=${task.idleNotified} status=${task.status}`)
+
+    // If task was already idle (interrupted by user), don't override state
+    if (task.idleNotified) {
+      debugLog(`[launch] skipping failTask: task ${taskId} was idle, promptAsync rejection is expected after abort`)
+      return
+    }
 
     if (failTask(task, error)) {
       await abortSession(task.sessionID)

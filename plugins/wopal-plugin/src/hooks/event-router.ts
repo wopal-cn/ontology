@@ -57,7 +57,10 @@ export function createEventRouter(ctx: EventRouterHookContext) {
 
       // 检查是否是 wopal_task 子会话
       const task = ctx.taskManager?.findBySession(sessionID)
-      if (!task) return
+      if (!task) {
+        ctx.taskDebugLog(`[onEvent] session.idle for ${sessionID.slice(0, 8)}: no matching task found`)
+        return
+      }
 
       // 拉取消息并诊断
       const diagnostic = await diagnoseIdleSession(sessionID)
@@ -72,7 +75,9 @@ export function createEventRouter(ctx: EventRouterHookContext) {
           task.concurrencyKey = undefined
         }
         ctx.taskDebugLog(`task ${task.id} idle: verdict=${diagnostic.verdict}, reason=${diagnostic.reason}`)
-        ctx.taskManager.notifyParent(task.id).catch(() => {})
+        ctx.taskManager.notifyParent(task.id).catch((err) => {
+          ctx.taskDebugLog(`[notifyParent] error for ${task.id}: ${err instanceof Error ? err.message : String(err)}`)
+        })
       }
     }
 
@@ -92,7 +97,9 @@ export function createEventRouter(ctx: EventRouterHookContext) {
         const task = ctx.taskManager.markTaskErrorBySession(sessionID, error)
         if (task) {
           ctx.taskDebugLog(`task ${task.id} error: ${error}`)
-          ctx.taskManager.notifyParent(task.id).catch(() => {})
+          ctx.taskManager.notifyParent(task.id).catch((err) => {
+            ctx.taskDebugLog(`[notifyParent] error for ${task.id}: ${err instanceof Error ? err.message : String(err)}`)
+          })
         }
       }
     }
