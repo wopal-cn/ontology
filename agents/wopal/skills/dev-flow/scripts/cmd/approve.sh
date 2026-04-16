@@ -79,57 +79,49 @@ cmd_approve() {
     fi
 
     # ============================================
-    # Plan 文件检查（无论 confirm 与否都必须通过）
-    # ============================================
-    # Plan 变更必须由 agent 手动 commit（agent 了解方案内容，由它写 commit message）。
-    # 脚本检测到 Plan 有未提交变更时阻断，提示 agent 先手动 commit。
+    # Plan 文件自动 commit + push（Issue link 需要文件存在于 GitHub）
     # ============================================
 
     local plan_git_status
     plan_git_status=$(git -C "$ROOT_DIR" status --porcelain -- "$plan_relative_path" 2>/dev/null || echo "")
 
     if [[ -n "$plan_git_status" ]]; then
-        log_error "方案文件有未提交变更，必须先手动 commit 才能继续审批"
-        echo ""
-        echo "未提交文件:"
-        echo "$plan_git_status" | while read -r line; do
-            echo "  $line"
-        done
-        echo ""
-        echo "请根据方案内容编写 commit message 后手动提交:"
-        echo "  cd $ROOT_DIR"
-        echo "  git add $(echo "$plan_relative_path" | sed 's/ /\\ /g')"
-        echo "  git commit -m \"你的 commit message\""
-        echo "然后重新执行: flow.sh approve $input"
-        echo ""
-        exit 1
+        # Plan 有未提交变更 → 自动 commit
+        log_step "Auto-committing Plan file..."
+
+        local commit_msg
+        if [[ -n "$issue_number" ]]; then
+            commit_msg="docs(plan): approve plan #${issue_number}"
+        else
+            local plan_filename
+            plan_filename=$(basename "$plan_file" .md)
+            commit_msg="docs(plan): approve plan ${plan_filename}"
+        fi
+
+        if git -C "$ROOT_DIR" add "$plan_relative_path" && \
+           git -C "$ROOT_DIR" commit -m "$commit_msg" 2>&1; then
+            log_success "Plan file committed: $commit_msg"
+        else
+            log_error "Auto-commit failed. Please commit manually"
+            exit 1
+        fi
     fi
 
-    # ============================================
-    # Plan push 自动推送（Issue link 需要文件存在于 GitHub）
-    # 使用文件级 commit 可达性判断，而非仓库级 ahead 数
-    # ============================================
-    
-    if [[ -n "$issue_number" ]]; then
-        # 使用 is_file_pushed 判断 Plan 文件最后修改的 commit 是否已进入 origin/main
-        is_file_pushed "$plan_relative_path" "origin/main"
-        local push_status=$?
-        
-        if [[ $push_status -eq 2 ]]; then
-            # 文件有未提交变更（但前面已检测过未提交变更并阻断，这里是意外路径）
-            log_error "Plan 文件状态异常，请先提交后再审批"
+    # Push Plan file to remote（无论有无 Issue，保持文件可达）
+    is_file_pushed "$plan_relative_path" "origin/main"
+    local push_status=$?
+
+    if [[ $push_status -eq 1 ]]; then
+        log_step "Auto-pushing Plan file to origin/main..."
+        if git -C "$ROOT_DIR" push origin main 2>&1; then
+            log_success "Plan file pushed successfully"
+        else
+            log_error "Auto-push failed. Please push manually: cd $ROOT_DIR && git push"
             exit 1
-        elif [[ $push_status -eq 1 ]]; then
-            # Plan commit 未进入 origin/main — 自动 push
-            log_step "Auto-pushing Plan file to origin/main..."
-            if git -C "$ROOT_DIR" push origin main 2>&1; then
-                log_success "Plan file pushed successfully"
-            else
-                log_error "Auto-push failed. Please push manually: cd $ROOT_DIR && git push"
-                exit 1
-            fi
         fi
-        # push_status -eq 0: Plan 已 push，继续审批流程
+    elif [[ $push_status -eq 2 ]]; then
+        log_error "Plan 文件状态异常"
+        exit 1
     fi
 
     # If no --confirm, wait for user confirmation
