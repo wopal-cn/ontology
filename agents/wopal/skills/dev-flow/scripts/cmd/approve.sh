@@ -107,17 +107,20 @@ cmd_approve() {
 
     # ============================================
     # Plan push 检测（Issue link 需要文件存在于 GitHub）
+    # 使用文件级 commit 可达性判断，而非仓库级 ahead 数
     # ============================================
     
     if [[ -n "$issue_number" ]]; then
-        local plan_pushed
-        plan_pushed=$(git -C "$ROOT_DIR" branch --contains "$plan_relative_path" 2>/dev/null | grep -q "origin/main" && echo "true" || echo "false")
+        # 使用 is_file_pushed 判断 Plan 文件最后修改的 commit 是否已进入 origin/main
+        is_file_pushed "$plan_relative_path" "origin/main"
+        local push_status=$?
         
-        # Check if commit is ahead of origin
-        local ahead_count
-        ahead_count=$(git -C "$ROOT_DIR" rev-list --count origin/main..HEAD 2>/dev/null || echo "0")
-        
-        if [[ "$ahead_count" -gt 0 ]]; then
+        if [[ $push_status -eq 2 ]]; then
+            # 文件有未提交变更（但前面已检测过未提交变更并阻断，这里是意外路径）
+            log_error "Plan 文件状态异常，请先提交后再审批"
+            exit 1
+        elif [[ $push_status -eq 1 ]]; then
+            # Plan commit 未进入 origin/main
             log_error "方案文件已 commit 但未 push，Issue 链接无法打开"
             echo ""
             echo "请先 push 后再审批:"
@@ -126,6 +129,7 @@ cmd_approve() {
             echo "然后重新执行: flow.sh approve $input"
             exit 1
         fi
+        # push_status -eq 0: Plan 已 push，继续审批流程
     fi
 
     # If no --confirm, wait for user confirmation

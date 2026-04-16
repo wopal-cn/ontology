@@ -157,14 +157,34 @@ executing
 - [x] 单元测试通过
 
 ### User Validation
-- 重启后功能正常    ← 用户确认，verify --confirm 前
-- UI 交互确认
+
+#### Scenario 1: 本次变更影响的可感知行为
+- Goal: 确认什么行为差异
+- Precondition: 验证前的前置状态
+- User Actions:
+  1. 用户操作步骤
+  2. 观察结果
+- Expected Result: 用户可观察到的预期结果
+
+- [ ] 用户已完成上述功能验证并确认结果符合预期
 ```
 
-| 子章节 | 校验时机 | 执行者 |
-|--------|----------|--------|
-| `### Agent Verification` | `complete` | Agent 打勾 |
-| `### User Validation` | `verify --confirm` | 用户确认（纯文本） |
+| 子章节 | 校验时机 | 执行者 | 格式要求 |
+|--------|----------|--------|----------|
+| `### Agent Verification` | `complete` | Agent 打勾 | checkbox 列表 |
+| `### User Validation` | `verify --confirm` | 用户确认 | 场景骨架 + 最终确认 checkbox |
+
+**User Validation 设计原则**：
+- 优先挑选 1-3 个本次变更直接影响的可感知行为，不写内部实现细节
+- 每个场景必须包含 Goal / Precondition / User Actions / Expected Result
+- 最终确认 checkbox 是 `verify --confirm` 的硬 gate，只有用户才能勾选
+- Agent 禁止代为勾选最终确认 checkbox
+
+**Test Plan 设计原则**：
+- 每个保留的测试用例必须包含 Goal / Fixture / Execution / Expected Evidence
+- Execution 使用 `- [ ] Step N:` 格式（与 Task Changes 一致）
+- 某类测试无必要时写 `N/A — 理由`，禁止空洞 bullet 凑数
+- 类别标题必须英文：`#### Unit Tests` / `#### Integration Tests` / `#### E2E Tests` / `#### Regression Tests`（不写类别标题也可以，直接写 Case）
 
 ## 标准工作流
 

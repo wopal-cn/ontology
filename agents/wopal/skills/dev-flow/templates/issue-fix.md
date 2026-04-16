@@ -6,6 +6,22 @@
 
 <背景和问题描述>
 
+## Confirmed Bugs
+
+<审计确认的具体 bug 列表>
+
+## Content Model Defects
+
+<内容模型层面的问题诊断>
+
+## Cleanup Scope
+
+<需要清理的范围>
+
+## Key Findings
+
+<审计关键发现>
+
 ## In Scope
 
 - 范围项 1

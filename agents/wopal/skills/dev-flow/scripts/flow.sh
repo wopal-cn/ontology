@@ -25,8 +25,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Load libraries in correct dependency order:
-# common -> plan -> labels -> issue -> plan-sync -> state-machine -> check-doc
+# common -> git -> plan -> labels -> issue -> plan-sync -> state-machine -> check-doc
 source "$SKILL_DIR/lib/common.sh"
+source "$SKILL_DIR/lib/git.sh"
 source "$SKILL_DIR/lib/plan.sh"
 source "$SKILL_DIR/lib/labels.sh"
 source "$SKILL_DIR/lib/issue.sh"

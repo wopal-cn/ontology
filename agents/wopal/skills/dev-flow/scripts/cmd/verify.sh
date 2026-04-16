@@ -132,10 +132,16 @@ cmd_verify() {
 
     # --confirm received: user authorization gate passed
     
-    # Check User Validation (optional, non-blocking with --confirm)
-    if ! check_user_validation "$plan_file" 2>/dev/null; then
+    # HARD GATE: User Validation must pass before proceeding
+    # No warn-and-proceed — this is a strict gate
+    if ! check_user_validation "$plan_file"; then
         echo ""
-        log_warn "User Validation not fully checked - proceeding with --confirm"
+        log_error "User Validation gate failed — cannot proceed with verify --confirm"
+        echo "Please complete the user validation scenarios and check the final confirmation checkbox:"
+        echo "  1. Perform the scenarios described in ### User Validation section"
+        echo "  2. Check the final checkbox: - [x] 用户已完成上述功能验证并确认结果符合预期"
+        echo "  3. Re-run: flow.sh verify $input --confirm"
+        exit 1
     fi
 
     # ============================================

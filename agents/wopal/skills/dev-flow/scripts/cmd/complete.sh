@@ -117,7 +117,8 @@ cmd_complete() {
             sync_plan_to_issue "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
         else
             # No Issue: create PR without Issue reference
-            create_pr_for_plan "$plan_name" --project "$project" --base main >/dev/null 2>&1
+            # Pass plan_file to avoid redundant resolution
+            create_pr_for_plan "$plan_name" --project "$project" --base main --plan-file "$plan_file" >/dev/null 2>&1
         fi
 
         echo "Status: verifying (PR opened)"

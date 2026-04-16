@@ -103,17 +103,23 @@ check_doc_plan() {
     root_dir=$(find_workspace_root)
 
     # ============================================
-    # 0. File name validation (new naming convention)
+    # 0. File name validation (dual naming convention)
     # ============================================
     local plan_basename
     plan_basename=$(basename "$plan_file" .md)
 
-    # Check file name matches format: <issue_number>-<type>-<slug>
-    if [[ "$plan_basename" =~ ^([0-9]+)-(feature|enhance|fix|refactor|docs|chore|test)-([a-z0-9-]+)$ ]]; then
-        local filename_issue="${BASH_REMATCH[1]}"
-        log_success "File name format: valid (issue #${filename_issue})"
+    # Check file name matches one of two formats:
+    # 1. Issue format: <issue_number>-<type>-<slug>
+    # 2. No-issue format: <type>-<slug>
+    local valid_types="feature|enhance|fix|refactor|docs|chore|test"
 
-        # Verify issue number matches Plan metadata
+    # Try Issue format first
+    if [[ "$plan_basename" =~ ^([0-9]+)-($valid_types)-([a-z0-9-]+)$ ]]; then
+        local filename_issue="${BASH_REMATCH[1]}"
+        local filename_type="${BASH_REMATCH[2]}"
+        log_success "File name format: valid (issue #${filename_issue}, type $filename_type)"
+
+        # Verify issue number matches Plan metadata (only for issue format)
         local metadata_issue
         metadata_issue=$(grep -m1 '^\- \*\*Issue\*\*: #' "$plan_file" | sed 's/.*#//; s/[^0-9].*//' || true)
 
@@ -128,8 +134,16 @@ check_doc_plan() {
             log_warn "Cannot verify issue number: no '**Issue**: #N' found in metadata"
             ((warnings++))
         fi
+    # Try no-issue format
+    elif [[ "$plan_basename" =~ ^($valid_types)-([a-z0-9-]+)$ ]]; then
+        local filename_type="${BASH_REMATCH[1]}"
+        log_success "File name format: valid (no-issue, type $filename_type)"
+        # No issue number consistency check for no-issue format
     else
-        echo "File name does not match format '<issue_number>-<type>-<slug>.md': $plan_basename"
+        echo "File name does not match valid formats:"
+        echo "  - '<issue_number>-<type>-<slug>.md' (with Issue)"
+        echo "  - '<type>-<slug>.md' (no Issue)"
+        echo "  Got: $plan_basename"
         ((issues++))
     fi
 
@@ -324,38 +338,215 @@ fi
     fi
 
     # ============================================
-    # 10. Granularity check (heuristic)
+    # 10. Changes structure check (per-task)
+    # Verify each Task's **Changes** block uses '- [ ] Step N:' format
     # ============================================
-    local checkbox_count
-    checkbox_count="$(grep -c '^- \[ \] Step ' "$plan_file" || true)"
-    if [[ "${checkbox_count:-0}" -lt "${task_count:-0}" ]]; then
-        log_warn "Tasks missing Step checkboxes: use '- [ ] Step N: description' format (found $checkbox_count steps for $task_count tasks)"
-        ((warnings++))
-    else
-        log_success "Basic step granularity present"
+    local changes_issues=0
+    local task_idx=0
+    
+    # Process each task section
+    while IFS= read -r task_header_line; do
+        ((task_idx++))
+        local task_title
+        task_title=$(echo "$task_header_line" | sed 's/^### Task [0-9]*: //')
+        
+        # Extract content from this task header to next ### or ## section
+        local task_content
+        task_content=$(awk -v task="$task_idx" '
+            /^### Task /{ if (++count == task) { found=1; next } else { found=0 } }
+            /^##[^#]/ || (/^### Task / && count != task) { found=0 }
+            found { print }
+        ' "$plan_file")
+        
+        # Extract **Changes** block: from **Changes**: to **Verification**:
+        local changes_block
+        changes_block=$(echo "$task_content" | awk '
+            /^\*\*Changes\*\*:/{ found=1; next }
+            /^\*\*Verification\*\*:/{ found=0 }
+            found { print }
+        ')
+        
+        # Skip if no Changes block (some tasks may not have one)
+        if [[ -z "$changes_block" ]]; then
+            continue
+        fi
+        
+        # Get non-empty lines in changes block
+        local changes_lines
+        changes_lines=$(echo "$changes_block" | grep -vE '^[[:space:]]*$' || true)
+        
+        if [[ -z "$changes_lines" ]]; then
+            continue
+        fi
+        
+        # Check: all non-empty lines in Changes must be '- [ ] Step N:' or '- [x] Step N:'
+        local bad_lines
+        bad_lines=$(echo "$changes_lines" | grep -vE '^\s*-\s+\[[ x]\]\s+Step\s+[0-9]+:' || true)
+        
+        if [[ -n "$bad_lines" ]]; then
+            local bad_count
+            bad_count=$(echo "$bad_lines" | grep -cE '^\s*[0-9]+[\.\)]\s' || echo "0")
+            if [[ "$bad_count" -gt 0 ]]; then
+                echo "Task $task_idx '$task_title': **Changes** uses numbered list instead of '- [ ] Step N:' format"
+                ((changes_issues++))
+            else
+                # Other non-step content (comments, blank lines OK, but actual content items must be steps)
+                local non_step_content
+                non_step_content=$(echo "$bad_lines" | grep -vE '^\s*(' || true)
+                if [[ -n "$non_step_content" ]]; then
+                    echo "Task $task_idx '$task_title': **Changes** contains non-step items (must use '- [ ] Step N:' format)"
+                    ((changes_issues++))
+                fi
+            fi
+        fi
+    done < <(grep -n '^### Task ' "$plan_file" | sed 's/^[0-9]*://')
+    
+    if [[ "$changes_issues" -gt 0 ]]; then
+        ((issues += changes_issues))
+    elif [[ "${task_count:-0}" -gt 0 ]]; then
+        log_success "All **Changes** blocks use '- [ ] Step N:' format"
     fi
 
     # ============================================
-    # 11. Test Plan section (mandatory with content check)
+    # 11. Test Plan structural validation
+    # Each non-N/A test case must have Goal + Fixture + Execution + Expected Evidence + Step checkbox
     # ============================================
     if grep -q '^## Test Plan' "$plan_file"; then
         # Extract Test Plan section content (between ## Test Plan and next ## section)
         local testplan_content
-        testplan_content=$(sed -n '/^## Test Plan/,/^## /p' "$plan_file" | sed '1d;$d' | grep -v '^$' || true)
-
-        # Check content is not just N/A or placeholders
-        local testplan_lines
-        testplan_lines=$(echo "$testplan_content" | grep -vE '^(N/A|n/a|待补充|TODO|- N/A|\- \*\*Unit\*\*: N/A|\- \*\*Integration\*\*: N/A|\- \*\*E2E\*\*: N/A)$' || true)
-
-        if [[ -n "$testplan_lines" ]]; then
-            log_success "## Test Plan (has non-empty test descriptions)"
-        else
-            echo "## Test Plan has no valid content (only N/A or placeholders)"
+        testplan_content=$(sed -n '/^## Test Plan/,/^## [^#]/p' "$plan_file" | sed '1d;$d')
+        
+        # Check for N/A category markers (e.g., "#### 单元测试" followed by "N/A — 理由")
+        local testplan_stripped
+        testplan_stripped=$(echo "$testplan_content" | grep -vE '^[[:space:]]*$' | grep -v '<!--' | grep -v '^-->' || true)
+        
+        # Check if entire test plan is N/A (rare but possible)
+        local testplan_real_lines
+        testplan_real_lines=$(echo "$testplan_stripped" | grep -vE '^(N/A|n/a|N/A —)' || true)
+        
+        if [[ -z "$testplan_real_lines" ]]; then
+            echo "## Test Plan: all content is N/A without reason"
             ((issues++))
+        else
+            # Count test cases (##### Case ... pattern)
+            local test_case_count
+            test_case_count=$(echo "$testplan_real_lines" | grep -cE '^#####\s+Case\s+' || echo "0")
+            
+            if [[ "$test_case_count" -ge 1 ]]; then
+                # Validate each Case has minimum structure
+                local case_structure_issues=0
+                
+                # Check each case section for required fields
+                local case_idx=0
+                while IFS= read -r case_header; do
+                    ((case_idx++))
+                    local case_name
+                    case_name=$(echo "$case_header" | sed 's/^#####\s*Case\s*//' | head -1)
+                    
+                    # Extract content from this case to next ##### or #### or ### section
+                    local case_content
+                    case_content=$(echo "$testplan_real_lines" | awk -v ci="$case_idx" '
+                        /^#####[[:space:]]*Case[[:space:]]/{ if (++count == ci) { found=1; next } else { found=0 } }
+                        /^####[^#]/ || (/^#####[[:space:]]*Case[[:space:]]/ && count != ci) { found=0 }
+                        found { print }
+                    ')
+                    
+                    # Check for required structural elements (use grep -q to avoid count parsing issues)
+                    local has_goal=0 has_fixture=0 has_execution=0 has_evidence=0 has_step=0
+                    if echo "$case_content" | grep -qE '^- Goal:'; then has_goal=1; fi
+                    if echo "$case_content" | grep -qE '^- Fixture:'; then has_fixture=1; fi
+                    if echo "$case_content" | grep -qE '^- Execution:'; then has_execution=1; fi
+                    if echo "$case_content" | grep -qE '^- Expected Evidence:'; then has_evidence=1; fi
+                    if echo "$case_content" | grep -qE '^\s*-\s+\[[ x]\]\s+Step'; then has_step=1; fi
+                    
+                    if [[ "$has_goal" -eq 0 ]]; then
+                        echo "Test Case $case_idx '$case_name': missing '- Goal:'"
+                        ((case_structure_issues++))
+                    fi
+                    if [[ "$has_fixture" -eq 0 ]]; then
+                        echo "Test Case $case_idx '$case_name': missing '- Fixture:'"
+                        ((case_structure_issues++))
+                    fi
+                    if [[ "$has_execution" -eq 0 ]]; then
+                        echo "Test Case $case_idx '$case_name': missing '- Execution:' with step checkboxes"
+                        ((case_structure_issues++))
+                    fi
+                    if [[ "$has_evidence" -eq 0 ]]; then
+                        echo "Test Case $case_idx '$case_name': missing '- Expected Evidence:'"
+                        ((case_structure_issues++))
+                    fi
+                    if [[ "$has_step" -eq 0 ]]; then
+                        echo "Test Case $case_idx '$case_name': missing '- [ ] Step N:' in Execution"
+                        ((case_structure_issues++))
+                    fi
+                done < <(echo "$testplan_real_lines" | grep -E '^#####\s+Case\s+')
+                
+                if [[ "$case_structure_issues" -gt 0 ]]; then
+                    ((issues += case_structure_issues))
+                else
+                    log_success "## Test Plan: $test_case_count cases with valid structure"
+                fi
+            else
+                # No Case headings found — check for old-style bullet format or N/A markers
+                local has_na_markers
+                has_na_markers=$(echo "$testplan_real_lines" | grep -cE 'N/A\s*—' || echo "0")
+                
+                # Count non-comment, non-heading lines that look like test items
+                local test_item_lines
+                test_item_lines=$(echo "$testplan_real_lines" | grep -vE '^(####|###|N/A)' | grep -vE '^\s*$' | grep -cE '^\s*-' || echo "0")
+                
+                if [[ "$test_item_lines" -gt 0 && "$has_na_markers" -eq 0 ]]; then
+                    echo "## Test Plan has test items but no '##### Case' structure (use Case skeleton format)"
+                    echo "  Each test case must have: Goal / Fixture / Execution / Expected Evidence + Step checkbox"
+                    ((issues++))
+                elif [[ "$has_na_markers" -gt 0 ]]; then
+                    log_success "## Test Plan: N/A categories with reasons"
+                else
+                    echo "## Test Plan has no test cases or N/A markers"
+                    ((issues++))
+                fi
+            fi
         fi
     else
         echo "Missing ## Test Plan (mandatory for execution-grade plans)"
         ((issues++))
+    fi
+
+    # ============================================
+    # 12. User Validation structural validation
+    # Must have at least one scenario + final confirmation checkbox
+    # ============================================
+    local user_val_section
+    user_val_section=$(awk '/^### User Validation/{found=1;next} /^###{1,2}[^#]/{found=0} found{print}' "$plan_file")
+    
+    if [[ -n "$user_val_section" ]]; then
+        local uv_trimmed
+        uv_trimmed=$(echo "$user_val_section" | sed '/^[[:space:]]*$/d')
+        
+        # Gate 1: Must have at least one scenario heading (#### Scenario or #### 场景)
+        local uv_scenario_count
+        uv_scenario_count=$(echo "$uv_trimmed" | grep -cE '^####\s+(Scenario|场景)' || echo "0")
+        
+        if [[ "$uv_scenario_count" -lt 1 ]]; then
+            echo "### User Validation: must have at least one named user scenario (#### Scenario N:)"
+            ((issues++))
+        fi
+        
+        # Gate 2: Must have final confirmation checkbox
+        local uv_final_checkbox
+        uv_final_checkbox=$(echo "$uv_trimmed" | grep -E '^\s*-\s+\[[ x]\]\s+用户已完成' || true)
+        
+        if [[ -z "$uv_final_checkbox" ]]; then
+            echo "### User Validation: must contain final confirmation checkbox"
+            echo "  Required: - [ ] 用户已完成上述功能验证并确认结果符合预期"
+            ((issues++))
+        else
+            log_success "### User Validation: $uv_scenario_count scenarios + final confirmation checkbox"
+        fi
+    else
+        # No User Validation section — only a warning (backward compat for old plans)
+        log_warn "No ### User Validation section found (recommended for execution-grade plans)"
+        ((warnings++))
     fi
 
     # ============================================

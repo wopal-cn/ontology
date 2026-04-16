@@ -600,16 +600,18 @@ get_incomplete_ac_count() {
     echo "$ac_section" | grep -cE '^\s*-\s+\[\s*\]' || echo "0"
 }
 
-# Check if User Validation section exists and has valid content
+# Check if User Validation section passes the hard gate
 # Usage: check_user_validation <plan_file>
-# Returns: 0 if section exists with valid content or no section, 1 if invalid
-# Output: validation status
+# Returns: 0 only if final user confirmation checkbox is checked, 1 otherwise
 #
-# Behavior:
-#   - If `### User Validation` sub-section exists: validate content
-#   - Content must be non-empty and non-placeholder
-#   - Accepts both plain text and checkbox format (backward compat)
-#   - If no sub-section: pass (backward compat - old plans don't have this)
+# Gate rules (strict — no warn-and-proceed):
+#   1. `### User Validation` section must exist
+#   2. Must contain at least one named user scenario (#### Scenario N: or similar heading)
+#   3. Must contain a final confirmation checkbox: `- [ ] 用户已完成...`
+#   4. The final confirmation checkbox must be checked (`[x]`) — unchecked = block
+#   5. No "plain text passes" loophole: content without scenario structure + final checkbox is invalid
+#
+# Backward compat: old plans with no User Validation section still pass (they don't have this gate)
 check_user_validation() {
     local plan_file="$1"
     
@@ -620,74 +622,54 @@ check_user_validation() {
     
     # Extract `### User Validation` sub-section
     local user_ac_section
-    user_ac_section=$(awk '/^### User Validation/{found=1;next} /^###{1,2}[^#]/{found=0} found{print}' "$plan_file")
+    user_ac_section=$(awk '/^### User Validation/{found=1;next} /^#{2,3}[^#]/{found=0} found{print}' "$plan_file")
     
-    # If no section, pass (backward compat - old plans may not have this)
+    # If no section exists, pass (backward compat — old plans don't have this gate)
     if [[ -z "$user_ac_section" ]]; then
-        log_info "No User Validation section found in plan"
+        log_info "No User Validation section found in plan (backward compat)"
         return 0
     fi
     
-    # Trim whitespace and check if content is non-empty
+    # Trim whitespace-only lines
     local trimmed_content
     trimmed_content=$(echo "$user_ac_section" | sed '/^[[:space:]]*$/d')
     
-    if [[ -z "$trimmed_content" ]]; then
-        log_warn "User Validation section is empty"
-        return 0
+    # Gate 1: Must contain at least one named user scenario (#### Scenario or #### 场景)
+    local scenario_count
+    scenario_count=$(echo "$trimmed_content" | grep -cE '^####\s+(Scenario|场景)' || echo "0")
+    
+    if [[ "$scenario_count" -lt 1 ]]; then
+        log_error "User Validation must contain at least one named user scenario (#### Scenario N:)"
+        echo "  Current content has no scenario headings — add scenario skeleton before proceeding" >&2
+        return 1
     fi
     
-    # Check for placeholder text (template placeholders)
-    local placeholder_patterns=(
-        "- <用户验证项>"
-        "- <validation item>"
-        "- 待填充"
-        "- 待填写"
-    )
+    # Gate 2: Must contain a final confirmation checkbox pattern
+    # Accepted patterns: "- [ ] 用户已完成..." or "- [x] 用户已完成..."
+    local final_checkbox_lines
+    final_checkbox_lines=$(echo "$trimmed_content" | grep -E '^\s*-\s+\[[ x]\]\s+用户已完成' || true)
     
-    for pattern in "${placeholder_patterns[@]}"; do
-        if echo "$trimmed_content" | grep -qF "$pattern"; then
-            log_error "User Validation contains placeholder: $pattern"
-            return 1
-        fi
-    done
-    
-    # Check for checkbox format (backward compat - checkbox still accepted)
-    local has_checkbox
-    has_checkbox=$(echo "$trimmed_content" | grep -cE '^\s*-\s+\[' || echo "0")
-    
-    if [[ "$has_checkbox" -gt 0 ]]; then
-        # Checkbox format: check for unchecked items
-        local unchecked
-        unchecked=$(echo "$trimmed_content" | grep -E '^\s*-\s+\[\s*\]' || true)
-        
-        if [[ -n "$unchecked" ]]; then
-            log_error "User Validation checkbox items not completed:"
-            echo ""
-            echo "$unchecked" | while read -r line; do
-                echo "  $line"
-            done
-            echo ""
-            return 1
-        fi
-        
-        local checked_count
-        checked_count=$(echo "$trimmed_content" | grep -cE '^\s*-\s+\[x\]' || echo "0")
-        log_success "User Validation: $checked_count checkbox items completed"
-        return 0
+    if [[ -z "$final_checkbox_lines" ]]; then
+        log_error "User Validation must contain a final confirmation checkbox"
+        echo "  Required format: - [ ] 用户已完成上述功能验证并确认结果符合预期" >&2
+        echo "  Only the user can check this checkbox after real validation" >&2
+        return 1
     fi
     
-    # Plain text format: count validation items
-    local item_count
-    item_count=$(echo "$trimmed_content" | grep -cE '^\s*-\s+[^<]' || echo "0")
+    # Gate 3: Final confirmation checkbox must be checked [x]
+    local checked_final
+    checked_final=$(echo "$final_checkbox_lines" | grep -E '^\s*-\s+\[x\]\s+用户已完成' || true)
     
-    if [[ "$item_count" -gt 0 ]]; then
-        log_success "User Validation: $item_count items present (plain text format)"
-        return 0
+    if [[ -z "$checked_final" ]]; then
+        log_error "User Validation final confirmation checkbox is NOT checked"
+        echo "  The final checkbox '- [ ] 用户已完成...' must be checked by the user before verify --confirm" >&2
+        echo "  Agent cannot check this checkbox — user must do it after real validation" >&2
+        return 1
     fi
     
-    # Any non-placeholder content is valid
-    log_success "User Validation section has valid content"
+    local scenario_count_val
+    scenario_count_val=$(echo "$scenario_count" | tr -d ' ')
+    log_success "User Validation gate passed: $scenario_count_val scenarios, final confirmation checkbox checked"
     return 0
 }
 

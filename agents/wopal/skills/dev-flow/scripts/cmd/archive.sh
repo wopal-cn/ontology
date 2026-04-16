@@ -89,6 +89,8 @@ cmd_archive() {
     fi
 
     # Check if project has uncommitted changes (prompt agent to commit manually)
+    local root_dir
+    root_dir=$(find_workspace_root)
     local project
     project=$(get_plan_project "$plan_file")
     local project_has_changes=false
@@ -104,8 +106,6 @@ cmd_archive() {
     fi
 
     # Commit + push archived plan in space repo so the GitHub link works
-    local root_dir
-    root_dir=$(find_workspace_root)
     if command -v git &> /dev/null && [[ -d "$root_dir/.git" ]]; then
         git -C "$root_dir" add "$archived_file" >/dev/null 2>&1
         if git -C "$root_dir" commit -m "chore: archive plan #$issue_number" >/dev/null 2>&1; then

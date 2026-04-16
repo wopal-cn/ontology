@@ -197,6 +197,21 @@ extract_project() {
 # Issue Body Construction
 # ============================================
 
+# Render a single issue section with consistent formatting
+# Usage: _render_issue_section <heading> <content> [empty_fallback]
+# Output: formatted markdown section
+_render_issue_section() {
+    local heading="$1"
+    local content="$2"
+    local fallback="${3:-<待填充>}"
+    
+    if [[ -z "$content" ]]; then
+        printf '## %s\n\n%s\n' "$heading" "$fallback"
+    else
+        printf '## %s\n\n%s\n' "$heading" "$content"
+    fi
+}
+
 # Format comma-separated items as markdown list
 _format_issue_list() {
     local raw_items="$1"
@@ -220,53 +235,112 @@ _format_issue_list() {
     printf '%s' "${output%$'\n'}"
 }
 
-# Build structured issue body from individual fields
-build_structured_issue_body() {
-    local goal="${1:-}"
-    local background="${2:-}"
-    local scope="${3:-}"
-    local out_of_scope="${4:-}"
-    local reference="${5:-}"
-    local in_scope_text
-    local out_of_scope_text
-    local body
+# Build Related Resources table row
+# Usage: _render_related_resources_row <label> <value>
+_render_related_resources_row() {
+    local label="$1"
+    local value="$2"
+    
+    if [[ -n "$value" ]]; then
+        printf '| %s | %s |\n' "$label" "$value"
+    fi
+}
 
+# Build structured issue body from individual fields
+# Usage: build_structured_issue_body [--type <type>] <goal> <background> [fix_sections] <scope> <out_of_scope> <reference>
+# fix_sections (for type=fix only): confirmed_bugs, content_model_defects, cleanup_scope, key_findings
+# Section order for fix: Goal → Background → Confirmed Bugs → Content Model Defects → Cleanup Scope → Key Findings → In Scope → Out of Scope → Acceptance Criteria → Related Resources
+# Section order for others: Goal → Background → In Scope → Out of Scope → Acceptance Criteria → Related Resources
+build_structured_issue_body() {
+    local issue_type=""
+    local goal=""
+    local background=""
+    local confirmed_bugs=""
+    local content_model_defects=""
+    local cleanup_scope=""
+    local key_findings=""
+    local scope=""
+    local out_of_scope=""
+    local reference=""
+    
+    # Parse arguments - support both old positional and new --type aware
+    if [[ "$1" == "--type" ]]; then
+        issue_type="$2"
+        shift 2
+    fi
+    
+    # For fix type, expect 9 args: goal, background, confirmed_bugs, content_model_defects, cleanup_scope, key_findings, scope, out_of_scope, reference
+    # For other types, expect 5 args: goal, background, scope, out_of_scope, reference
+    if [[ "$issue_type" == "fix" ]]; then
+        goal="${1:-}"
+        background="${2:-}"
+        confirmed_bugs="${3:-}"
+        content_model_defects="${4:-}"
+        cleanup_scope="${5:-}"
+        key_findings="${6:-}"
+        scope="${7:-}"
+        out_of_scope="${8:-}"
+        reference="${9:-}"
+    else
+        # Legacy positional mode (no --type)
+        goal="${1:-}"
+        background="${2:-}"
+        scope="${3:-}"
+        out_of_scope="${4:-}"
+        reference="${5:-}"
+    fi
+    
+    local in_scope_text out_of_scope_text body
+    
     in_scope_text=$(_format_issue_list "$scope" "- " $'- 范围项 1\n- 范围项 2')
     out_of_scope_text=$(_format_issue_list "$out_of_scope" "- " "- 不做的项（原因）")
-
-    body="## Goal
-
-${goal:-<一句话描述目标>}
-
-## Background
-
-${background:-<背景和问题描述>}
-
-## In Scope
-
-$in_scope_text
-
-## Out of Scope
-
-$out_of_scope_text
-
-## Acceptance Criteria
-
-待 plan 阶段细化
-
-## Related Resources
-
-| Resource | Link |
-|----------|------|"
-
-    if [[ -n "$reference" ]]; then
-        body+=$'\n| Research | '
-        body+="$reference"
-        body+=$' |'
+    
+    # Build sections using shared renderer
+    local sections=""
+    
+    # Goal
+    sections+=$(_render_issue_section "Goal" "$goal" "<一句话描述目标>")
+    sections+=$'\n'
+    
+    # Background
+    sections+=$(_render_issue_section "Background" "$background" "<背景和问题描述>")
+    sections+=$'\n'
+    
+    # Fix-specific audit sections (only for fix type)
+    if [[ "$issue_type" == "fix" ]]; then
+        sections+=$(_render_issue_section "Confirmed Bugs" "$confirmed_bugs" "<审计确认的具体 bug 列表>")
+        sections+=$'\n'
+        
+        sections+=$(_render_issue_section "Content Model Defects" "$content_model_defects" "<内容模型层面的问题诊断>")
+        sections+=$'\n'
+        
+        sections+=$(_render_issue_section "Cleanup Scope" "$cleanup_scope" "<需要清理的范围>")
+        sections+=$'\n'
+        
+        sections+=$(_render_issue_section "Key Findings" "$key_findings" "<审计关键发现>")
+        sections+=$'\n'
     fi
-
-    body+=$'\n| Plan | _待关联_ |'
-    printf '%s\n' "$body"
+    
+    # In Scope
+    sections+=$(_render_issue_section "In Scope" "$in_scope_text" $'- 范围项 1\n- 范围项 2')
+    sections+=$'\n'
+    
+    # Out of Scope
+    sections+=$(_render_issue_section "Out of Scope" "$out_of_scope_text" "- 不做的项（原因）")
+    sections+=$'\n'
+    
+    # Acceptance Criteria
+    sections+=$(_render_issue_section "Acceptance Criteria" "" "待 plan 阶段细化")
+    sections+=$'\n'
+    
+    # Related Resources table
+    sections+="## Related Resources"$'\n\n'
+    sections+="| Resource | Link |"$'\n'
+    sections+="|----------|------|"$'\n'
+    sections+=$(_render_related_resources_row "Research" "$reference")
+    sections+="| Plan | _待关联_ |"$'\n'
+    
+    printf '%s\n' "$sections"
 }
 
 # ============================================
@@ -355,6 +429,10 @@ update_issue_link() {
 #   --scope "<items>"       In-scope items, comma-separated (structured)
 #   --out-of-scope "<items>" Out-of-scope items, comma-separated (structured)
 #   --reference "<path>"    Research document path (structured)
+#   --confirmed-bugs "<text>"    Confirmed bugs section (fix type only)
+#   --content-model-defects "<text>" Content model defects section (fix type only)
+#   --cleanup-scope "<text>"     Cleanup scope section (fix type only)
+#   --key-findings "<text>"      Key findings section (fix type only)
 # Output: created issue URL
 create_issue() {
     local title=""
@@ -368,6 +446,10 @@ create_issue() {
     local scope=""
     local out_of_scope=""
     local reference=""
+    local confirmed_bugs=""
+    local content_model_defects=""
+    local cleanup_scope=""
+    local key_findings=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -415,6 +497,22 @@ create_issue() {
                 reference="$2"
                 shift 2
                 ;;
+            --confirmed-bugs)
+                confirmed_bugs="$2"
+                shift 2
+                ;;
+            --content-model-defects)
+                content_model_defects="$2"
+                shift 2
+                ;;
+            --cleanup-scope)
+                cleanup_scope="$2"
+                shift 2
+                ;;
+            --key-findings)
+                key_findings="$2"
+                shift 2
+                ;;
             *)
                 log_error "Unknown parameter: $1"
                 return 1
@@ -442,8 +540,12 @@ create_issue() {
     }
 
     # Build structured body if any structured params provided
-    if [[ -n "$goal" || -n "$background" || -n "$scope" || -n "$out_of_scope" || -n "$reference" ]]; then
-        body=$(build_structured_issue_body "$goal" "$background" "$scope" "$out_of_scope" "$reference")
+    if [[ -n "$goal" || -n "$background" || -n "$scope" || -n "$out_of_scope" || -n "$reference" || -n "$confirmed_bugs" ]]; then
+        if [[ "$plan_type" == "fix" ]]; then
+            body=$(build_structured_issue_body --type fix "$goal" "$background" "$confirmed_bugs" "$content_model_defects" "$cleanup_scope" "$key_findings" "$scope" "$out_of_scope" "$reference")
+        else
+            body=$(build_structured_issue_body "$goal" "$background" "$scope" "$out_of_scope" "$reference")
+        fi
     fi
 
     local repo
@@ -550,7 +652,7 @@ get_project_repo() {
 # PR Operations
 # ============================================
 
-# Create PR
+# Create PR for Issue
 # Usage: create_pr <issue_number> --project <project> [--base <branch>] [--draft]
 # Note: PR is created in project repo, Issue is updated in space repo
 create_pr() {
@@ -628,8 +730,13 @@ Refs $space_repo#$issue_number
 
 ## Test Plan
 
-- [ ] Test item 1
-- [ ] Test item 2
+##### Case P1: PR validation
+- Goal: Confirm PR changes work as expected
+- Fixture: PR branch with all changes
+- Execution:
+  - [ ] Step 1: Review PR diff for correctness
+  - [ ] Step 2: Verify CI passes
+- Expected Evidence: CI green, manual review approved
 EOF
 )
 
@@ -648,6 +755,150 @@ EOF
 
     # Update Issue in space repo
     update_issue_link "$issue_number" "$space_repo" "pr" "$pr_url"
+}
+
+# Create PR for Plan (no Issue mode)
+# Usage: create_pr_for_plan <plan_name> --project <project> [--base <branch>] [--draft] [--plan-file <path>]
+# Note: PR is created in project repo, without Issue reference.
+#   When sourced from flow.sh context, --plan-file avoids redundant find_plan() calls.
+#   When called standalone, plan_file is resolved from plan_name via resolve_plan_file().
+create_pr_for_plan() {
+    local plan_name="$1"
+    shift || true
+    local project=""
+    local base="main"
+    local draft=false
+    local plan_file=""
+    local workspace_root
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --project)
+                project="$2"
+                shift 2
+                ;;
+            --base)
+                base="$2"
+                shift 2
+                ;;
+            --draft)
+                draft=true
+                shift
+                ;;
+            --plan-file)
+                plan_file="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    [[ -z "$project" ]] && { log_error "Missing --project"; return 1; }
+    [[ -z "$plan_name" ]] && { log_error "Missing plan_name"; return 1; }
+
+    workspace_root=$(find_workspace_root)
+
+    # Resolve plan_file if not provided
+    if [[ -z "$plan_file" ]]; then
+        plan_file=$(resolve_plan_file "$plan_name") || {
+            log_error "Cannot find Plan: $plan_name"
+            return 1
+        }
+    fi
+
+    # Extract type from Plan metadata
+    local plan_type
+    plan_type=$(get_plan_type "$plan_file")
+
+    # Capitalize type for PR title prefix
+    local title_prefix
+    case "$plan_type" in
+        feature)  title_prefix="Feature" ;;
+        enhance)  title_prefix="Enhance" ;;
+        fix)      title_prefix="Fix" ;;
+        refactor) title_prefix="Refactor" ;;
+        docs)     title_prefix="Docs" ;;
+        chore)    title_prefix="Chore" ;;
+        test)     title_prefix="Test" ;;
+        *)        title_prefix="Feature" ;;
+    esac
+
+    # Extract slug from plan_name (inline to avoid dependency on flow.sh helpers)
+    # With Issue: 42-fix-task-wait-bug -> task-wait-bug
+    # Without Issue: refactor-optimize-files -> optimize-files
+    local slug
+    slug=$(echo "$plan_name" | sed -E 's/^[0-9]+-//; s/^(feature|enhance|fix|refactor|docs|chore|test)-//')
+
+    # Convert slug to readable text (e.g., "task-wait-bug" -> "task wait bug")
+    local readable_slug
+    readable_slug=$(echo "$slug" | sed 's/-/ /g')
+
+    local pr_title="$title_prefix: $readable_slug"
+
+    # Get project repo (PR target)
+    local pr_repo
+    pr_repo=$(get_project_repo "$project") || return 1
+
+    # Get current branch from project directory
+    local project_dir
+    project_dir="$workspace_root/projects/$project"
+
+    local current_branch
+    current_branch=$(cd "$project_dir" && git branch --show-current)
+
+    if [[ -z "$current_branch" || "$current_branch" == "main" || "$current_branch" == "master" ]]; then
+        log_error "Please run this command on a feature branch in project: $project (current: ${current_branch:-detached})"
+        return 1
+    fi
+
+    # Extract Goal from Plan for PR summary
+    local plan_goal
+    plan_goal=$(sed -n '/^## Goal/,/^##[^#]/{ /^## Goal/d; /^##[^#]/d; p; }' "$plan_file" | head -5 | sed '/^$/d')
+
+    # Generate PR body (no Issue reference)
+    local pr_body
+    pr_body=$(cat << EOF
+## Summary
+
+${plan_goal:-Implement $readable_slug}
+
+## Related Plan
+
+Plan: \`$plan_name\`
+
+## Changes
+
+- Change item 1
+- Change item 2
+
+## Test Plan
+
+##### Case P1: PR validation
+- Goal: Confirm PR changes work as expected
+- Fixture: PR branch with all changes
+- Execution:
+  - [ ] Step 1: Review PR diff for correctness
+  - [ ] Step 2: Verify CI passes
+- Expected Evidence: CI green, manual review approved
+EOF
+)
+
+    log_info "Creating PR in $pr_repo..."
+    log_info "Title: $pr_title"
+    log_info "Branch: $current_branch -> $base"
+
+    local pr_url
+    if [[ "$draft" == true ]]; then
+        pr_url=$(cd "$project_dir" && gh pr create --repo "$pr_repo" --base "$base" --title "$pr_title" --body "$pr_body" --draft)
+    else
+        pr_url=$(cd "$project_dir" && gh pr create --repo "$pr_repo" --base "$base" --title "$pr_title" --body "$pr_body")
+    fi
+
+    log_success "PR created: $pr_url"
+
+    echo "$pr_url"
 }
 
 # ============================================

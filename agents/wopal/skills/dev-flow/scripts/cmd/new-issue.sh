@@ -10,6 +10,10 @@ cmd_new_issue() {
     local scope=""
     local out_of_scope=""
     local reference=""
+    local confirmed_bugs=""
+    local content_model_defects=""
+    local cleanup_scope=""
+    local key_findings=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -49,11 +53,29 @@ cmd_new_issue() {
                 reference="$2"
                 shift 2
                 ;;
+            --confirmed-bugs)
+                confirmed_bugs="$2"
+                shift 2
+                ;;
+            --content-model-defects)
+                content_model_defects="$2"
+                shift 2
+                ;;
+            --cleanup-scope)
+                cleanup_scope="$2"
+                shift 2
+                ;;
+            --key-findings)
+                key_findings="$2"
+                shift 2
+                ;;
             -*)
                 log_error "Unknown option: $1"
                 echo "Usage: flow.sh new-issue --title \"<title>\" --project <name> --type <type>"
                 echo "                       [--body \"<body>\"] [--goal \"<text>\"] [--background \"<text>\"]"
                 echo "                       [--scope \"<items>\"] [--out-of-scope \"<items>\"] [--reference \"<path>\"]"
+                echo "                       [--confirmed-bugs \"<text>\"] [--content-model-defects \"<text>\"]"
+                echo "                       [--cleanup-scope \"<text>\"] [--key-findings \"<text>\"]"
                 exit 1
                 ;;
             *)
@@ -94,15 +116,15 @@ cmd_new_issue() {
         exit 1
     }
     
-    # Build default body from template if not provided
-    # Only use template when no body AND no structured params
-    if [[ -z "$body" && -z "$goal" && -z "$background" && -z "$scope" && -z "$out_of_scope" && -z "$reference" ]]; then
-        local template_file="$SKILL_DIR/templates/issue.md"
-        if [[ -f "$template_file" ]]; then
-            body=$(cat "$template_file")
+    # Build default body using shared renderer if not provided
+    # Use build_structured_issue_body for consistent section order
+    if [[ -z "$body" ]]; then
+        local plan_type
+        plan_type=$(normalize_plan_type "$type") || plan_type=""
+        if [[ "$plan_type" == "fix" ]]; then
+            body=$(build_structured_issue_body --type fix "$goal" "$background" "$confirmed_bugs" "$content_model_defects" "$cleanup_scope" "$key_findings" "$scope" "$out_of_scope" "$reference")
         else
-            log_error "Issue template not found: $template_file"
-            exit 1
+            body=$(build_structured_issue_body "$goal" "$background" "$scope" "$out_of_scope" "$reference")
         fi
     fi
     
@@ -118,6 +140,10 @@ cmd_new_issue() {
         ${scope:+--scope "$scope"} \
         ${out_of_scope:+--out-of-scope "$out_of_scope"} \
         ${reference:+--reference "$reference"} \
+        ${confirmed_bugs:+--confirmed-bugs "$confirmed_bugs"} \
+        ${content_model_defects:+--content-model-defects "$content_model_defects"} \
+        ${cleanup_scope:+--cleanup-scope "$cleanup_scope"} \
+        ${key_findings:+--key-findings "$key_findings"} \
         2>/dev/null)
     
     if [[ -z "$issue_url" ]]; then

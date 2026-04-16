@@ -10,7 +10,7 @@
 #   - Plan-to-Issue sync operations (including AC checkboxes)
 #   - Issue label synchronization from Plan metadata
 #
-# Dependencies: common.sh, plan.sh, labels.sh
+# Dependencies: common.sh, plan.sh, labels.sh, issue.sh
 # Guard: DEV_FLOW_PLAN_SYNC_LOADED
 
 # Prevent duplicate loading
@@ -27,6 +27,7 @@ SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 source "$SKILL_DIR/lib/common.sh"
 source "$SKILL_DIR/lib/plan.sh"
 source "$SKILL_DIR/lib/labels.sh"
+source "$SKILL_DIR/lib/issue.sh"
 
 # ============================================
 # Plan Content Extraction
@@ -49,6 +50,31 @@ _extract_plan_section() {
     ' "$plan_file"
 }
 
+# Extract a named subsection from Technical Context
+# Usage: _extract_technical_context_subsection <plan_file> <subsection>
+# Subsection names: Confirmed Bugs, Content Model Defects, Cleanup Scope, Key Findings
+# Output: subsection content (until next ### or ## heading), or empty if not found
+_extract_technical_context_subsection() {
+    local plan_file="$1"
+    local subsection="$2"
+
+    # Extract from ### <subsection> to next ### or ## heading
+    sed -n "/^### ${subsection}$/,/^[#]/{ /^### ${subsection}$/d; /^##[^#]/d; /^###/d; p; }" "$plan_file"
+}
+
+# Check if Plan has Technical Context named subsections
+# Usage: _plan_has_audit_subsections <plan_file>
+# Returns: 0 if has any of the 4 audit subsections, 1 otherwise
+_plan_has_audit_subsections() {
+    local plan_file="$1"
+
+    # Check for any of the 4 named subsections
+    grep -q "^### Confirmed Bugs" "$plan_file" || \
+    grep -q "^### Content Model Defects" "$plan_file" || \
+    grep -q "^### Cleanup Scope" "$plan_file" || \
+    grep -q "^### Key Findings" "$plan_file"
+}
+
 # Extract Acceptance Criteria section (including Agent/User sub-sections)
 # Usage: _extract_acceptance_criteria <plan_file>
 # Output: full Acceptance Criteria section content
@@ -59,55 +85,67 @@ _extract_acceptance_criteria() {
     sed -n '/^## Acceptance Criteria/,/^##[^#]/{ /^## Acceptance Criteria/d; /^##[^#]/d; p; }' "$plan_file"
 }
 
-# Normalize a section value with placeholder fallback
-# Usage: _issue_section_value <value> <placeholder_pattern> <fallback> [require_marker]
-# When placeholder_pattern is empty, skip placeholder check
-_issue_section_value() {
-    local value="$1"
-    local placeholder_pattern="$2"
-    local fallback="$3"
-    local require_marker="${4:-}"
-
-    if [[ -n "$require_marker" ]] && ! echo "$value" | grep -qF -- "$require_marker"; then
-        printf '%s\n' "$fallback"
-        return 0
-    fi
-
-    if [[ -z "$value" ]]; then
-        printf '%s\n' "$fallback"
-    elif [[ -n "$placeholder_pattern" ]] && echo "$value" | grep -qF -- "$placeholder_pattern"; then
-        printf '%s\n' "$fallback"
-    else
-        printf '%s\n' "$value"
-    fi
-}
-
 # ============================================
 # Issue Body Construction
 # ============================================
 
+# Extract Technical Context top-level content (before first ### subsection)
+# Usage: _extract_technical_context_top <plan_file>
+# Output: content before first ### subsection, or full Technical Context if no subsections
+_extract_technical_context_top() {
+    local plan_file="$1"
+    
+    # Extract from ## Technical Context to first ### or next ## heading
+    sed -n '/^## Technical Context/,/^##[^#]/{ /^## Technical Context/d; /^##[^#]/d; /^###/d; p; }' "$plan_file" | sed '/^$/d'
+}
+
 # Build normalized issue body from approved plan content
-# Usage: build_issue_body_from_plan <plan_file> <plan_name>
+# Usage: build_issue_body_from_plan <plan_file> <plan_name> [repo]
 # This preserves checkbox states from Agent Verification
+# Uses shared renderer from issue.sh for consistent formatting
+# Handles both:
+#   - New Plan with audit subsections (Confirmed Bugs, etc.)
+#   - Legacy Plan with only basic sections (fallback)
 build_issue_body_from_plan() {
     local plan_file="$1"
     local plan_name="$2"
     local repo="${3:-}"
-    local goal background in_scope out_of_scope acceptance_criteria project plan_path
-
-    goal=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Goal" 5 | sed '/^$/d')" "一句话描述" "<目标描述>")
-    background=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Technical Context" 20 | sed '/^$/d')" "<当前架构" "<背景描述>")
-    in_scope=$(_issue_section_value "$(_extract_plan_section "$plan_file" "In Scope" 50)" "" "- 范围项 1" "-")
-    out_of_scope=$(_issue_section_value "$(_extract_plan_section "$plan_file" "Out of Scope" 20)" "<本次不做" "- 不做的项（原因）")
+    
+    local goal in_scope out_of_scope acceptance_criteria project plan_path
+    local confirmed_bugs content_model_defects cleanup_scope key_findings background
+    local has_audit_sections=false
+    
+    # Check if Plan has audit subsections
+    if _plan_has_audit_subsections "$plan_file"; then
+        has_audit_sections=true
+    fi
+    
+    # Extract Goal
+    goal=$(_extract_plan_section "$plan_file" "Goal" 5 | sed '/^$/d')
+    
+    # Extract Background based on Plan structure
+    if [[ "$has_audit_sections" == true ]]; then
+        # For Plans with audit subsections, extract top-level Technical Context
+        background=$(_extract_technical_context_top "$plan_file")
+        # Extract audit subsections
+        confirmed_bugs=$(_extract_technical_context_subsection "$plan_file" "Confirmed Bugs")
+        content_model_defects=$(_extract_technical_context_subsection "$plan_file" "Content Model Defects")
+        cleanup_scope=$(_extract_technical_context_subsection "$plan_file" "Cleanup Scope")
+        key_findings=$(_extract_technical_context_subsection "$plan_file" "Key Findings")
+    else
+        # Legacy Plan: extract full Technical Context as Background
+        background=$(_extract_plan_section "$plan_file" "Technical Context" 20 | sed '/^$/d')
+    fi
+    
+    # Extract scope sections
+    in_scope=$(_extract_plan_section "$plan_file" "In Scope" 50)
+    out_of_scope=$(_extract_plan_section "$plan_file" "Out of Scope" 20)
     
     # Extract full Acceptance Criteria section (preserves checkboxes)
     acceptance_criteria=$(_extract_acceptance_criteria "$plan_file")
-    if [[ -z "$acceptance_criteria" ]]; then
-        acceptance_criteria="- 验收条件 1"
-    fi
     
     project=$(get_plan_project "$plan_file")
-
+    
     # Build Plan link: use GitHub blob URL for clickable link in Issue
     repo=$(_resolve_repo "${repo:-}")
     if [[ -n "$project" ]]; then
@@ -116,34 +154,78 @@ build_issue_body_from_plan() {
         plan_path="docs/products/plans/${plan_name}.md"
     fi
     local github_url="https://github.com/${repo}/blob/main/${plan_path}"
-
-    cat <<EOF
-## Goal
-
-$goal
-
-## Background
-
-$background
-
-## In Scope
-
-$in_scope
-
-## Out of Scope
-
-$out_of_scope
-
-## Acceptance Criteria
-
-$acceptance_criteria
-
-## Related Resources
-
-| Resource | Link |
-|----------|------|
-| Plan | [$plan_name]($github_url) |
-EOF
+    
+    # Build sections using shared renderer from issue.sh
+    local sections=""
+    
+    # Goal section
+    sections+=$(_render_issue_section "Goal" "$goal" "<目标描述>")
+    sections+=$'\n'
+    
+    # Background section
+    sections+=$(_render_issue_section "Background" "$background" "<背景描述>")
+    sections+=$'\n'
+    
+    # Audit sections (only for Plans with subsections)
+    if [[ "$has_audit_sections" == true ]]; then
+        if [[ -n "$confirmed_bugs" ]]; then
+            sections+=$(_render_issue_section "Confirmed Bugs" "$confirmed_bugs" "")
+            sections+=$'\n'
+        fi
+        
+        if [[ -n "$content_model_defects" ]]; then
+            sections+=$(_render_issue_section "Content Model Defects" "$content_model_defects" "")
+            sections+=$'\n'
+        fi
+        
+        if [[ -n "$cleanup_scope" ]]; then
+            sections+=$(_render_issue_section "Cleanup Scope" "$cleanup_scope" "")
+            sections+=$'\n'
+        fi
+        
+        if [[ -n "$key_findings" ]]; then
+            sections+=$(_render_issue_section "Key Findings" "$key_findings" "")
+            sections+=$'\n'
+        fi
+    fi
+    
+    # In Scope section
+    local in_scope_text
+    if [[ -n "$in_scope" ]]; then
+        in_scope_text="$in_scope"
+    else
+        in_scope_text="- 范围项 1"
+    fi
+    sections+=$(_render_issue_section "In Scope" "$in_scope_text" "- 范围项 1")
+    sections+=$'\n'
+    
+    # Out of Scope section
+    local out_of_scope_text
+    if [[ -n "$out_of_scope" ]]; then
+        out_of_scope_text="$out_of_scope"
+    else
+        out_of_scope_text="- 不做的项（原因）"
+    fi
+    sections+=$(_render_issue_section "Out of Scope" "$out_of_scope_text" "- 不做的项（原因）")
+    sections+=$'\n'
+    
+    # Acceptance Criteria section
+    local ac_text
+    if [[ -n "$acceptance_criteria" ]]; then
+        ac_text="$acceptance_criteria"
+    else
+        ac_text="- 验收条件 1"
+    fi
+    sections+=$(_render_issue_section "Acceptance Criteria" "$ac_text" "- 验收条件 1")
+    sections+=$'\n'
+    
+    # Related Resources table using shared helper
+    sections+="## Related Resources"$'\n\n'
+    sections+="| Resource | Link |"$'\n'
+    sections+="|----------|------|"$'\n'
+    sections+=$(_render_related_resources_row "Plan" "[$plan_name]($github_url)")
+    
+    printf '%s\n' "$sections"
 }
 
 # ============================================
