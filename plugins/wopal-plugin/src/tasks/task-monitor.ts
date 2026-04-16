@@ -135,14 +135,17 @@ export async function checkProgressNotifications(
       let shouldNotify = messageDelta >= PROGRESS_NOTIFY_MESSAGE_THRESHOLD ||
         (referenceTime > 0 && timeDelta >= PROGRESS_NOTIFY_TIME_THRESHOLD_MS)
 
-      let contextUsage: number | null = null
-      try {
-        contextUsage = await getContextUsagePercent(client, directory, task.sessionID, debugLog)
-        if (contextUsage !== null) {
-          task.lastContextUsage = contextUsage
+      // Bug 1 fix: prefer cached value to avoid streaming window returning null
+      let contextUsage: number | null = task.lastContextUsage ?? null
+      if (contextUsage === null) {
+        try {
+          contextUsage = await getContextUsagePercent(client, directory, task.sessionID, debugLog)
+          if (contextUsage !== null) {
+            task.lastContextUsage = contextUsage
+          }
+        } catch {
+          // Graceful degradation
         }
-      } catch {
-        // Graceful degradation
       }
 
       if (contextUsage !== null && contextUsage >= CONTEXT_WARN_THRESHOLD) {

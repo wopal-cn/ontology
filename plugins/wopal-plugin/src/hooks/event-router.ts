@@ -90,6 +90,13 @@ export function createEventRouter(ctx: EventRouterHookContext) {
     }
 
     if (eventType === "session.error") {
+      // Bug 2 fix: filter MessageAbortedError (user-initiated abort, not a real error)
+      const errorName = (props?.error as { name?: string } | undefined)?.name
+      if (errorName === "MessageAbortedError") {
+        ctx.taskDebugLog(`[session.error] filtered MessageAbortedError`)
+        return
+      }
+
       const sessionID = props?.sessionID as string | undefined
       const error = stringifyEventError(props?.error)
 

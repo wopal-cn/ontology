@@ -80,7 +80,7 @@ export function markTaskErrorBySession(
   // Don't change status if task was already interrupted (idleNotified=true)
   if (task.idleNotified && task.status === 'running') {
     debugLog(`[markError] skipped: taskId=${task.id} was interrupted (idleNotified=true), preserving running state`)
-    return task
+    return undefined
   }
 
   if (!failTask(deps, task, error)) {
