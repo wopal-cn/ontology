@@ -519,7 +519,7 @@ fi
     # Must have at least one scenario + final confirmation checkbox
     # ============================================
     local user_val_section
-    user_val_section=$(awk '/^### User Validation/{found=1;next} /^###{1,2}[^#]/{found=0} found{print}' "$plan_file")
+    user_val_section=$(awk '/^### User Validation/{found=1;next} /^#{2,3}[^#]/{found=0} found{print}' "$plan_file")
     
     if [[ -n "$user_val_section" ]]; then
         local uv_trimmed
@@ -562,9 +562,11 @@ fi
     local complexity_value
     complexity_value=$(echo "$complexity_line" | sed 's/^.*: //' || true)
     
-    # Check if delegation strategy is required
+# Check if delegation strategy is required
     local needs_delegation_strategy=false
-    if [[ "$task_count_val" -ge 2 ]] || [[ "$complexity_value" == "High" ]]; then
+    if [[ "$task_count_val" -ge 3 ]]; then
+        needs_delegation_strategy=true
+    elif [[ "$task_count_val" -ge 2 ]] && [[ "$complexity_value" == "High" || "$complexity_value" == "Medium" ]]; then
         needs_delegation_strategy=true
     fi
     
