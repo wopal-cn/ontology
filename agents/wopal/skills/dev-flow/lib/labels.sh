@@ -25,6 +25,35 @@ SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 source "$SKILL_DIR/lib/common.sh"
 
 # ============================================
+# Label Cache (bash 3.x compatible)
+# ============================================
+
+# Global cache: stores label names for a single repo (newline-separated)
+# Cache is per-process — lasts for one script invocation
+_LABELS_CACHE=""
+_LABELS_CACHE_REPO=""
+
+# Get all labels from cache, populating on first access
+# Usage: _get_all_labels_cached <repo>
+# Output: newline-separated label names
+_get_all_labels_cached() {
+    local repo="$1"
+
+    if [[ -z "$repo" ]]; then
+        return 0
+    fi
+
+    if [[ -n "${_LABELS_CACHE:-}" && "${_LABELS_CACHE_REPO:-}" == "$repo" ]]; then
+        echo "$_LABELS_CACHE"
+        return 0
+    fi
+
+    _LABELS_CACHE=$(gh label list --repo "$repo" --json name -q '.[].name' 2>/dev/null || echo "")
+    _LABELS_CACHE_REPO="$repo"
+    echo "${_LABELS_CACHE:-}"
+}
+
+# ============================================
 # Label Catalog (bash 3.x compatible)
 # ============================================
 
@@ -175,7 +204,7 @@ _labels_resolve_repo() {
     echo "${1:-}"
 }
 
-# Ensure a label exists in the repo
+# Ensure a label exists in the repo (using cache)
 # Usage: ensure_label_exists <label_name> [repo]
 # Returns: 0 on success, 1 on failure
 ensure_label_exists() {
@@ -193,8 +222,8 @@ ensure_label_exists() {
         return 0
     fi
 
-    # Silent check - return early if label already exists
-    if gh label list --repo "$repo" --json name -q '.[].name' 2>/dev/null | grep -qxF "$label_name"; then
+    # Check cache first (zero network overhead if cached)
+    if echo "$(_get_all_labels_cached "$repo")" | grep -qxF "$label_name"; then
         return 0
     fi
 
@@ -298,6 +327,49 @@ remove_issue_label() {
     gh issue edit "$issue_number" --repo "$repo" --remove-label "$label" >/dev/null 2>/dev/null || true
 }
 
+# ============================================
+# Batch Label Operations (bash 3.x compatible)
+# ============================================
+
+# Batch sync labels on an issue (single API call)
+# Usage: batch_sync_issue_labels <issue_number> <repo> <add_labels> <remove_labels>
+# add_labels/remove_labels: space-separated label names
+batch_sync_issue_labels() {
+    local issue_number="$1"
+    local repo="$2"
+    local add_labels="$3"
+    local remove_labels="$4"
+
+    if [[ -z "$repo" ]]; then
+        return 0
+    fi
+
+    # Use subshell + set to build args (bash 3.x compatible, no arrays)
+    local has_ops=0
+    for label in $remove_labels; do
+        has_ops=1
+    done
+    for label in $add_labels; do
+        has_ops=1
+    done
+
+    if [[ "$has_ops" -eq 0 ]]; then
+        return 0
+    fi
+
+    # Build args in subshell, execute single gh call
+    (
+        set --
+        for label in $remove_labels; do
+            set -- "$@" --remove-label "$label"
+        done
+        for label in $add_labels; do
+            set -- "$@" --add-label "$label"
+        done
+        gh issue edit "$issue_number" --repo "$repo" "$@" >/dev/null 2>/dev/null || true
+    )
+}
+
 # Sync a mutually exclusive label group to a single target label
 # Usage: sync_issue_label_group <issue_number> <desired_label> [repo] <group_labels...>
 sync_issue_label_group() {
@@ -320,42 +392,78 @@ sync_issue_label_group() {
 # Status Label Group Sync (4-state model)
 # ============================================
 
-# Sync status label group (remove all other status labels, add desired)
+# Sync status label group (single API call via batch)
 # Usage: sync_status_label_group <issue_number> <desired_label> [repo]
 sync_status_label_group() {
     local issue_number="$1"
     local desired_label="$2"
     local repo="${3:-}"
-    sync_issue_label_group "$issue_number" "$desired_label" "$repo" \
-        "status/planning" "status/in-progress" "status/verifying"
+
+    local add_labels=""
+    local remove_labels=""
+
+    [[ -n "$desired_label" ]] && add_labels="$desired_label"
+
+    local current
+    current=$(get_issue_labels "$issue_number" "$repo")
+    for label in status/planning status/in-progress status/verifying; do
+        [[ "$label" == "$desired_label" ]] && continue
+        echo "$current" | grep -qF "$label" && remove_labels="$remove_labels $label"
+    done
+
+    batch_sync_issue_labels "$issue_number" "$repo" "$add_labels" "$remove_labels"
 }
 
 # ============================================
 # Type Label Group Sync
 # ============================================
 
-# Sync type label group (remove all other type labels, add desired)
+# Sync type label group (single API call via batch)
 # Usage: sync_type_label_group <issue_number> <desired_label> [repo]
 sync_type_label_group() {
     local issue_number="$1"
     local desired_label="$2"
     local repo="${3:-}"
-    sync_issue_label_group "$issue_number" "$desired_label" "$repo" \
-        "type/feature" "type/bug" "type/refactor" "type/docs" "type/chore"
+
+    local add_labels=""
+    local remove_labels=""
+
+    [[ -n "$desired_label" ]] && add_labels="$desired_label"
+
+    local current
+    current=$(get_issue_labels "$issue_number" "$repo")
+    for label in type/feature type/bug type/refactor type/docs type/chore; do
+        [[ "$label" == "$desired_label" ]] && continue
+        echo "$current" | grep -qF "$label" && remove_labels="$remove_labels $label"
+    done
+
+    batch_sync_issue_labels "$issue_number" "$repo" "$add_labels" "$remove_labels"
 }
 
 # ============================================
 # Project Label Group Sync
 # ============================================
 
-# Sync project label group (remove all other project labels, add desired)
+# Sync project label group (single API call via batch)
 # Usage: sync_project_label_group <issue_number> <desired_label> [repo]
 sync_project_label_group() {
     local issue_number="$1"
     local desired_label="$2"
     local repo="${3:-}"
-    sync_issue_label_group "$issue_number" "$desired_label" "$repo" \
-        "project/ontology" "project/wopal-cli" "project/space"
+
+    local add_labels=""
+    local remove_labels=""
+
+    [[ -n "$desired_label" ]] && add_labels="$desired_label"
+
+    local current
+    current=$(get_issue_labels "$issue_number" "$repo")
+    for label in project/ontology project/wopal-cli project/space; do
+        [[ "$label" == "$desired_label" ]] && continue
+        echo "$current" | grep -qF "$label" && remove_labels="$remove_labels $label"
+    done
+
+    batch_sync_issue_labels "$issue_number" "$repo" "$add_labels" "$remove_labels"
 }
 
 # ============================================
