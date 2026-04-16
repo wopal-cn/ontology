@@ -407,7 +407,24 @@ archive_plan() {
     local archive_date
     archive_date=$(date '+%Y%m%d')
     local archived_file="$done_dir/${archive_date}-${plan_name}"
-    mv "$plan_file" "$archived_file"
+
+    local root_dir
+    root_dir=$(find_workspace_root)
+    local plan_file_rel="$plan_file"
+    local archived_file_rel="$archived_file"
+
+    if [[ "$plan_file_rel" == "$root_dir/"* ]]; then
+        plan_file_rel="${plan_file_rel#$root_dir/}"
+    fi
+    if [[ "$archived_file_rel" == "$root_dir/"* ]]; then
+        archived_file_rel="${archived_file_rel#$root_dir/}"
+    fi
+
+    if command -v git &> /dev/null && [[ -d "$root_dir/.git" ]] && git -C "$root_dir" ls-files --error-unmatch -- "$plan_file_rel" >/dev/null 2>&1; then
+        git -C "$root_dir" mv -- "$plan_file_rel" "$archived_file_rel"
+    else
+        mv "$plan_file" "$archived_file"
+    fi
 
     log_success "Plan archived: $archived_file" >&2
 

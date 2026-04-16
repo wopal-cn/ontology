@@ -92,7 +92,7 @@ cmd_archive() {
     local root_dir
     root_dir=$(find_workspace_root)
     local project
-    project=$(get_plan_project "$plan_file")
+    project=$(get_plan_project "$archived_file")
     local project_has_changes=false
     if [[ -n "$project" ]]; then
         local project_dir="$root_dir/projects/$project"
@@ -106,12 +106,21 @@ cmd_archive() {
     fi
 
     # Commit + push archived plan in space repo so the GitHub link works
+    # archive_plan() uses git mv when possible, so rename should already be staged
     if command -v git &> /dev/null && [[ -d "$root_dir/.git" ]]; then
-        git -C "$root_dir" add "$archived_file" >/dev/null 2>&1
-        if git -C "$root_dir" commit -m "chore: archive plan #$issue_number" >/dev/null 2>&1; then
-            git -C "$root_dir" push >/dev/null 2>&1 || log_warn "Failed to push archived plan"
+        local diff_rc=0
+        git -C "$root_dir" diff --cached --quiet 2>/dev/null || diff_rc=$?
+
+        if [[ "$diff_rc" -eq 0 ]]; then
+            log_warn "No staged changes for archived plan"
+        elif [[ "$diff_rc" -eq 1 ]]; then
+            if git -C "$root_dir" commit -m "chore: archive plan #$issue_number" >/dev/null 2>&1; then
+                git -C "$root_dir" push >/dev/null 2>&1 || log_warn "Failed to push archived plan"
+            else
+                log_warn "Failed to commit archived plan"
+            fi
         else
-            log_warn "Failed to commit archived plan"
+            log_warn "Failed to inspect staged changes for archived plan"
         fi
     fi
 
@@ -130,7 +139,7 @@ cmd_archive() {
 
     if [[ "$project_has_changes" == true ]]; then
         local plan_type
-        plan_type=$(get_plan_type "$plan_file")
+        plan_type=$(get_plan_type "$archived_file")
         echo ""
         echo "⚠️  Project $project has uncommitted changes. Please commit and push manually:"
         echo "  cd $root_dir/projects/$project"
