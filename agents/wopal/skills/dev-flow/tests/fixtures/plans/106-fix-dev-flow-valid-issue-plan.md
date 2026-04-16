@@ -1,4 +1,4 @@
-# 106-fix-repair-workflow-bugs-and-harden-design
+# 106-fix-dev-flow-repair-workflow-bugs-and-harden-design
 
 ## Metadata
 
@@ -56,6 +56,14 @@
 - [x] Step 3: 删除仓库级 ahead 数分支
 
 **Verification**: 在临时目录构造 3 组 git fixture 验证
+
+## Delegation Strategy
+
+| 批次 | Task | 执行者 | 依赖 |
+|------|------|--------|------|
+| 1 | Task 1 | Wopal | 无 |
+
+单一 Task，Wopal 执行。
 
 ## Test Plan
 
