@@ -154,8 +154,11 @@ cmd_verify() {
     # Update Plan status to done
     update_plan_status "$plan_file" "done" >/dev/null 2>&1
 
-    # Sync Issue if exists (Issue will be closed by archive)
+    # Sync Issue if exists
     if [[ -n "$issue_number" ]]; then
+        # Sync status label to status/done
+        sync_status_label_group "$issue_number" "status/done" "$repo" >/dev/null 2>&1
+
         # Sync final state to Issue body
         sync_plan_to_issue "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
     fi

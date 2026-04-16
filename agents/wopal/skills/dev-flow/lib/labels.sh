@@ -57,9 +57,9 @@ _get_all_labels_cached() {
 # Label Catalog (bash 3.x compatible)
 # ============================================
 
-# Status label names (4-state model)
+# Status label names (4-state model + done for closed state)
 get_status_label_names() {
-    echo "status/planning status/in-progress status/verifying"
+    echo "status/planning status/in-progress status/verifying status/done"
 }
 
 # Type label names
@@ -74,7 +74,7 @@ get_pr_label_names() {
 
 # All dev-flow label names
 get_all_flow_label_names() {
-    echo "status/planning status/in-progress status/verifying pr/opened"
+    echo "status/planning status/in-progress status/verifying status/done pr/opened"
 }
 
 # ============================================
@@ -87,10 +87,11 @@ get_all_flow_label_names() {
 _get_label_props() {
     local label_name="$1"
     case "$label_name" in
-        # Status labels (main - 4-state)
+        # Status labels (main - 4-state + done)
         status/planning)    printf 'fbca04\tPlanning\n' ;;
         status/in-progress) printf '1d76db\tCurrently in progress\n' ;;
         status/verifying)   printf '5319e7\tAwaiting user verification\n' ;;
+        status/done)        printf '0e8a16\tUser validation passed\n' ;;
         # PR sub-labels
         pr/opened)          printf 'bfdadc\tPR created, awaiting review\n' ;;
         # Type labels
@@ -161,16 +162,16 @@ issue_label_to_plan_type() {
 # Status to Label Mapping (4-state model)
 # ============================================
 
-# Map plan status to Issue label (4-state model)
+# Map plan status to Issue label (4-state model + done)
 # Usage: plan_status_to_issue_label <plan_status>
-# Output: status label or empty string (empty for done/closed)
+# Output: status label
 plan_status_to_issue_label() {
     local plan_status="$1"
     case "$plan_status" in
         planning)   echo "status/planning" ;;
         executing)  echo "status/in-progress" ;;
         verifying)  echo "status/verifying" ;;
-        done)       echo "" ;;  # Issue closed, no status label
+        done)       echo "status/done" ;;
         *)          echo "" ;;
     esac
 }
@@ -406,7 +407,7 @@ sync_status_label_group() {
 
     local current
     current=$(get_issue_labels "$issue_number" "$repo")
-    for label in status/planning status/in-progress status/verifying; do
+    for label in status/planning status/in-progress status/verifying status/done; do
         [[ "$label" == "$desired_label" ]] && continue
         echo "$current" | grep -qF "$label" && remove_labels="$remove_labels $label"
     done
