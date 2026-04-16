@@ -108,16 +108,17 @@ check_doc_plan() {
     local plan_basename
     plan_basename=$(basename "$plan_file" .md)
 
-    # Check file name matches one of two formats:
-    # 1. Issue format: <issue_number>-<type>-<slug>
-    # 2. No-issue format: <type>-<slug>
+    # Check file name matches one of two formats (scope is mandatory):
+    # 1. Issue format: <issue_number>-<type>-<scope>-<slug>
+    # 2. No-issue format: <type>-<scope>-<slug>
     local valid_types="feature|enhance|fix|refactor|docs|chore|test"
 
     # Try Issue format first
-    if [[ "$plan_basename" =~ ^([0-9]+)-($valid_types)-([a-z0-9-]+)$ ]]; then
+    if [[ "$plan_basename" =~ ^([0-9]+)-($valid_types)-([a-z0-9]+)-([a-z0-9-]+)$ ]]; then
         local filename_issue="${BASH_REMATCH[1]}"
         local filename_type="${BASH_REMATCH[2]}"
-        log_success "File name format: valid (issue #${filename_issue}, type $filename_type)"
+        local filename_scope="${BASH_REMATCH[3]}"
+        log_success "File name format: valid (issue #${filename_issue}, type $filename_type, scope $filename_scope)"
 
         # Verify issue number matches Plan metadata (only for issue format)
         local metadata_issue
@@ -135,14 +136,15 @@ check_doc_plan() {
             ((warnings++))
         fi
     # Try no-issue format
-    elif [[ "$plan_basename" =~ ^($valid_types)-([a-z0-9-]+)$ ]]; then
+    elif [[ "$plan_basename" =~ ^($valid_types)-([a-z0-9]+)-([a-z0-9-]+)$ ]]; then
         local filename_type="${BASH_REMATCH[1]}"
-        log_success "File name format: valid (no-issue, type $filename_type)"
+        local filename_scope="${BASH_REMATCH[2]}"
+        log_success "File name format: valid (no-issue, type $filename_type, scope $filename_scope)"
         # No issue number consistency check for no-issue format
     else
-        echo "File name does not match valid formats:"
-        echo "  - '<issue_number>-<type>-<slug>.md' (with Issue)"
-        echo "  - '<type>-<slug>.md' (no Issue)"
+        echo "File name does not match valid formats (scope is mandatory):"
+        echo "  - '<issue_number>-<type>-<scope>-<slug>.md' (with Issue)"
+        echo "  - '<type>-<scope>-<slug>.md' (no Issue)"
         echo "  Got: $plan_basename"
         ((issues++))
     fi
@@ -547,6 +549,47 @@ fi
         # No User Validation section — only a warning (backward compat for old plans)
         log_warn "No ### User Validation section found (recommended for execution-grade plans)"
         ((warnings++))
+    fi
+
+    # ============================================
+    # 13. Delegation Strategy validation (mandatory for complex plans)
+    # ============================================
+    local task_count_val
+    task_count_val=$(grep -c '^### Task ' "$plan_file" || echo "0")
+    
+    local complexity_line
+    complexity_line=$(grep '^\- \*\*Complexity\*\*:' "$plan_file" || true)
+    local complexity_value
+    complexity_value=$(echo "$complexity_line" | sed 's/^.*: //' || true)
+    
+    # Check if delegation strategy is required
+    local needs_delegation_strategy=false
+    if [[ "$task_count_val" -ge 2 ]] || [[ "$complexity_value" == "High" ]]; then
+        needs_delegation_strategy=true
+    fi
+    
+    if [[ "$needs_delegation_strategy" == true ]]; then
+        local delegation_section
+        delegation_section=$(sed -n '/^## Delegation Strategy/,/^##[^#]/{ /^## Delegation Strategy/d; /^##[^#]/d; p; }' "$plan_file")
+        
+        # Check if section exists and is not N/A placeholder
+        if [[ -z "$delegation_section" ]]; then
+            echo "## Delegation Strategy: section required for complex plans ($task_count_val tasks, Complexity: $complexity_value)"
+            ((issues++))
+        elif echo "$delegation_section" | grep -qE '^(N/A|n/a|N/A —|简单任务)'; then
+            echo "## Delegation Strategy: must be filled (not N/A) for complex plans ($task_count_val tasks, Complexity: $complexity_value)"
+            ((issues++))
+        elif ! echo "$delegation_section" | grep -qE '^\|.*Task.*执行者'; then
+            echo "## Delegation Strategy: missing delegation table (required format: table with Task/执行者 columns)"
+            ((issues++))
+        else
+            log_success "## Delegation Strategy: present for complex plan"
+        fi
+    else
+        # Optional for simple plans
+        if grep -q '^## Delegation Strategy' "$plan_file"; then
+            log_success "## Delegation Strategy: present (optional for simple plan)"
+        fi
     fi
 
     # ============================================
