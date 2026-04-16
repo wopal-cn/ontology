@@ -84,6 +84,27 @@ describe("OpenCodeRulesRuntime event handling", () => {
     expect(ctx.taskManager.notifyParent).toHaveBeenCalledWith("task-1")
   })
 
+  it("filters MessageAbortedError and does not mark task as error", async () => {
+    const { hooks, taskManager } = createEventRouterWithTaskManager({
+      markTaskErrorBySession: vi.fn(),
+      notifyParent: vi.fn().mockResolvedValue(undefined),
+    })
+
+    await hooks.event({
+      event: {
+        type: "session.error",
+        properties: {
+          sessionID: "child-1",
+          error: { name: "MessageAbortedError", message: "Aborted by user" },
+        },
+      },
+    })
+
+    // MessageAbortedError should be filtered, no error marking
+    expect(taskManager.markTaskErrorBySession).not.toHaveBeenCalled()
+    expect(taskManager.notifyParent).not.toHaveBeenCalled()
+  })
+
   it("marks running task errored on session.error and notifies parent", async () => {
     const { hooks, taskManager } = createEventRouterWithTaskManager({
       markTaskErrorBySession: vi.fn().mockReturnValue({ id: "task-1" }),
