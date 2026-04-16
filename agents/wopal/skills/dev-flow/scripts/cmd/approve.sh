@@ -106,7 +106,7 @@ cmd_approve() {
     fi
 
     # ============================================
-    # Plan push 检测（Issue link 需要文件存在于 GitHub）
+    # Plan push 自动推送（Issue link 需要文件存在于 GitHub）
     # 使用文件级 commit 可达性判断，而非仓库级 ahead 数
     # ============================================
     
@@ -120,14 +120,14 @@ cmd_approve() {
             log_error "Plan 文件状态异常，请先提交后再审批"
             exit 1
         elif [[ $push_status -eq 1 ]]; then
-            # Plan commit 未进入 origin/main
-            log_error "方案文件已 commit 但未 push，Issue 链接无法打开"
-            echo ""
-            echo "请先 push 后再审批:"
-            echo "  cd $ROOT_DIR && git push"
-            echo ""
-            echo "然后重新执行: flow.sh approve $input"
-            exit 1
+            # Plan commit 未进入 origin/main — 自动 push
+            log_step "Auto-pushing Plan file to origin/main..."
+            if git -C "$ROOT_DIR" push origin main 2>&1; then
+                log_success "Plan file pushed successfully"
+            else
+                log_error "Auto-push failed. Please push manually: cd $ROOT_DIR && git push"
+                exit 1
+            fi
         fi
         # push_status -eq 0: Plan 已 push，继续审批流程
     fi

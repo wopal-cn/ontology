@@ -179,6 +179,13 @@ executing
 - 每个场景必须包含 Goal / Precondition / User Actions / Expected Result
 - 最终确认 checkbox 是 `verify --confirm` 的硬 gate，只有用户才能勾选
 - Agent 禁止代为勾选最终确认 checkbox
+- **排除自动化验证项**：Agent Verification 可验证的项（编译通过、单测通过、CLI 功能自测）不写入 User Validation，User Validation 只含人工感知验证（UI/UX、业务流程、跨系统集成）
+
+<CRITICAL_RULE>
+
+**User Validation 禁止代勾选铁律**：User Validation 最终确认 checkbox (`- [ ] 用户已完成...`) 只有用户本人才能勾选。Agent 任何时候都禁止代为勾选此 checkbox，即使 Agent 认为验证已通过。违反此规则 = 严重失职。
+
+</CRITICAL_RULE>
 
 **Test Plan 设计原则**：
 - 每个保留的测试用例必须包含 Goal / Fixture / Execution / Expected Evidence
@@ -227,7 +234,7 @@ flow.sh new-issue \
 | 元素 | 规则 | 示例 |
 |------|------|------|
 | `type` | 必选，见下方类型表 | `feat`, `fix` |
-| `scope` | 可选，括号包裹，对应项目名 | `(cli)` |
+| `scope` | **必选**，括号包裹，对应项目名或模块名 | `(cli)`, `(dev-flow)` |
 | `description` | 必选，英文祈使句，≤50 chars | `add skills remove` |
 
 **合法类型**:
@@ -248,14 +255,15 @@ flow.sh new-issue \
 
 **示例**:
 - ✅ `feat(cli): add skills remove command`
-- ✅ `fix(plugin): handle expired tokens gracefully`
-- ✅ `refactor: unify plan status management`（无 scope）
-- ❌ `添加 skills remove 功能`（中文、无 type）
-- ❌ `feat: This is a very long description exceeding fifty characters limit`（过长）
+- ✅ `fix(dev-flow): handle expired tokens gracefully`
+- ❌ `refactor: unify plan status management`（缺少 scope）
+- ❌ `添加 skills remove 功能`（中文、无 type、无 scope）
+- ❌ `feat: This is a very long description exceeding fifty characters limit`（过长、缺少 scope）
 
 **Plan 名称提取**:
 从 `<description>` 部分提取 slug（去掉 type/scope），转 kebab-case。
-例如: `feat(cli): add skills remove` → Plan 名称: `feat-add-skills-remove`
+格式：Issue 模式 `<issue_number>-<type>-<scope>-<slug>`，无 Issue 模式 `<type>-<scope>-<slug>`。
+例如: `feat(cli): add skills remove` → Plan 名称: `110-feat-cli-add-skills-remove`（Issue 模式）或 `feat-cli-add-skills-remove`（无 Issue）
 
 ## Plan 调查阶段
 
@@ -270,6 +278,19 @@ flow.sh new-issue \
 - Technical Context 非空
 - Affected Files 至少一行
 - Complexity/Confidence 已填写
+
+## 委派策略强制要求
+
+<CRITICAL_RULE>
+
+**委派策略填写规范**：
+- Plan 有 2+ Task 或 Complexity = High 时，必须填写 `## Delegation Strategy` 章节
+- Delegation Strategy 必须引用 `fae-collab` 技能规范（委派流程、监控、验证边界）
+- 单一 Task + Complexity ≠ High 时可写 `N/A — 单一任务，无需并行委派`
+
+违反此规则 = Plan 评审不通过，必须补充后才能 approve。
+
+</CRITICAL_RULE>
 
 ## 错误处理
 

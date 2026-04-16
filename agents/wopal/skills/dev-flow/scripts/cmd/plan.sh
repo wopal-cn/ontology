@@ -12,6 +12,7 @@ cmd_plan() {
     local check_only=false
     local title=""
     local plan_type=""
+    local scope=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -39,10 +40,15 @@ cmd_plan() {
                 plan_type="$2"
                 shift 2
                 ;;
+            --scope)
+                scope="$2"
+                PLAN_SCOPE="$scope"
+                shift 2
+                ;;
             -*)
                 log_error "Unknown option: $1"
                 echo "Usage: flow.sh plan <issue> [--project <name>] [--prd <path>] [--deep] [--check]"
-                echo "   or: flow.sh plan --title \"<title>\" --project <name> --type <type> [--deep] [--check]"
+                echo "   or: flow.sh plan --title \"<title>\" --project <name> --type <type> [--scope <scope>] [--deep] [--check]"
                 exit 1
                 ;;
             *)
@@ -147,15 +153,43 @@ cmd_plan() {
         fi
 
         plan_type=$(_resolve_plan_type_from_issue "$title" "$issue_info")
+        
+        # Extract scope from title (mandatory)
+        local scope
+        scope=$(extract_scope "$title")
+        if [[ -z "$scope" ]]; then
+            log_error "Issue title missing scope: $title"
+            log_error "Expected format: <type>(<scope>): <description>"
+            exit 1
+        fi
+        
         slug=$(title_to_slug "$title")
         slug=$(echo "$slug" | sed -E 's/^(fix|feat|feature|enhance|refactor|docs|chore|test)-//')
-        plan_name="${issue_number}-${plan_type}-${slug}"
+        plan_name="${issue_number}-${plan_type}-${scope}-${slug}"
     else
         # No Issue: use provided title, project, type
         PLAN_PROJECT="$project"
+        
+        # Scope must be provided via --scope option or extracted from title pattern
+        local scope=""
+        if [[ -n "$PLAN_SCOPE" ]]; then
+            scope="$PLAN_SCOPE"
+        else
+            # Bash 3.x compatibility: use variable for regex with parentheses
+            local scope_pattern='^[a-z]+\(([^)]+)\):'
+            if [[ "$title" =~ $scope_pattern ]]; then
+                scope="${BASH_REMATCH[1]}"
+            fi
+        fi
+        
+        if [[ -z "$scope" ]]; then
+            log_error "Scope required for no-issue plans. Add --scope <name> or use title pattern: type(scope): description"
+            exit 1
+        fi
+        
         slug=$(title_to_slug "$title")
         slug=$(echo "$slug" | sed -E 's/^(fix|feat|feature|enhance|refactor|docs|chore|test)-//')
-        plan_name="${plan_type}-${slug}"
+        plan_name="${plan_type}-${scope}-${slug}"
     fi
 
     plan_dir=$(resolve_plan_dir --project "$project")

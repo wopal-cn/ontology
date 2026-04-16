@@ -35,7 +35,7 @@ run_tests() {
     # ============================================
     test_start "Valid issue plan should pass"
     
-    local plan_file="$FIXTURES_DIR/fix-valid-issue-plan.md"
+    local plan_file="$FIXTURES_DIR/106-fix-dev-flow-valid-issue-plan.md"
     
     run_cmd "check_doc_plan '$plan_file'"
     
@@ -49,7 +49,7 @@ run_tests() {
     # ============================================
     test_start "Valid no-issue plan should pass"
     
-    local plan_file="$FIXTURES_DIR/refactor-valid-no-issue-plan.md"
+    local plan_file="$FIXTURES_DIR/refactor-dev-flow-valid-no-issue-plan.md"
     
     run_cmd "check_doc_plan '$plan_file'"
     

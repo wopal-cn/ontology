@@ -90,6 +90,25 @@ title_to_slug() {
     echo "$slug"
 }
 
+# Extract scope from Issue title
+# Usage: extract_scope "<title>"
+# Output: scope string (e.g., "cli") or empty if not found
+extract_scope() {
+    local title="$1"
+    
+    # Match pattern: type(scope): description
+    # Extract content between parentheses
+    # Use variable for regex (Bash 3.x compatibility)
+    local scope_pattern='^[a-z]+\(([^)]+)\):'
+    if [[ "$title" =~ $scope_pattern ]]; then
+        echo "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    
+    # No scope found
+    echo ""
+}
+
 # ============================================
 # Issue Title Validation
 # ============================================
@@ -100,14 +119,16 @@ title_to_slug() {
 # Format: <type>(<scope>): <description>
 # Constraints:
 #   - type must be valid (feat/fix/refactor/docs/test/chore/enhance)
+#   - scope is MANDATORY (must be present in parentheses)
 #   - description ≤ 50 chars
 #   - total title ≤ 72 chars
 validate_issue_title() {
     local title="$1"
     
-    # Check basic format: type(scope): description or type: description
-    if ! echo "$title" | grep -qE '^[a-z]+(\([^)]+\))?:\s*.+$'; then
+    # Check format: type(scope): description (scope is now mandatory)
+    if ! echo "$title" | grep -qE '^[a-z]+\([^)]+\):\s*.+$'; then
         log_error "Invalid title format. Expected: <type>(<scope>): <description>"
+        log_error "Scope is mandatory - must be enclosed in parentheses"
         log_error "Example: feat(cli): add skills remove command"
         log_error "Your title: $title"
         return 1
@@ -115,7 +136,7 @@ validate_issue_title() {
     
     # Extract type
     local type
-    type=$(echo "$title" | sed -E 's/^([a-z]+)(\([^)]+\))?:.*/\1/')
+    type=$(echo "$title" | sed -E 's/^([a-z]+)\([^)]+\):.*/\1/')
     
     # Validate type
     case "$type" in
@@ -128,9 +149,20 @@ validate_issue_title() {
             ;;
     esac
     
+    # Extract scope
+    local scope
+    scope=$(extract_scope "$title")
+    
+    # Scope is now mandatory
+    if [[ -z "$scope" ]]; then
+        log_error "Scope is mandatory but not found in title"
+        log_error "Expected format: <type>(<scope>): <description>"
+        return 1
+    fi
+    
     # Extract description (after type(scope): )
     local description
-    description=$(echo "$title" | sed -E 's/^[a-z]+(\([^)]+\))?:\s*//')
+    description=$(echo "$title" | sed -E 's/^[a-z]+\([^)]+\):\s*//')
     
     # Check description length (≤ 50 chars)
     if [[ ${#description} -gt 50 ]]; then

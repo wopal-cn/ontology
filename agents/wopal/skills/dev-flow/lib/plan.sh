@@ -135,30 +135,32 @@ resolve_plan_file() {
 
 # Validate Plan naming convention
 # Usage: validate_plan_name <name>
-# Naming: <issue_number>-<type>-<slug>.md OR <type>-<slug>.md (no Issue)
+# Naming: <issue_number>-<type>-<scope>-<slug>.md OR <type>-<scope>-<slug>.md (no Issue)
 # Types: feature, enhance, fix, refactor, docs, chore, test
 validate_plan_name() {
     local name="$1"
 
     # Support two formats: with Issue prefix or without
-    if [[ ! "$name" =~ ^([0-9]+)?-?(feature|enhance|fix|refactor|docs|chore|test)-([a-z0-9-]+)$ ]]; then
+    # Scope is mandatory: <issue_number>-<type>-<scope>-<slug> or <type>-<scope>-<slug>
+    if [[ ! "$name" =~ ^([0-9]+)?-?(feature|enhance|fix|refactor|docs|chore|test)-([a-z0-9]+)-([a-z0-9-]+)$ ]]; then
         log_error "Invalid plan name: $name"
         echo ""
-        echo "Plan naming convention:"
-        echo "  <issue_number>-<type>-<slug>.md  (with Issue)"
-        echo "  <type>-<slug>.md                 (no Issue)"
+        echo "Plan naming convention (scope is mandatory):"
+        echo "  <issue_number>-<type>-<scope>-<slug>.md  (with Issue)"
+        echo "  <type>-<scope>-<slug>.md                 (no Issue)"
         echo ""
         echo "Types: feature, enhance, fix, refactor, docs, chore, test"
         echo "  - feature: new functionality"
         echo "  - enhance: improvement/optimization"
         echo "  - fix: bug fix"
         echo "  - refactor: code refactoring"
+        echo "Scope: short lowercase identifier (e.g., cli, dev-flow, plugin)"
         echo "Slug: short lowercase with hyphens"
         echo ""
         echo "Examples:"
-        echo "  42-fix-task-wait-bug"
+        echo "  110-feat-cli-add-skills-remove"
         echo "  15-feature-session-messages"
-        echo "  refactor-optimize-files-table (no Issue)"
+        echo "  fix-dev-flow-handle-expired-tokens (no Issue)"
         return 1
     fi
 
