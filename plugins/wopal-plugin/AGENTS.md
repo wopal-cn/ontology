@@ -95,14 +95,16 @@
 
 ## 目录结构
 
-### 当前结构
-
 ```
 src/                              # 源码目录
 ├── index.ts                      # 入口
 ├── types.ts                      # 类型定义
+├── debug.ts                      # 调试日志
+├── session-store.ts              # 会话存储
+├── session-store-instance.ts     # 会话存储实例
+├── test-helpers.ts               # 测试辅助
 │
-├── hooks/                        # 钩子子系统（#90 从 runtime.ts 拆分）
+├── hooks/                        # 钩子子系统
 │   ├── index.ts                  # HookContext + createAllHooks() 组装
 │   ├── system-transform.ts       # 系统提示词转换（规则+记忆注入）
 │   ├── message-hooks.ts          # 消息钩子（用户/助手消息处理）
@@ -113,7 +115,7 @@ src/                              # 源码目录
 │   ├── mcp-tools.ts              # MCP 工具检测
 │   └── *.test.ts                 # 测试文件
 │
-├── tasks/                        # 任务域（#91 从根目录迁移，含散件归位）
+├── tasks/                        # 任务域
 │   ├── manager.ts                # 任务管理器
 │   ├── launcher.ts               # 任务启动器
 │   ├── monitor.ts                # 任务监控器
@@ -127,12 +129,12 @@ src/                              # 源码目录
 │   ├── error-classifier.ts       # 错误分类
 │   ├── concurrency-manager.ts    # 并发控制
 │   ├── simple-task-manager.ts    # 简化任务管理入口
-│   ├── permission-proxy.ts       # 权限代理（散件归位）
-│   ├── question-relay.ts         # 问题中继（散件归位）
-│   ├── process-cleanup.ts        # 进程清理（散件归位）
+│   ├── permission-proxy.ts       # 权限代理
+│   ├── question-relay.ts         # 问题中继
+│   ├── process-cleanup.ts        # 进程清理
 │   └── *.test.ts                 # 测试文件
 │
-├── rules/                        # 规则子系统（#88 从 utils.ts 拆分）
+├── rules/                        # 规则子系统
 │   ├── index.ts                  # 统一导出
 │   ├── discoverer.ts             # 规则发现（扫描 .agents/rules/）
 │   ├── matcher.ts                # 条件匹配（路径、文件类型）
@@ -140,106 +142,56 @@ src/                              # 源码目录
 │   ├── path-extractor.ts         # 路径提取
 │   └── *.test.ts                 # 测试文件
 │
-├── debug.ts                      # 调试日志
-├── session-store.ts              # 会话存储
-├── session-store-instance.ts     # 会话存储实例
-├── test-helpers.ts               # 测试辅助
-│
 ├── memory/                       # 记忆子系统
 │   ├── index.ts                  # 统一导出
 │   ├── store.ts                  # LanceDB CRUD（tags 字段）
 │   ├── embedder.ts               # OpenAI Embedding
 │   ├── retriever.ts              # 语义检索（tags boost）
 │   ├── injector.ts               # 格式化注入系统提示词
-│   ├── distill.ts                # 蒸馏引擎核心逻辑（preview/confirm/cancel）
+│   ├── distill.ts                # 蒸馏引擎核心逻辑
 │   ├── session-context.ts        # 会话状态模型
 │   ├── llm-client.ts             # LLM 客户端
-│   ├── categories.ts             # 记忆分类定义（#89 内部拆分）
-│   ├── conversation.ts           # 会话消息提取（#89 内部拆分）
-│   ├── dedup.ts                  # 去重逻辑（#89 内部拆分）
-│   ├── prompts.ts                # 蒸馏提示词模板（#89 内部拆分）
-│   ├── types.ts                  # 记忆类型定义（#89 内部拆分）
+│   ├── categories.ts             # 记忆分类定义
+│   ├── conversation.ts           # 会话消息提取
+│   ├── dedup.ts                  # 去重逻辑
+│   ├── prompts.ts                # 蒸馏提示词模板
+│   ├── types.ts                  # 记忆类型定义
 │   └── store.test.ts             # 测试文件
 │
 └── tools/                        # OpenCode 工具定义
     ├── index.ts                  # 工具注册入口
     ├── wopal-task.ts             # 启动任务
-    ├── wopal-task-output.ts      # 查询状态/完成/输出（已瘦身）
-    ├── output-helpers.ts         # 输出辅助函数（#91 拆分）
+    ├── wopal-task-output.ts      # 查询状态/输出
+    ├── output-helpers.ts         # 输出辅助函数
     ├── wopal-task-reply.ts       # 恢复/中断子会话
     ├── wopal-task-interrupt.ts   # 强制中断任务
     ├── wopal-task-diff.ts        # 查看任务文件变更
-    ├── memory-manage/            # 记忆管理工具（#91 拆分）
+    ├── memory-manage/            # 记忆管理工具
     │   ├── index.ts              # 工具入口
     │   ├── crud.ts               # CRUD 操作
     │   ├── distill.ts            # 蒸馏操作
     │   ├── formatters.ts         # 输出格式化
     │   └── index.test.ts         # 测试文件
-    ├── context-manage.ts         # 会话摘要 + 状态查询（summary/status）
+    ├── context-manage.ts         # 会话摘要 + 状态查询
     └── distill-formatters.ts     # 蒸馏输出格式化
+
+scripts/                          # 工具脚本
+├── cli/                          # CLI 工具
+│   └── manage-memories.ts       # 记忆管理 CLI（list/search/delete/stats）
+├── debug/                        # 调试脚本
+│   ├── check-memories.ts        # 查询 LanceDB 打印所有记忆
+│   └── test-retrieval.ts        # 检索相关性测试（6 个查询）
+├── validation/                   # 功能验证脚本
+│   ├── benchmark-retrieval.ts   # 检索基准测试
+│   └── validate-rules-plugin.ts # 规则插件功能验证
+├── migrations/                   # 数据迁移
+│   └── archive/                 # 已完成的迁移脚本（归档）
+│       ├── migrate-embeddings.ts    # Embedding 模型切换
+│       ├── migrate-single-body.ts   # 单字段迁移
+│       └── migrate-tags.ts          # Tags 字段迁移
+├── import-memory.ts              # 主力导入工具（MEMORY.md → LanceDB）
+└── test-distill-prompt.ts        # 蒸馏提示词测试
 ```
-
-### 目标结构（拆分规划）
-
-```
-src/
-├── rules/                   # ✅ 已完成 (#88)
-│   ├── discoverer.ts
-│   ├── matcher.ts
-│   ├── formatter.ts
-│   └── path-extractor.ts
-├── memory/                  # ✅ 内部拆分已完成 (#89)
-│   ├── categories.ts
-│   ├── conversation.ts
-│   ├── dedup.ts
-│   ├── prompts.ts
-│   └── types.ts
-├── hooks/                   # ✅ 已完成 (#90)
-│   ├── index.ts
-│   ├── system-transform.ts
-│   ├── message-hooks.ts
-│   ├── event-router.ts
-│   ├── command-hooks.ts
-│   ├── compaction.ts
-│   ├── message-context.ts
-│   └── mcp-tools.ts
-├── tasks/                   # ✅ 已完成 (#91)
-│   ├── manager.ts
-│   ├── launcher.ts
-│   ├── monitor.ts
-│   ├── session-cursor.ts
-│   ├── session-messages.ts
-│   ├── progress-tracker.ts
-│   ├── progress-analyzer.ts
-│   ├── stuck-detector.ts
-│   ├── loop-detector.ts
-│   ├── idle-diagnostic.ts
-│   ├── error-classifier.ts
-│   ├── concurrency-manager.ts
-│   ├── simple-task-manager.ts
-│   └── *.test.ts (12 个)
-├── tools/                   # ✅ 已完成 (#91)
-│   ├── memory-manage/
-│   │   ├── index.ts
-│   │   ├── crud.ts
-│   │   ├── distill.ts
-│   │   ├── formatters.ts
-│   │   └── index.test.ts
-│   ├── output-helpers.ts
-│   └── wopal-task-output.ts (瘦身至 208 行)
-```
-
-### 拆分任务清单
-
-| 当前文件 | 拆分为 | 状态 |
-|----------|--------|------|
-| `utils.ts` | `rules/` 目录 | ✅ 已完成 (#88) |
-| `distill.ts` + `store.ts` | memory 内部模块 | ✅ 已完成 (#89) |
-| `runtime.ts` | `hooks/` 目录 | ✅ 已完成 (#90) |
-| 任务域文件 → `tasks/` | 13 源文件 + 12 测试 | ✅ 已完成 (#91) |
-| `memory-manage.ts` → `tools/memory-manage/` | 5 文件目录 | ✅ 已完成 (#91) |
-| `wopal-task-output.ts` 瘦身 | output-helpers.ts | ✅ 已完成 (#91) |
-| `index.test.ts` 独有用例迁移 | focused test files | ✅ 已完成 (#91) |
 
 ---
 
