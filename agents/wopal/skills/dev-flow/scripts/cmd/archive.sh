@@ -77,6 +77,19 @@ cmd_archive() {
         sync_plan_to_issue "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
     fi
 
+    # Stage verify's status modification before git mv
+    # This ensures one commit contains both status change and file rename
+    local root_dir
+    root_dir=$(find_workspace_root)
+    local plan_file_rel="$plan_file"
+    if [[ "$plan_file_rel" == "$root_dir/"* ]]; then
+        plan_file_rel="${plan_file_rel#$root_dir/}"
+    fi
+
+    if command -v git &> /dev/null && [[ -d "$root_dir/.git" ]] && git -C "$root_dir" ls-files --error-unmatch -- "$plan_file_rel" >/dev/null 2>&1; then
+        git -C "$root_dir" add -- "$plan_file_rel" >/dev/null 2>&1 || log_warn "Failed to stage plan modifications"
+    fi
+
     # Archive plan file
     local archived_file
     archived_file=$(archive_plan "$plan_file")
@@ -89,8 +102,6 @@ cmd_archive() {
     fi
 
     # Check if project has uncommitted changes (prompt agent to commit manually)
-    local root_dir
-    root_dir=$(find_workspace_root)
     local project
     project=$(get_plan_project "$archived_file")
     local project_has_changes=false
