@@ -122,7 +122,7 @@ description: |
 | **命令** | 用户调用 `/xxx` | `../../scripts/sync-to-wopal.py` |
 | **规则** | 注入上下文约束 | `../../scripts/sync-to-wopal.py` |
 | **代理** | 子代理灵魂提示词 | `../../scripts/sync-to-wopal.py` |
-| **插件** | 运行时 TS 程序 | `../../scripts/sync-to-wopal.py` |
+| **插件** | 运行时 TS 程序 | `.opencode/plugins/` (symlink 自动发现) |
 
 > 脚本位于 `wopal-workspace/scripts/sync-to-wopal.py`（本项目外部）
 >
@@ -132,7 +132,7 @@ description: |
 
 ## 插件开发
 
-**详细规范**：`plugins/wopal-plugin/AGENTS.md`
+**详细规范**：`wopal-plugin/AGENTS.md`
 
 插件是 TypeScript 编写的 OpenCode 运行时扩展，提供：
 
@@ -170,7 +170,7 @@ description: |
 | **Fae** | 命令 | `agents/fae/commands/` | `.wopal/agents/fae/commands/` |
 | | 规则 | `agents/fae/rules/` | `.wopal/agents/fae/rules/` |
 | | 技能 | `agents/fae/skills/` | `.wopal/agents/fae/skills/` |
-| **通用** | 插件 | `plugins/` | `.opencode/plugins/` (symlink 自动发现) |
+| **通用** | 插件 | `wopal-plugin/` | `.opencode/plugins/` (symlink 自动发现) |
 
 **原则**：通用层优先，专用层补充(重名则覆盖通用层)。修改通用层影响所有 Agent。
 

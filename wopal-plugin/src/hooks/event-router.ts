@@ -78,6 +78,12 @@ export function createEventRouter(ctx: EventRouterHookContext) {
         ctx.taskManager.notifyParent(task.id).catch((err) => {
           ctx.taskDebugLog(`[notifyParent] error for ${task.id}: ${err instanceof Error ? err.message : String(err)}`)
         })
+
+        // Task completion notification (sound + marker file)
+        if (diagnostic.verdict === "completed") {
+          const { notifyTaskCompletion } = await import("../tasks/task-completion-notify.js")
+          notifyTaskCompletion(sessionID)
+        }
       }
     }
 

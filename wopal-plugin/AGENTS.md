@@ -25,6 +25,7 @@
 │                                  │  ├── error-classifier.ts  │
 │                                  │  ├── concurrency-manager  │
 │                                  │  ├── simple-task-manager  │
+│                                  │  ├── task-completion-notify│
 │                                  │  └── *.test.ts            │
 ├─────────────────────────────────────────────────────────────┤
 │  通信辅助                       │  其他运行时                │
@@ -132,6 +133,7 @@ src/                              # 源码目录
 │   ├── permission-proxy.ts       # 权限代理
 │   ├── question-relay.ts         # 问题中继
 │   ├── process-cleanup.ts        # 进程清理
+│   ├── task-completion-notify.ts # 任务完成通知（声音+标记文件）
 │   └── *.test.ts                 # 测试文件
 │
 ├── rules/                        # 规则子系统
@@ -441,8 +443,7 @@ OpenCode 启动时自动扫描 `.opencode/plugins/*.{ts,js}`，无需在 `openco
 
 ```
 .opencode/plugins/
-├── wopal-plugin.ts    → symlink → projects/ontology/plugins/wopal-plugin/src/index.ts
-└── task-notify.js     → symlink → projects/ontology/plugins/task-notify.js
+└── wopal-plugin.ts    → symlink → projects/ontology/wopal-plugin/src/index.ts
 ```
 
 ### 开发阶段
