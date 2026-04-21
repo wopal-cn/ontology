@@ -20,8 +20,9 @@ export function createMemoryManageTool(
     description:
       "管理 LanceDB 中的长期记忆。子命令: list（列出全部）, stats（统计）, search（搜索）, delete（删除）, add（添加单条）, update（更新单条）, injected（查看当前上下文注入的记忆）。 " +
       "Distill current session: distill（预览候选）, confirm（写入数据库）, cancel（丢弃候选）。\n\n" +
-      "重要：调用本工具后，必须把 output 的完整文本逐字写入用户回复。严禁概括、严禁摘要、严禁省略任何一条结果。" +
-      "用户使用 list 的目的是逐条审查完整内容，以决定删除或调整哪一条记忆。\n\n" +
+      "展示义务区分：\n" +
+      "- list/add/update/delete：需展示给用户（用户 CRUD 操作，必须逐字完整展示，严禁省略）\n" +
+      "- search/stats/injected：仅供内部参考（Agent 自主调用时无需展示；用户通过 /memory 命令发起时由命令层控制展示）\n\n" +
       "参数用法：search 用 query（关键词）；delete 用 id（记忆 ID，逗号分隔多个）；update 用 id + 要修改的字段。id 从 list/search 结果的方括号中获取（如 [53cc9388] → id=\"53cc9388\"）。禁止将正文内容作为 id 传入。",
     args: {
       command: tool.schema
@@ -77,9 +78,9 @@ export function createMemoryManageTool(
         case "list":
           return (await formatList(store, category, limit)) + ECHO_REMINDER;
         case "stats":
-          return (await formatStats(store)) + ECHO_REMINDER;
+          return await formatStats(store);
         case "search":
-          return (await formatSearch(store, query ?? "", tags)) + ECHO_REMINDER;
+          return await formatSearch(store, query ?? "", tags);
         case "delete":
           return (await deleteMemories(store, id ?? "")) + ECHO_REMINDER;
         case "add":
@@ -100,7 +101,7 @@ export function createMemoryManageTool(
           return (await updateMemory(store, embedder, id ?? "", updateOpts as any)) + ECHO_REMINDER;
         }
         case "injected":
-          return (await formatInjected(sessionStore, context.sessionID)) + ECHO_REMINDER;
+          return await formatInjected(sessionStore, context.sessionID);
         case "distill": {
           const sessionID = context.sessionID;
           if (!sessionID) return "Failed: current session ID is unavailable.";
