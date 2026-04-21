@@ -43,19 +43,16 @@ export interface CommandHookContext {
 
 export function createCommandHooks(ctx: CommandHookContext) {
   async function onToolDefinition(
-    input: { toolID: string },
-    output: { description: string; parameters: unknown },
+    _input: { toolID: string },
+    _output: { description: string; parameters: unknown },
   ): Promise<void> {
-    if (input.toolID !== "memory_manage") {
+    if (_input.toolID !== "memory_manage") {
       return;
     }
 
-    output.description = [
-      "管理 LanceDB 中的长期记忆。子命令: list, stats, search, delete。",
-      "重要：调用本工具后，必须把 output 的完整文本逐字写入用户回复。",
-      "严禁概括、严禁摘要、严禁省略任何一条结果。",
-      "用户使用 list 的目的是逐条审查完整内容，以决定删除或调整哪一条记忆。",
-    ].join(" ");
+    // NOTE: 不再硬编码覆盖 description。工具的展示义务区分定义在
+    // src/tools/memory-manage/index.ts 中，onToolDefinition 不应篡改。
+    // 命令层的展示要求通过 command.execute.before 注入（见下方）。
   }
 
   async function onCommandExecuteBefore(
