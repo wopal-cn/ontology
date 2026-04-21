@@ -108,8 +108,9 @@ cmd_approve() {
     fi
 
     # Push Plan file to remote（无论有无 Issue，保持文件可达）
-    is_file_pushed "$plan_relative_path" "origin/main"
-    local push_status=$?
+    # NOTE: 使用 set -e 兼容模式捕获返回值（is_file_pushed 返回 1 是正常状态，不是错误）
+    local push_status
+    is_file_pushed "$plan_relative_path" "origin/main" && push_status=0 || push_status=$?
 
     if [[ $push_status -eq 1 ]]; then
         log_step "Auto-pushing Plan file to origin/main..."
