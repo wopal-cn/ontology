@@ -453,6 +453,27 @@ extract_plan_issues() {
     echo "${issue_numbers[*]}"
 }
 
+# Extract first Issue number from Plan metadata
+# Usage: extract_primary_plan_issue <plan_file>
+# Output: first issue number or empty
+extract_primary_plan_issue() {
+    local plan_file="$1"
+
+    if [[ ! -f "$plan_file" ]]; then
+        return 1
+    fi
+
+    local issue_numbers
+    issue_numbers=$(extract_plan_issues "$plan_file") || return 1
+
+    if [[ -z "$issue_numbers" ]]; then
+        echo ""
+        return 0
+    fi
+
+    echo "$issue_numbers" | awk '{print $1}'
+}
+
 # Get Plan metadata
 # Usage: get_plan_metadata <plan_file>
 # Output: key=value pairs

@@ -63,6 +63,7 @@ Agent **必须等待用户明确授权后才执行**：
 
 ```bash
 # Issue 驱动模式
+flow.sh sync <issue> [--body-only|--labels-only]          # 手动同步 Plan 到 Issue（不推进状态）
 flow.sh plan <issue> [--project <name>] [--check]       # 创建 Plan
 flow.sh approve <issue> --confirm [--worktree]          # 审批 → executing
 flow.sh complete <issue> [--pr]                         # 完成 → verifying
@@ -81,6 +82,8 @@ flow.sh archive <plan-name>
 
 | 参数 | 含义 |
 |------|------|
+| `--body-only` | `sync` 时仅同步 Issue body，不改 labels |
+| `--labels-only` | `sync` 时仅同步 Issue labels，不改 body |
 | `--check` | 验证 Plan 合规性（不创建） |
 | `--worktree` | 创建隔离开发环境（前置检查优先） |
 | `--pr` | 完成时创建 PR |
@@ -198,6 +201,7 @@ executing
 **Issue 驱动（正式任务）**：
 ```
 1. plan <issue>           → AI 创建 Plan + 调查 (status: planning)
+   sync <issue>           → AI 手动刷新 Issue 展示（可选，不改状态）
 2. approve <issue>        → AI 提交审批，暂停
    用户授权后 → approve <issue> --confirm [--worktree]
 3. complete <issue>       → AI 完成 → verifying

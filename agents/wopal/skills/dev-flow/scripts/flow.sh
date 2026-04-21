@@ -4,6 +4,7 @@
 #
 # Commands:
 #   new-issue           创建规范化的 Issue
+#   sync <issue>        手动同步 Plan 到 Issue
 #   plan <issue>        创建 Plan 并进入规划阶段
 #   approve <issue>     提交审批 → 执行
 #   complete <issue>    完成开发 → 验证阶段
@@ -128,8 +129,9 @@ find_plan_by_issue() {
 
     # Search docs/products/plans/ (global) and docs/products/*/plans/ (project-specific)
     while IFS= read -r -d '' plan_file; do
-        local issue_line
-        if grep -q "Issue.*#$issue_number" "$plan_file" 2>/dev/null; then
+        local matched_issue
+        matched_issue=$(extract_primary_plan_issue "$plan_file" 2>/dev/null || true)
+        if [[ "$matched_issue" == "$issue_number" ]]; then
             echo "$plan_file"
             return 0
         fi
@@ -214,6 +216,7 @@ get_plan_name() {
 # source cmd/ files (explicit order — utility.sh first)
 source "$SKILL_DIR/scripts/cmd/utility.sh"
 source "$SKILL_DIR/scripts/cmd/new-issue.sh"
+source "$SKILL_DIR/scripts/cmd/sync.sh"
 source "$SKILL_DIR/scripts/cmd/plan.sh"
 source "$SKILL_DIR/scripts/cmd/approve.sh"
 source "$SKILL_DIR/scripts/cmd/complete.sh"
@@ -227,6 +230,7 @@ source "$SKILL_DIR/scripts/cmd/query.sh"
 
 case "${1:-help}" in
     new-issue)      shift; cmd_new_issue "$@" ;;
+    sync)           shift; cmd_sync "$@" ;;
     plan)           shift; cmd_plan "$@" ;;
     approve)        shift; cmd_approve "$@" ;;
     complete)       shift; cmd_complete "$@" ;;

@@ -163,7 +163,7 @@ cmd_reset() {
     # Sync Issue label back to status/planning (if Issue exists)
     # Also clear old verification/verifying labels
     local issue_number
-    issue_number=$(grep "Issue.*#" "$plan_file" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
+    issue_number=$(extract_primary_plan_issue "$plan_file")
     
     if [[ -n "$issue_number" ]]; then
         local repo
@@ -190,6 +190,8 @@ Usage: flow.sh <command> <issue> [options]
   new-issue --title "<title>" --project <name> --type <type> [options]
                                            创建规范化 Issue
                                            可选: --goal, --background, --scope, --out-of-scope, --reference, --body
+  sync <issue> [--body-only|--labels-only]
+                                           手动同步 Plan 内容/labels 到 Issue（不推进状态）
   plan <issue> [--project <name>] [--prd <path>] [--check]
                                            创建 Plan 并进入规划阶段（含调查）
   approve <issue> --confirm [--worktree]
@@ -236,6 +238,9 @@ Overlay Labels:
 示例:
   # 创建 Issue
   flow.sh new-issue --title "feat(cli): add skills remove" --project wopal-cli --type feature
+
+  # 手动同步 Plan 到 Issue（不改变状态）
+  flow.sh sync 42
   
   # 完整工作流（无 PR）
   flow.sh plan 42

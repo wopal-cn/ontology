@@ -47,7 +47,7 @@ cmd_archive() {
 
     # Extract Issue number (if plan has Issue link)
     local issue_number
-    issue_number=$(grep "Issue.*#" "$plan_file" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
+    issue_number=$(extract_primary_plan_issue "$plan_file")
 
     local current_status
     current_status=$(get_current_status "$plan_file")

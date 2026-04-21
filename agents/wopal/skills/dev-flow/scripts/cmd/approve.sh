@@ -61,7 +61,7 @@ cmd_approve() {
 
     # Extract Issue number (if plan has Issue link)
     local issue_number
-    issue_number=$(grep "Issue.*#" "$plan_file" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
+    issue_number=$(extract_primary_plan_issue "$plan_file")
 
     local plan_relative_path
     plan_relative_path=$(realpath --relative-to="$ROOT_DIR" "$plan_file" 2>/dev/null || \
