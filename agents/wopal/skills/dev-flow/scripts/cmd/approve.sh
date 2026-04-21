@@ -4,11 +4,65 @@
 # --worktree creates isolated worktree for execution
 # Issue sync is automatic when plan has Issue link
 #
-# CRITICAL: Plan 文件有未提交变更时由 agent 手动 commit, 脚本不生成 commit message
+# Behavior:
+#   - approve             -> validate + snapshot commit/push for review
+#   - approve --confirm   -> preflight + status=executing + commit/push + issue sync
 #
 # Usage:
 #   flow.sh approve <issue> [--confirm] [--worktree]
 #   flow.sh approve <plan-name> [--confirm] [--worktree]
+_commit_and_push_plan_if_needed() {
+    local plan_file="$1"
+    local issue_number="${2:-}"
+
+    local plan_relative_path
+    plan_relative_path=$(realpath --relative-to="$ROOT_DIR" "$plan_file" 2>/dev/null || \
+        echo "${plan_file#$ROOT_DIR/}")
+
+    local plan_git_status
+    plan_git_status=$(git -C "$ROOT_DIR" status --porcelain -- "$plan_relative_path" 2>/dev/null || echo "")
+
+    if [[ -n "$plan_git_status" ]]; then
+        log_step "Auto-committing Plan file..."
+
+        local commit_msg
+        if [[ -n "$issue_number" ]]; then
+            commit_msg="docs(plan): approve plan #${issue_number}"
+        else
+            local plan_filename
+            plan_filename=$(basename "$plan_file" .md)
+            commit_msg="docs(plan): approve plan ${plan_filename}"
+        fi
+
+        if git -C "$ROOT_DIR" add "$plan_relative_path" && \
+           git -C "$ROOT_DIR" commit -m "$commit_msg" 2>&1; then
+            log_success "Plan file committed: $commit_msg"
+        else
+            log_error "Auto-commit failed. Please commit manually"
+            return 1
+        fi
+    fi
+
+    # Keep Plan file reachable from GitHub blob links
+    local push_status
+    is_file_pushed "$plan_relative_path" "origin/main" && push_status=0 || push_status=$?
+
+    if [[ $push_status -eq 1 ]]; then
+        log_step "Auto-pushing Plan file to origin/main..."
+        if git -C "$ROOT_DIR" push origin main 2>&1; then
+            log_success "Plan file pushed successfully"
+        else
+            log_error "Auto-push failed. Please push manually: cd $ROOT_DIR && git push"
+            return 1
+        fi
+    elif [[ $push_status -eq 2 ]]; then
+        log_error "Plan 文件状态异常"
+        return 1
+    fi
+
+    return 0
+}
+
 cmd_approve() {
     local input=""
     local confirm=false
@@ -63,10 +117,6 @@ cmd_approve() {
     local issue_number
     issue_number=$(extract_primary_plan_issue "$plan_file")
 
-    local plan_relative_path
-    plan_relative_path=$(realpath --relative-to="$ROOT_DIR" "$plan_file" 2>/dev/null || \
-        echo "${plan_file#$ROOT_DIR/}")
-
     # Run check-doc first (capture output, only show on failure)
     local check_output
     check_output=$(check_doc_plan "$plan_file" 2>&1)
@@ -78,55 +128,9 @@ cmd_approve() {
         exit 1
     fi
 
-    # ============================================
-    # Plan 文件自动 commit + push（Issue link 需要文件存在于 GitHub）
-    # ============================================
-
-    local plan_git_status
-    plan_git_status=$(git -C "$ROOT_DIR" status --porcelain -- "$plan_relative_path" 2>/dev/null || echo "")
-
-    if [[ -n "$plan_git_status" ]]; then
-        # Plan 有未提交变更 → 自动 commit
-        log_step "Auto-committing Plan file..."
-
-        local commit_msg
-        if [[ -n "$issue_number" ]]; then
-            commit_msg="docs(plan): approve plan #${issue_number}"
-        else
-            local plan_filename
-            plan_filename=$(basename "$plan_file" .md)
-            commit_msg="docs(plan): approve plan ${plan_filename}"
-        fi
-
-        if git -C "$ROOT_DIR" add "$plan_relative_path" && \
-           git -C "$ROOT_DIR" commit -m "$commit_msg" 2>&1; then
-            log_success "Plan file committed: $commit_msg"
-        else
-            log_error "Auto-commit failed. Please commit manually"
-            exit 1
-        fi
-    fi
-
-    # Push Plan file to remote（无论有无 Issue，保持文件可达）
-    # NOTE: 使用 set -e 兼容模式捕获返回值（is_file_pushed 返回 1 是正常状态，不是错误）
-    local push_status
-    is_file_pushed "$plan_relative_path" "origin/main" && push_status=0 || push_status=$?
-
-    if [[ $push_status -eq 1 ]]; then
-        log_step "Auto-pushing Plan file to origin/main..."
-        if git -C "$ROOT_DIR" push origin main 2>&1; then
-            log_success "Plan file pushed successfully"
-        else
-            log_error "Auto-push failed. Please push manually: cd $ROOT_DIR && git push"
-            exit 1
-        fi
-    elif [[ $push_status -eq 2 ]]; then
-        log_error "Plan 文件状态异常"
-        exit 1
-    fi
-
     # If no --confirm, wait for user confirmation
     if [[ "$confirm" != true ]]; then
+        _commit_and_push_plan_if_needed "$plan_file" "$issue_number" || exit 1
         echo "Status: awaiting approval"
         echo "Plan validated. Next: flow.sh approve $input --confirm"
         echo ""
@@ -251,6 +255,9 @@ cmd_approve() {
 
     # Update status to executing (using state machine)
     update_plan_status "$plan_file" "executing" >/dev/null 2>&1
+
+    # Commit/push the status transition before syncing Issue
+    _commit_and_push_plan_if_needed "$plan_file" "$issue_number" || exit 1
 
     # Sync Issue if plan has Issue link
     if [[ -n "$issue_number" ]]; then

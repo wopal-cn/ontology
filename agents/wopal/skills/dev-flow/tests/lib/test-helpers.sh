@@ -220,7 +220,7 @@ assert_file_contains() {
         return 1
     fi
     
-    if grep -qF "$substring" "$file"; then
+    if grep -qF -- "$substring" "$file"; then
         test_pass "File contains '$substring'"
         return 0
     else
