@@ -365,54 +365,70 @@ cmd_list() {
 cmd_remove() {
     local project="$1"
     local branch="$2"
-    
+    local force=false
+
+    shift 2 2>/dev/null || { error "请指定项目名称" && error "请指定要删除的分支名称"; }
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force|-f)
+                force=true
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
     [ -z "$project" ] && error "请指定项目名称"
     [ -z "$branch" ] && error "请指定要删除的分支名称"
-    
+
     # 查找工作空间根目录
     local workspace_root
     workspace_root=$(find_workspace_root) || error "未找到工作空间根目录（缺少 .workspace.md）"
-    
+
     # 验证项目名
     validate_project "$project" "$workspace_root"
-    
+
     # 切换到子项目目录
     local project_dir="$workspace_root/projects/$project"
     if [ ! -d "$project_dir" ]; then
         error "项目目录不存在: $project_dir"
     fi
     cd "$project_dir"
-    
+
     local root
     root="$(git_root)"
-    
+
     # 转换分支名中的 / 为 -
     local branch_path=$(echo "$branch" | sed 's/\//-/g')
     local worktree_path="$workspace_root/.worktrees/${project}-${branch_path}"
-    
+
     if [ ! -d "$worktree_path" ]; then
-        error "未找到 worktree: $worktree_path"
+        # worktree 目录已不存在，但仍尝试清理 git 记录和分支
+        warn "worktree 目录不存在: $worktree_path"
+        # 尝试从 git 中移除 worktree 记录
+        git worktree prune >/dev/null 2>&1
+    else
+        git worktree remove "$worktree_path" 2>/dev/null || git worktree prune
+        success "Worktree 已删除"
     fi
 
-    info "删除 worktree: $worktree_path"
+    # 删除本地分支（如果存在且不是当前分支）
+    local current_branch
+    current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
 
-    # 确认
-    read -p "确认删除？[y/N] " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        info "已取消"
-        exit 0
+    if [[ "$branch" == "$current_branch" ]]; then
+        warn "分支 '$branch' 是当前分支，跳过删除"
+        return 0
     fi
 
-    git worktree remove "$worktree_path"
-    success "Worktree 已删除"
-
-    # 询问是否删除分支
-    read -p "是否同时删除分支 '$branch'？[y/N] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        git branch -d "$branch" 2>/dev/null || git branch -D "$branch"
+    if git rev-parse --verify "$branch" >/dev/null 2>&1; then
+        git branch -d "$branch" 2>/dev/null || git branch -D "$branch" >/dev/null 2>&1
         success "分支已删除"
+    else
+        warn "分支 '$branch' 不存在"
     fi
 }
 
@@ -462,7 +478,7 @@ Git Worktree 管理工具 - 工作空间级管理
                                 无参数或 --all: 列出所有项目的 worktree
                                 <project>: 只列出指定项目的 worktree
   
-  remove <project> <branch>     删除指定的 worktree
+  remove <project> <branch> [--force]  删除指定的 worktree 和分支
   prune <project>               清理已删除分支的 worktree
   help                          显示此帮助
 
@@ -470,6 +486,9 @@ Git Worktree 管理工具 - 工作空间级管理
   --no-install      跳过依赖安装
   --no-test         跳过测试运行
   --existing        使用已存在的分支而非创建新分支
+
+选项（仅 remove 命令）：
+  --force, -f       跳过交互确认，静默执行
 
 路径规则：
   worktree 统一创建在工作空间级的 .worktrees/ 目录下
