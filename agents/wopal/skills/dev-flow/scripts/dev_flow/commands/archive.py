@@ -9,7 +9,8 @@
 # Flow:
 #   1. Find Plan file (by issue number)
 #   2. Check Plan status is "done"
-#   3. Gate: Check Target Project repo is clean (BLOCK on dirty)
+#   2.5. Sync Plan to Issue (body + labels)
+#   3. Gate: Check Target Project repo is clean (WARNING + prompt on dirty)
 #   4. Move Plan file to plans/done/YYYYMMDD-<plan-name>.md
 #   5. Update Issue Plan link
 #   6. Close GitHub Issue
@@ -33,6 +34,11 @@ from dev_flow.domain.plan.metadata import (
 )
 from dev_flow.domain.workflow import parse_plan_status
 from dev_flow.domain.plan.link import update_issue_plan_link
+from dev_flow.domain.issue.sync import (
+    sync_plan_to_issue_body,
+    sync_status_label,
+    ensure_issue_labels,
+)
 from dev_flow.infra.git import is_repo_dirty
 
 
@@ -110,21 +116,22 @@ def _find_project_path(project: str, workspace_root: Path) -> Path | None:
 
 
 # ============================================
-# Gate: Target Project Repo Clean Check
+# Gate: Target Project Repo Clean Check (WARNING)
 # ============================================
 
 def check_project_repo_gate(plan_path: str, workspace_root: Path) -> bool:
     """
     Gate: Check if Target Project repo has uncommitted changes.
     
-    BLOCKING behavior: Returns False if repo is dirty.
+    WARNING behavior: Displays warning and prompts for confirmation.
+    User can choose to proceed or abort.
     
     Args:
         plan_path: Path to Plan file
         workspace_root: Workspace root path
         
     Returns:
-        True if repo is clean (or no Target Project), False if dirty
+        True if repo is clean or user confirms to proceed, False if user aborts
     """
     project = get_plan_project(plan_path)
     
@@ -147,13 +154,33 @@ def check_project_repo_gate(plan_path: str, workspace_root: Path) -> bool:
     
     # Check dirty state
     if is_repo_dirty(str(project_path)):
-        log_error(f"Target Project '{project}' has dirty (uncommitted) changes")
-        log_error(f"Project path: {project_path}")
-        log_error("")
-        log_error("Please commit and push project changes before archiving:")
-        log_error(f"  cd {project_path}")
-        log_error("  git add <files> && git commit -m \"<message>\" && git push")
-        return False
+        log_warn(f"Target Project '{project}' has uncommitted changes!")
+        log_warn(f"Project path: {project_path}")
+        log_warn("")
+        
+        plan_issue = get_plan_issue(plan_path)
+        plan_type = get_plan_type(plan_path) or "chore"
+        
+        log_warn("Uncommitted changes will not be archived. You can commit and push manually:")
+        log_warn(f"  cd {project_path}")
+        if plan_issue:
+            log_warn(f"  git add <files> && git commit -m \"{plan_type}: #{plan_issue} <description>\" && git push")
+        else:
+            log_warn(f"  git add <files> && git commit -m \"{plan_type}: <description>\" && git push")
+        log_warn("")
+        
+        # Prompt for confirmation (WARNING, not blocking)
+        try:
+            response = input("Continue archiving anyway? [y/N] ").strip().lower()
+        except EOFError:
+            response = "n"
+        
+        if response not in ("y", "yes"):
+            log_info("Archive aborted by user")
+            return False
+        
+        log_info("Continuing archive despite uncommitted changes...")
+        return True
     
     return True
 
@@ -359,9 +386,40 @@ def cmd_archive(args: argparse.Namespace) -> int:
         
         return 1
     
-    # 3. Gate: Check Target Project repo is clean (BLOCK on dirty)
+    # 2.5. Sync Plan to Issue before archiving (if Issue exists)
+    repo = _get_space_repo()
+    plan_issue = get_plan_issue(plan_path) or issue_number
+    
+    if plan_issue:
+        log_info(f"Syncing Plan #{plan_issue} to Issue...")
+        
+        # Sync body: update Issue body with plan content
+        sync_plan_to_issue_body(
+            issue_number=plan_issue,
+            plan_file=plan_path,
+            repo=repo,
+            workspace_root=str(workspace_root),
+        )
+        
+        # Sync status label: ensure "status/done" label is set
+        sync_status_label(
+            issue_number=plan_issue,
+            status="done",
+            repo=repo,
+        )
+        
+        # Sync labels: ensure type and project labels are correct
+        ensure_issue_labels(
+            issue_number=plan_issue,
+            plan_file=plan_path,
+            repo=repo,
+        )
+        
+        log_success(f"Plan synced to Issue #{plan_issue}")
+    
+    # 3. Gate: Check Target Project repo is clean (WARNING, prompt for confirmation)
     if not check_project_repo_gate(plan_path, workspace_root):
-        # Dirty repo → BLOCK (return non-zero)
+        # User aborted
         return 1
     
     # 4. Archive Plan file
@@ -372,9 +430,7 @@ def cmd_archive(args: argparse.Namespace) -> int:
         log_error(f"Failed to archive plan: {e}")
         return 1
     
-    # Get repo and issue info
-    repo = _get_space_repo()
-    plan_issue = get_plan_issue(plan_path) or issue_number
+    # Get plan_type for commit message
     plan_type = get_plan_type(plan_path) or "chore"
     
     # 5. Update Issue Plan link

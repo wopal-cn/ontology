@@ -230,3 +230,56 @@ def _check_user_validation_structure(content: str) -> list:
         issues.append("### User Validation: must contain final confirmation checkbox\n  Required: - [ ] 用户已完成上述功能验证并确认结果符合预期")
     
     return issues
+
+
+def check_acceptance_criteria(plan_file: str) -> None:
+    """
+    Check if all Agent Verification Acceptance Criteria are completed.
+    
+    This is a hard gate for complete command.
+    
+    Behavior:
+    - If `### Agent Verification` sub-section exists: only check that section
+    - If no sub-section: fallback to checking entire `## Acceptance Criteria` (backward compat)
+    
+    Args:
+        plan_file: Path to plan file
+        
+    Raises:
+        ValidationError: If any Agent Verification items are unchecked
+    """
+    with open(plan_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # First, try to extract `### Agent Verification` sub-section
+    agent_ac_section = _extract_level3_section(content, "### Agent Verification")
+    
+    ac_section = ""
+    section_name = ""
+    
+    # Check if `### Agent Verification` exists and has checkbox content
+    if agent_ac_section and re.search(r'^\s*-\s+\[', agent_ac_section, re.MULTILINE):
+        ac_section = agent_ac_section
+        section_name = "Agent Verification"
+    else:
+        # Fallback: extract entire Acceptance Criteria section (backward compat)
+        ac_section = _extract_level2_section(content, "## Acceptance Criteria")
+        section_name = "Acceptance Criteria"
+    
+    # If no section or empty, pass
+    if not ac_section or not re.search(r'-', ac_section):
+        return
+    
+    # Check for unchecked items: - [ ]
+    unchecked = re.findall(r'^\s*-\s+\[\s*\].*$', ac_section, re.MULTILINE)
+    
+    if unchecked:
+        unchecked_str = "\n".join(unchecked)
+        raise ValidationError(f"{section_name} not completed:\n\n{unchecked_str}\n\nPlease complete the remaining items and update the Plan file.")
+    
+    # Check if there are any checked items
+    checked = re.findall(r'^\s*-\s+\[x\].*$', ac_section, re.MULTILINE)
+    
+    if not checked:
+        # No items found - pass
+        return

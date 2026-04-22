@@ -101,3 +101,46 @@ def get_plan_status(plan_path: str) -> str:
         Status name (e.g., "planning", "done"), or empty string if not found
     """
     return get_plan_field(plan_path, "Status")
+
+
+def set_plan_field(plan_path: str, field_name: str, field_value: str) -> bool:
+    """
+    Set or update a metadata field in Plan file.
+    
+    Args:
+        plan_path: Path to Plan markdown file
+        field_name: Field name to set (e.g., "PR", "Status")
+        field_value: Field value to set
+        
+    Returns:
+        True if updated successfully, False otherwise
+    """
+    path = Path(plan_path)
+    if not path.exists():
+        return False
+    
+    content = path.read_text()
+    
+    # Check if field already exists
+    pattern = rf'^\- \*\*{re.escape(field_name)}\*\*:\s*.*$'
+    match = re.search(pattern, content, re.MULTILINE)
+    
+    if match:
+        # Update existing field
+        new_line = f'- **{field_name}**: {field_value}'
+        new_content = re.sub(pattern, new_line, content, count=1, flags=re.MULTILINE)
+    else:
+        # Insert new field after Status line
+        status_pattern = r'^\- \*\*Status\*\*:\s*.*$'
+        status_match = re.search(status_pattern, content, re.MULTILINE)
+        
+        if status_match:
+            new_line = f'- **{field_name}**: {field_value}'
+            # Insert after Status line
+            new_content = content[:status_match.end()] + '\n' + new_line + content[status_match.end():]
+        else:
+            # No Status line, can't insert safely
+            return False
+    
+    path.write_text(new_content)
+    return True

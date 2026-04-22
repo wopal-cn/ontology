@@ -1,20 +1,22 @@
 #!/bin/bash
-# dev-flow — hybrid wrapper (Phase 5: issue/query/sync/archive/approve/complete/verify routed to Python)
+# dev-flow — hybrid wrapper (Phase 5: all commands routed to Python)
 # Usage: flow.sh <command> <issue-or-plan> [options]
 #
-# This wrapper routes commands to either Python implementation or legacy Bash.
-# During migration, unimplemented commands fall back to flow-legacy.sh.
+# This wrapper routes all commands to Python implementation.
+# Legacy Bash flow-legacy.sh is preserved as reference/fallback.
 #
-# Migration status (Phase 5):
-#   - issue create/update → Python
-#   - query status/list → Python
-#   - sync → Python
-#   - archive → Python (with Target Project repo dirty gate)
-#   - approve → Python (with Target Project repo dirty gate)
-#   - complete → Python
-#   - verify → Python
-#   - help → Python
-#   - plan → Python
+# Commands (all routed to Python):
+#   - issue create/update
+#   - plan (with --check/--deep/--prd, no-issue mode)
+#   - approve (with --worktree, check-doc, stash)
+#   - complete (with --pr, acceptance_criteria gate)
+#   - verify (with --confirm gate, PR merged check, user_validation gate)
+#   - archive (with sync before archive, project warning)
+#   - query status/list
+#   - sync
+#   - decompose-prd
+#   - reset
+#   - help
 
 set -e
 
@@ -23,7 +25,7 @@ LEGACY_SCRIPT="$SCRIPT_DIR/flow-legacy.sh"
 PYTHON_SCRIPT="$SCRIPT_DIR/flow.py"
 
 # Commands routed to Python implementation
-PYTHON_COMMANDS="issue|plan|query|sync|archive|complete|verify|help"
+PYTHON_COMMANDS="issue|plan|query|sync|archive|approve|complete|verify|help|status|list|decompose-prd|reset"
 
 # Check if legacy script exists
 if [[ ! -f "$LEGACY_SCRIPT" ]]; then

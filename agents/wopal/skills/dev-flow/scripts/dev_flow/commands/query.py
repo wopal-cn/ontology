@@ -14,6 +14,7 @@ import subprocess
 import sys
 import json
 import os
+import re
 from pathlib import Path
 
 from dev_flow.domain.plan.find import find_plan_by_issue, _find_workspace_root

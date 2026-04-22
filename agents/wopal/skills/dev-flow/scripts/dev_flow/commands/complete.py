@@ -4,26 +4,43 @@
 # Ported from scripts/cmd/complete.sh
 #
 # Command:
-#   complete <issue> - Mark implementation complete, transition to verifying
+#   complete <issue> [--pr] - Mark implementation complete, transition to verifying
 #
 # Flow:
 #   1. Find Plan file (by issue number)
 #   2. Check Plan status is "executing"
-#   3. Validate state transition (executing -> verifying)
-#   4. Update Plan status to "verifying"
-#   5. Output confirmation
+#   3. Check Agent Verification Acceptance Criteria (hard gate)
+#   4. Validate state transition (executing -> verifying)
+#   5. [--pr] Create Pull Request
+#   6. Update Plan status to "verifying"
+#   7. Sync Issue (status label + body)
 
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
 from dev_flow.domain.plan.find import find_plan_by_issue
-from dev_flow.domain.plan.metadata import get_plan_issue
+from dev_flow.domain.plan.metadata import (
+    get_plan_field,
+    get_plan_issue,
+    get_plan_project,
+    set_plan_field,
+)
+from dev_flow.domain.validation.check_doc import (
+    ValidationError,
+    check_acceptance_criteria,
+)
 from dev_flow.domain.workflow import (
     parse_plan_status,
     is_valid_transition,
+)
+from dev_flow.domain.issue.sync import (
+    sync_status_label,
+    sync_plan_to_issue_body,
+    plan_status_to_issue_label,
 )
 
 
@@ -39,8 +56,8 @@ def log_success(msg: str) -> None:
     print(f"\033[0;32m[OK]\033[0m {msg}")
 
 
-def log_error(msg: str) -> None:
-    print(f"\033[0;31m[ERROR]\033[0m {msg}", file=sys.stderr)
+def log_error(msg: str, file=None) -> None:
+    print(f"\033[0;31m[ERROR]\033[0m {msg}", file=file or sys.stderr)
 
 
 def log_warn(msg: str) -> None:
@@ -65,28 +82,32 @@ def _find_workspace_root() -> Path:
     return Path.cwd()
 
 
+def _resolve_repo(repo: str = None) -> str:
+    """Resolve repository name (owner/repo format)."""
+    if repo:
+        return repo
+    try:
+        result = subprocess.run(
+            ['gh', 'repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'],
+            capture_output=True, text=True, check=True
+        )
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return ""
+
+
 def _update_plan_status(plan_path: str, new_status: str) -> bool:
     """
     Update Plan status field in metadata section.
-
-    Args:
-        plan_path: Path to Plan markdown file
-        new_status: New status value (e.g., "verifying")
-
-    Returns:
-        True if updated successfully
     """
+    import re
     path = Path(plan_path)
     if not path.exists():
         return False
 
     content = path.read_text()
-
-    # Replace status line: - **Status**: <old> -> - **Status**: <new>
-    import re
     pattern = r'^\- \*\*Status\*\*:\s*\w+'
     new_line = f'- **Status**: {new_status}'
-
     new_content = re.sub(pattern, new_line, content, count=1, flags=re.MULTILINE)
 
     if new_content == content:
@@ -97,6 +118,127 @@ def _update_plan_status(plan_path: str, new_status: str) -> bool:
     return True
 
 
+def _create_pr(issue_number: int, project: str, base: str = "main") -> str:
+    """
+    Create a Pull Request for the issue in the target project repo.
+
+    Returns:
+        PR URL string
+    """
+    import re
+
+    # Determine target repo from project name
+    # Map project name to GitHub repo
+    project_repo_map = {
+        "ontology": "wopal-cn/ontology",
+        "wopal-cli": "wopal-cn/wopal-cli",
+        "space-flow": "wopal-cn/wopal-space-flow",
+        "ellamaka": "sampx/ellamaka",
+    }
+    target_repo = project_repo_map.get(project)
+
+    if not target_repo:
+        # Try to determine from gh CLI
+        log_error(f"Cannot determine repo for project: {project}")
+        return ""
+
+    # Get current branch name
+    result = subprocess.run(
+        ['git', 'branch', '--show-current'],
+        capture_output=True, text=True
+    )
+    branch = result.stdout.strip()
+
+    if not branch:
+        log_error("Cannot determine current branch")
+        return ""
+
+    # Create PR
+    title = f"#{issue_number}"
+    body = f"Closes #{issue_number}"
+
+    result = subprocess.run(
+        [
+            'gh', 'pr', 'create',
+            '--repo', target_repo,
+            '--base', base,
+            '--head', branch,
+            '--title', title,
+            '--body', body,
+        ],
+        capture_output=True, text=True
+    )
+
+    if result.returncode != 0:
+        log_error(f"Failed to create PR: {result.stderr}")
+        return ""
+
+    # gh pr create outputs the PR URL as the last line
+    output_lines = result.stdout.strip().split('\n')
+    pr_url = output_lines[-1].strip()
+
+    return pr_url
+
+
+def _create_pr_for_plan(plan_name: str, project: str, base: str = "main") -> str:
+    """
+    Create a Pull Request for a plan (no-issue mode).
+
+    Returns:
+        PR URL string
+    """
+    project_repo_map = {
+        "ontology": "wopal-cn/ontology",
+        "wopal-cli": "wopal-cn/wopal-cli",
+        "space-flow": "wopal-cn/wopal-space-flow",
+        "ellamaka": "sampx/ellamaka",
+    }
+    target_repo = project_repo_map.get(project)
+
+    if not target_repo:
+        log_error(f"Cannot determine repo for project: {project}")
+        return ""
+
+    result = subprocess.run(
+        ['git', 'branch', '--show-current'],
+        capture_output=True, text=True
+    )
+    branch = result.stdout.strip()
+
+    if not branch:
+        log_error("Cannot determine current branch")
+        return ""
+
+    title = plan_name
+    body = f"Plan: {plan_name}"
+
+    result = subprocess.run(
+        [
+            'gh', 'pr', 'create',
+            '--repo', target_repo,
+            '--base', base,
+            '--head', branch,
+            '--title', title,
+            '--body', body,
+        ],
+        capture_output=True, text=True
+    )
+
+    if result.returncode != 0:
+        log_error(f"Failed to create PR: {result.stderr}")
+        return ""
+
+    output_lines = result.stdout.strip().split('\n')
+    pr_url = output_lines[-1].strip()
+
+    return pr_url
+
+
+def _get_plan_name(plan_path: str) -> str:
+    """Get plan name from file path (stem without extension)."""
+    return Path(plan_path).stem
+
+
 # ============================================
 # complete command
 # ============================================
@@ -104,10 +246,11 @@ def _update_plan_status(plan_path: str, new_status: str) -> bool:
 def cmd_complete(args: argparse.Namespace) -> int:
     """Mark implementation complete and transition to verifying."""
     issue_number = args.issue
+    create_pr = getattr(args, 'pr', False)
 
     if not issue_number:
         log_error("Missing issue number")
-        log_error("Usage: flow.sh complete <issue>")
+        log_error("Usage: flow.sh complete <issue> [--pr]")
         return 1
 
     workspace_root = _find_workspace_root()
@@ -121,6 +264,8 @@ def cmd_complete(args: argparse.Namespace) -> int:
 
     log_info(f"Found plan: {plan_path}")
 
+    plan_name = _get_plan_name(plan_path)
+
     # 2. Check current Plan status
     current_status = parse_plan_status(plan_path)
 
@@ -133,7 +278,6 @@ def cmd_complete(args: argparse.Namespace) -> int:
         log_error(f"Plan must be in executing state to complete (current: {current_status})")
         log_error("")
 
-        # Suggest next action based on current status
         suggestion_map = {
             "planning": "Run: flow.sh approve <issue> --confirm",
             "verifying": "Run: flow.sh verify <issue> --confirm",
@@ -145,30 +289,124 @@ def cmd_complete(args: argparse.Namespace) -> int:
 
         return 1
 
-    # 4. Validate state transition
+    # 4. Check Agent Verification Acceptance Criteria (hard gate)
+    try:
+        check_acceptance_criteria(plan_path)
+    except ValidationError as e:
+        log_error("")
+        log_error(f"Cannot complete: {e}")
+        log_error("")
+        log_error(f"Please complete the remaining items and update the Plan file:")
+        log_error(f"  {plan_path}")
+        log_error("")
+        log_error(f"After completing, run: flow.sh complete {issue_number}")
+        return 1
+
+    # 5. Resolve repo for Issue sync
+    repo = _resolve_repo()
+
+    # Extract Issue number from Plan metadata
+    plan_issue = get_plan_issue(plan_path)
+
+    # Extract Target Project from Plan
+    project = get_plan_project(plan_path)
+
+    # 6. Validate state transition
     target_status = "verifying"
 
     if not is_valid_transition(current_status, target_status):
         log_error(f"Invalid state transition: {current_status} -> {target_status}")
         return 1
 
-    # 5. Update Plan status to verifying
-    if _update_plan_status(plan_path, target_status):
-        log_success(f"Plan status updated: {target_status}")
+    # 7. Two paths: with PR or without PR
+    if create_pr:
+        if not project:
+            log_error("Cannot create PR: no Target Project in plan")
+            return 1
+
+        pr_url = ""
+        effective_issue = plan_issue or issue_number
+
+        if effective_issue:
+            # With Issue: create PR referencing Issue
+            pr_url = _create_pr(effective_issue, project)
+            if not pr_url:
+                return 1
+
+            log_success(f"PR created: {pr_url}")
+
+            # State transition
+            if _update_plan_status(plan_path, target_status):
+                log_success(f"Plan status updated: {target_status}")
+            else:
+                log_error("Failed to update Plan status")
+                return 1
+
+            # Persist PR URL in Plan metadata
+            set_plan_field(plan_path, "PR", pr_url)
+
+            # Sync Issue status label to verifying
+            if repo:
+                status_label = plan_status_to_issue_label(target_status)
+                if status_label:
+                    sync_status_label(effective_issue, target_status, repo)
+
+                # Sync Agent Verification AC to Issue body
+                sync_plan_to_issue_body(effective_issue, plan_path, repo, str(workspace_root))
+        else:
+            # No Issue: create PR without Issue reference
+            pr_url = _create_pr_for_plan(plan_name, project)
+            if not pr_url:
+                return 1
+
+            log_success(f"PR created: {pr_url}")
+
+            # State transition
+            if _update_plan_status(plan_path, target_status):
+                log_success(f"Plan status updated: {target_status}")
+            else:
+                log_error("Failed to update Plan status")
+                return 1
+
+            # Persist PR URL in Plan metadata
+            set_plan_field(plan_path, "PR", pr_url)
+
+        print("")
+        print("Status: verifying (PR opened)")
+        print("")
+        print("Waiting for PR merge. After user confirms, run:")
+        print(f"  flow.sh verify {plan_name} --confirm")
+
     else:
-        log_error("Failed to update Plan status")
-        return 1
+        # Without PR path: state transition + sync
+        if _update_plan_status(plan_path, target_status):
+            log_success(f"Plan status updated: {target_status}")
+        else:
+            log_error("Failed to update Plan status")
+            return 1
 
-    # 6. Output confirmation
-    plan_issue = get_plan_issue(plan_path) or issue_number
+        effective_issue = plan_issue or issue_number
 
-    print("")
-    print("Status: verifying")
-    print("")
-    print("Implementation complete. Waiting for user verification.")
-    print("")
-    print("After user confirms, run:")
-    print(f"  flow.sh verify {plan_issue} --confirm")
+        # Sync Issue if exists
+        if effective_issue and repo:
+            status_label = plan_status_to_issue_label(target_status)
+            if status_label:
+                sync_status_label(effective_issue, target_status, repo)
+
+            # Sync Agent Verification AC to Issue body
+            sync_plan_to_issue_body(effective_issue, plan_path, repo, str(workspace_root))
+
+        print("")
+        print("Status: verifying")
+        print("")
+        print("Implementation complete. Waiting for user verification.")
+        print("")
+        print("After user confirms, run:")
+        display_issue = plan_issue or issue_number
+        print(f"  flow.sh verify {display_issue} --confirm")
+        if effective_issue:
+            print("")
+            print(f"Issue: #{effective_issue}")
 
     return 0
 
@@ -188,4 +426,10 @@ def register_complete_parser(subparsers: argparse._SubParsersAction) -> None:
         type=int,
         nargs="?",
         help="Issue number"
+    )
+    complete_parser.add_argument(
+        "--pr",
+        action="store_true",
+        default=False,
+        help="Create a Pull Request when completing"
     )

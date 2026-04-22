@@ -154,3 +154,53 @@ def get_repo_root(path: str) -> str:
         text=True,
     )
     return result.stdout.strip()
+
+
+def is_commit_in_remote(repo_path: str, remote: str = "origin", branch: str = "main") -> bool:
+    """Check if HEAD commit is already pushed to remote branch.
+
+    Args:
+        repo_path: Path to git repository root
+        remote: Remote name (default: origin)
+        branch: Branch name (default: main)
+
+    Returns:
+        True if HEAD is ancestor of remote/branch (already pushed)
+        False if HEAD is not pushed yet or cannot determine
+    """
+    # Fetch remote first (silent)
+    subprocess.run(
+        ["git", "fetch", remote, branch],
+        cwd=repo_path,
+        capture_output=True,
+    )
+
+    # Check if HEAD is ancestor of remote/branch
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", "HEAD", f"{remote}/{branch}"],
+        cwd=repo_path,
+        capture_output=True,
+    )
+
+    # returncode 0 = HEAD is ancestor (already pushed)
+    return result.returncode == 0
+
+
+def get_relative_path(file_path: str, base_path: str) -> str:
+    """Get relative path from base_path to file_path.
+
+    Args:
+        file_path: Absolute file path
+        base_path: Base directory path
+
+    Returns:
+        Relative path string
+    """
+    file = Path(file_path).resolve()
+    base = Path(base_path).resolve()
+
+    try:
+        return str(file.relative_to(base))
+    except ValueError:
+        # file_path is not relative to base_path
+        return str(file)

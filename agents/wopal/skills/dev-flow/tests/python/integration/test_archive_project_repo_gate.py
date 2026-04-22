@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # test_archive_project_repo_gate.py - Test archive command gate on dirty project repo
 #
-# Test Case: Archive blocks when target project repo has uncommitted changes
+# Test Case: Archive prompts WARNING when target project repo has uncommitted changes
 #
 # Scenarios:
-#   1. dirty project repo -> archive fails with explicit error
-#   2. clean project repo -> archive succeeds normally
+#   1. dirty project repo + user confirms (y) -> archive succeeds with warning
+#   2. dirty project repo + user cancels (n) -> archive fails (user aborted)
+#   3. clean project repo -> archive succeeds normally (no prompt)
 
 import unittest
 import subprocess
@@ -131,6 +132,9 @@ elif args[0] == 'issue' and args[1] == 'close':
         for arg in args:
             f.write(arg + '\n')
     sys.exit(0)
+elif args[0] == 'label' and args[1] == 'create':
+    # Accept label creation
+    sys.exit(0)
 else:
     print('fake gh: ' + str(args), file=sys.stderr)
     sys.exit(0)  # Accept other calls for now
@@ -140,8 +144,8 @@ else:
             f.write(gh_script)
         os.chmod(gh_path, 0o755)
 
-    def test_archive_blocks_on_dirty_project_repo(self):
-        """archive fails when project repo has uncommitted changes"""
+    def test_archive_succeeds_when_user_confirms_on_dirty_repo(self):
+        """archive succeeds when user confirms (y) despite dirty project repo"""
         # Create a file in project and DON'T commit (dirty state)
         dirty_file = os.path.join(self.project_dir, 'dirty_file.txt')
         with open(dirty_file, 'w') as f:
@@ -151,26 +155,61 @@ else:
         env['PATH'] = self.bin_dir + ':' + env.get('PATH', '')
         env['GH_STATE_DIR'] = self.state_dir
 
+        # Simulate user confirming (input 'y')
         result = subprocess.run(
             [self.flow_bin, 'archive', '121'],
             cwd=self.tmp_dir,
             capture_output=True,
             text=True,
-            env=env
+            env=env,
+            input='y\n'  # User confirms to proceed
         )
 
-        # Archive should FAIL with dirty repo gate
-        # Current behavior: passes with warning only (test documents expected future behavior)
-        self.assertNotEqual(result.returncode, 0,
-                            f'archive should fail on dirty project repo: {result.stdout + result.stderr}')
+        # Archive should succeed with user confirmation
+        self.assertEqual(result.returncode, 0,
+                         f'archive should succeed when user confirms: {result.stdout + result.stderr}')
 
-        # Output should mention dirty/uncommitted
+        # Output should show warning about dirty state
         output = result.stdout + result.stderr
-        self.assertIn('dirty', output.lower(),
-                      'output should mention dirty/uncommitted state')
+        self.assertIn('uncommitted', output.lower(),
+                      'output should warn about uncommitted changes')
+
+        # Output should show archived status
+        self.assertIn('archived', output.lower(),
+                      'output should mention archived status')
+
+    def test_archive_fails_when_user_cancels_on_dirty_repo(self):
+        """archive fails when user cancels (n) on dirty project repo"""
+        # Create a file in project and DON'T commit (dirty state)
+        dirty_file = os.path.join(self.project_dir, 'dirty_file.txt')
+        with open(dirty_file, 'w') as f:
+            f.write('uncommitted changes')
+
+        env = os.environ.copy()
+        env['PATH'] = self.bin_dir + ':' + env.get('PATH', '')
+        env['GH_STATE_DIR'] = self.state_dir
+
+        # Simulate user canceling (input 'n')
+        result = subprocess.run(
+            [self.flow_bin, 'archive', '121'],
+            cwd=self.tmp_dir,
+            capture_output=True,
+            text=True,
+            env=env,
+            input='n\n'  # User cancels
+        )
+
+        # Archive should fail (user aborted)
+        self.assertNotEqual(result.returncode, 0,
+                            f'archive should fail when user cancels: {result.stdout + result.stderr}')
+
+        # Output should mention aborted or user decision
+        output = result.stdout + result.stderr
+        self.assertTrue('aborted' in output.lower() or 'cancel' in output.lower(),
+                        'output should mention user aborted/canceled')
 
     def test_archive_passes_on_clean_project_repo(self):
-        """archive succeeds when project repo is clean"""
+        """archive succeeds when project repo is clean (no prompt needed)"""
         # Create a file and commit it (clean state)
         clean_file = os.path.join(self.project_dir, 'clean_file.txt')
         with open(clean_file, 'w') as f:
@@ -193,7 +232,7 @@ else:
             env=env
         )
 
-        # Archive should succeed with clean repo
+        # Archive should succeed with clean repo (no prompt)
         self.assertEqual(result.returncode, 0,
                          f'archive should succeed on clean project repo: {result.stderr}')
 
