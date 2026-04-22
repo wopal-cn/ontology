@@ -27,8 +27,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    # Placeholder: will be populated by later phase commands
-    _ = subparsers.add_parser("help", help="Show help")
+    # Help subcommand with detailed output
+    help_parser = subparsers.add_parser("help", help="Show help")
 
     # Register issue subcommand
     register_issue_parser(subparsers)
@@ -47,7 +47,24 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "help" or args.command is None:
+        # Print detailed help with all subcommands and their nested commands
         parser.print_help()
+        print()
+        print("Available subcommands:")
+        print("  issue create    Create a new GitHub Issue")
+        print("  issue update    Update an existing GitHub Issue")
+        print("  query status    Show Issue/Plan status")
+        print("  query list      List active Plans")
+        print("  sync            Sync Plan to Issue (body + labels)")
+        print("  sync --body-only    Sync only Issue body")
+        print("  sync --labels-only  Sync only Issue labels")
+        print()
+        print("Workflow commands (legacy):")
+        print("  plan            Create or locate a Plan")
+        print("  approve         Review and approve a Plan")
+        print("  complete        Mark implementation complete")
+        print("  verify          Verify and confirm completion")
+        print("  archive         Archive a completed Plan")
         return 0
 
     # Dispatch issue subcommand

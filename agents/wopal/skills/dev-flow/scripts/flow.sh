@@ -1,17 +1,25 @@
 #!/bin/bash
-# dev-flow — hybrid wrapper (Phase 0: full fallback to legacy)
+# dev-flow — hybrid wrapper (Phase 3: issue/query/sync routed to Python)
 # Usage: flow.sh <command> <issue-or-plan> [options]
 #
 # This wrapper routes commands to either Python implementation or legacy Bash.
 # During migration, unimplemented commands fall back to flow-legacy.sh.
 #
-# Migration status (Phase 0 - skeleton only):
-#   - All commands → legacy fallback
+# Migration status (Phase 3):
+#   - issue create/update → Python
+#   - query status/list → Python
+#   - sync → Python
+#   - help → Python
+#   - plan/approve/complete/verify/archive → legacy fallback
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LEGACY_SCRIPT="$SCRIPT_DIR/flow-legacy.sh"
+PYTHON_SCRIPT="$SCRIPT_DIR/flow.py"
+
+# Commands routed to Python implementation
+PYTHON_COMMANDS="issue|query|sync|help"
 
 # Check if legacy script exists
 if [[ ! -f "$LEGACY_SCRIPT" ]]; then
@@ -19,6 +27,12 @@ if [[ ! -f "$LEGACY_SCRIPT" ]]; then
     exit 1
 fi
 
-# Phase 0: Full legacy fallback
-# As we migrate commands to Python, this routing logic will evolve
-exec "$LEGACY_SCRIPT" "$@"
+# Get the command from arguments
+CMD="${1:-}"
+
+# Route to Python or legacy
+if [[ "$CMD" =~ ^($PYTHON_COMMANDS)$ ]]; then
+    exec python3 "$PYTHON_SCRIPT" "$@"
+else
+    exec "$LEGACY_SCRIPT" "$@"
+fi
