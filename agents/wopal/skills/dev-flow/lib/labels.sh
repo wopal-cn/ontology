@@ -64,7 +64,7 @@ get_status_label_names() {
 
 # Type label names
 get_type_label_names() {
-    echo "type/feature type/bug type/refactor type/docs type/chore"
+    echo "type/feature type/bug type/refactor type/docs type/test type/chore type/perf"
 }
 
 # PR label names
@@ -99,7 +99,9 @@ _get_label_props() {
         type/bug)           printf 'd73a4a\tBug fix\n' ;;
         type/refactor)      printf 'cfd3d0\tCode refactoring\n' ;;
         type/docs)          printf '0075ca\tDocumentation\n' ;;
+        type/test)          printf 'fbca04\tTesting\n' ;;
         type/chore)         printf 'f9d0c4\tChore/maintenance\n' ;;
+        type/perf)          printf '5319e7\tPerformance optimization\n' ;;
         # Project labels
         project/ontology)    printf '5319e7\tontology project\n' ;;
         project/wopal-cli)   printf '1d76db\twopal-cli project\n' ;;
@@ -115,7 +117,7 @@ _get_label_props() {
 
 # Normalize plan/issue type to canonical value
 # Usage: normalize_plan_type <raw_type>
-# Output: feature|enhance|fix|refactor|docs|chore|test
+# Output: feature|enhance|fix|refactor|docs|test|chore|perf
 normalize_plan_type() {
     local raw
     raw=$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')
@@ -124,6 +126,7 @@ normalize_plan_type() {
         feat|feature)            echo "feature" ;;
         enhance|enhancement)     echo "enhance" ;;
         fix|bug)                 echo "fix" ;;
+        perf|performance)        echo "perf" ;;
         refactor)                echo "refactor" ;;
         docs|doc|documentation)  echo "docs" ;;
         chore|ci)                echo "chore" ;;
@@ -138,9 +141,11 @@ plan_type_to_issue_label() {
     case "$1" in
         feature|enhance) echo "type/feature" ;;
         fix)             echo "type/bug" ;;
+        perf)            echo "type/perf" ;;
         refactor)        echo "type/refactor" ;;
         docs)            echo "type/docs" ;;
-        chore|test)      echo "type/chore" ;;
+        test)            echo "type/test" ;;
+        chore)           echo "type/chore" ;;
         *)               return 1 ;;
     esac
 }
@@ -151,8 +156,10 @@ issue_label_to_plan_type() {
     case "$1" in
         type/feature)  echo "feature" ;;
         type/bug)      echo "fix" ;;
+        type/perf)     echo "perf" ;;
         type/refactor) echo "refactor" ;;
         type/docs)     echo "docs" ;;
+        type/test)     echo "test" ;;
         type/chore)    echo "chore" ;;
         *)             return 1 ;;
     esac
@@ -429,11 +436,12 @@ sync_type_label_group() {
     local add_labels=""
     local remove_labels=""
 
+    [[ -n "$desired_label" ]] && ensure_label_exists "$desired_label" "$repo"
     [[ -n "$desired_label" ]] && add_labels="$desired_label"
 
     local current
     current=$(get_issue_labels "$issue_number" "$repo")
-    for label in type/feature type/bug type/refactor type/docs type/chore; do
+    for label in type/feature type/bug type/perf type/refactor type/docs type/test type/chore; do
         [[ "$label" == "$desired_label" ]] && continue
         echo "$current" | grep -qF "$label" && remove_labels="$remove_labels $label"
     done

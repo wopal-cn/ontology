@@ -40,22 +40,17 @@ run_tests() {
     # ============================================
     test_start "Fix type Issue body has audit sections"
     
-    # Build fix type issue body with structured params
-    local goal="Fix push detection bug"
-    local background="approve.sh uses wrong logic"
-    local confirmed_bugs="Bug 1: wrong detection"
-    local content_model_defects="Defect: missing renderer"
-    local cleanup_scope="Only approve.sh"
-    local key_findings="Findings: need file-level commit"
-    local scope="Fix push detection"
-    local out_of_scope="No state machine change"
-    local reference="docs/xxx.md"
-    
     local fix_body
     fix_body=$(build_structured_issue_body --type fix \
-        "$goal" "$background" \
-        "$confirmed_bugs" "$content_model_defects" "$cleanup_scope" "$key_findings" \
-        "$scope" "$out_of_scope" "$reference")
+        --goal "Fix push detection bug" \
+        --background "approve.sh uses wrong logic" \
+        --confirmed-bugs "Bug 1: wrong detection" \
+        --content-model-defects "Defect: missing renderer" \
+        --cleanup-scope "Only approve.sh" \
+        --key-findings "Findings: need file-level commit" \
+        --scope "Fix push detection" \
+        --out-of-scope "No state machine change" \
+        --reference "docs/xxx.md")
     
     # Extract sections
     local sections
@@ -80,8 +75,12 @@ run_tests() {
     
     local feature_body
     feature_body=$(build_structured_issue_body \
-        "Add new feature" "Background for feature" \
-        "In scope items" "Out of scope items" "reference.md")
+        --type feature \
+        --goal "Add new feature" \
+        --background "Background for feature" \
+        --scope "In scope items" \
+        --out-of-scope "Out of scope items" \
+        --reference "reference.md")
     
     local feature_sections
     feature_sections=$(extract_sections "$feature_body")
@@ -133,6 +132,38 @@ run_tests() {
     fi
     
     # ============================================
+    test_start "Perf/Refactor/Docs/Test templates render dedicated sections"
+
+    local perf_body refactor_body docs_body test_body
+    perf_body=$(build_structured_issue_body --type perf --goal "Speed up" --baseline "200ms" --target "120ms")
+    refactor_body=$(build_structured_issue_body --type refactor --goal "Refactor" --affected-components "a,b" --refactor-strategy "extract modules")
+    docs_body=$(build_structured_issue_body --type docs --goal "Docs" --target-documents "README" --audience "contributors")
+    test_body=$(build_structured_issue_body --type test --goal "Tests" --test-scope "CLI" --test-strategy "integration")
+
+    assert_contains "Baseline" "$(extract_sections "$perf_body")" "Perf body should have Baseline"
+    assert_contains "Affected Components" "$(extract_sections "$refactor_body")" "Refactor body should have Affected Components"
+    assert_contains "Target Documents" "$(extract_sections "$docs_body")" "Docs body should have Target Documents"
+    assert_contains "Test Strategy" "$(extract_sections "$test_body")" "Test body should have Test Strategy"
+
+    # ============================================
+    test_start "Empty optional sections are suppressed"
+
+    local minimal_body
+    minimal_body=$(build_structured_issue_body --type feature --goal "Only goal")
+
+    if echo "$minimal_body" | grep -q "^## Background"; then
+        test_fail "Minimal body should not render empty Background"
+    else
+        test_pass "Background omitted when empty"
+    fi
+
+    if echo "$minimal_body" | grep -q "^## In Scope"; then
+        test_fail "Minimal body should not render empty In Scope"
+    else
+        test_pass "In Scope omitted when empty"
+    fi
+
+    # ============================================
     test_start "Template skeleton has consistent sections"
     
     local template_file="$SKILL_DIR/templates/issue.md"
@@ -157,3 +188,5 @@ run_tests() {
     
     test_summary
 }
+
+run_tests

@@ -248,8 +248,10 @@ assert_dir_exists() {
 # Sets: LAST_OUTPUT, LAST_EXIT_CODE
 run_cmd() {
     local cmd="$1"
+    set +e
     LAST_OUTPUT=$(eval "$cmd" 2>&1)
     LAST_EXIT_CODE=$?
+    set -e
 }
 
 # Skip test (mark as passed with note)

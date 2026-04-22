@@ -187,11 +187,15 @@ dev-flow — 统一开发工作流 (4-state model)
 Usage: flow.sh <command> <issue> [options]
 
 生命周期命令:
-  new-issue --title "<title>" --project <name> --type <type> [options]
-                                           创建规范化 Issue
-                                           可选: --goal, --background, --scope, --out-of-scope, --reference, --body
+  issue create --title "<title>" --project <name> [--type <type>] [options]
+                                            创建规范化 Issue
+                                            可选: --goal, --background, --scope, --out-of-scope, --reference, --body
+                                            类型专属: --baseline/--target, --affected-components/--refactor-strategy,
+                                                       --target-documents/--audience, --test-scope/--test-strategy
+                                            不传 --type 时从 title 前缀推断
+  issue update <issue> [options]           更新结构化 Issue（Task 4 实现）
   sync <issue> [--body-only|--labels-only]
-                                           手动同步 Plan 内容/labels 到 Issue（不推进状态）
+                                            手动同步 Plan 内容/labels 到 Issue（不推进状态）
   plan <issue> [--project <name>] [--prd <path>] [--check]
                                            创建 Plan 并进入规划阶段（含调查）
   approve <issue> --confirm [--worktree]
@@ -227,9 +231,10 @@ Overlay Labels:
 
 选项说明:
   --project <name>   目标项目 (如: ontology, wopal-cli, space)
-  --type <type>      Issue 类型 (feature, fix, refactor, docs, chore)
+  --type <type>      Issue 类型 (feature, fix, perf, refactor, docs, test, chore, enhance)
   --title "<title>"  Issue 标题
   --body "<body>"    Issue 内容
+  --reference <path>  Research 文档或外部引用
   --prd <path>       关联的 PRD 文件路径
   --worktree         在隔离的 worktree 中执行（前置检查优先）
   --pr               完成时创建 PR
@@ -237,7 +242,7 @@ Overlay Labels:
 
 示例:
   # 创建 Issue
-  flow.sh new-issue --title "feat(cli): add skills remove" --project wopal-cli --type feature
+  flow.sh issue create --title "feat(cli): add skills remove" --project wopal-cli
 
   # 手动同步 Plan 到 Issue（不改变状态）
   flow.sh sync 42

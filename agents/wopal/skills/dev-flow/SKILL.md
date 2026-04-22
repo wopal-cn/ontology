@@ -110,16 +110,27 @@ executing
 | **有 PR** | `verify --confirm`（前提：PR merged） | PR merged + 用户确认 → `archive` |
 | **无 PR** | `verify --confirm` | 用户验证通过 → `archive` |
 
+## Issue 命令面
+
+```bash
+flow.sh issue create --title "perf(dev-flow): reduce label sync calls" --project ontology
+flow.sh issue update 120 --goal "更新后的目标"
+```
+
+- 创建 / 更新 issue 前先读目标项目 `AGENTS.md`，由项目规范决定合法 scope
+- `issue create` 是唯一受支持的创建入口，不再使用 `new-issue`
+- `--type` 可省略；若 title 前缀与显式 `--type` 冲突，命令必须报错
+
 ## Label 体系
 
 | 类别 | Labels | 用途 |
 |------|--------|------|
 | **status** | `status/planning` → `status/in-progress` → `status/verifying` | 主状态（单一互斥） |
-| **type** | `type/feature`, `type/bug`, `type/refactor`, `type/docs`, `type/chore` | 任务类型 |
+| **type** | `type/feature`, `type/bug`, `type/perf`, `type/refactor`, `type/docs`, `type/test`, `type/chore` | 任务类型 |
 | **project** | `project/ontology`, `project/wopal-cli`, `project/space` | 目标项目 |
 | **pr** | `pr/opened` | PR 子状态（叠加） |
 
-**已移除**: `validation/awaiting`, `validation/passed` — 验证现在是主状态 `verifying`
+
 
 ## 状态映射表
 
@@ -221,15 +232,14 @@ archive <issue> → 归档
 ## 创建 Issue
 
 ```bash
-flow.sh new-issue \
+flow.sh issue create \
   --title "feat(cli): add skills remove" \
   --project wopal-cli \
-  --type feature \
   --goal "一句话目标" \
   --scope "范围项 1, 范围项 2"
 ```
 
-**必须使用 `flow.sh new-issue`**，禁止直接用 `gh issue create`。
+**必须使用 `flow.sh issue create`**，禁止直接用 `gh issue create`。
 
 ## Issue 标题规范
 
@@ -247,6 +257,7 @@ flow.sh new-issue \
 |------|------|-------------|
 | `feat` | 新功能 | `type/feature` |
 | `fix` | Bug 修复 | `type/bug` |
+| `perf` | 性能优化 | `type/perf` |
 | `refactor` | 重构（不改变功能） | `type/refactor` |
 | `docs` | 文档更新 | `type/docs` |
 | `test` | 测试相关 | `type/test` |

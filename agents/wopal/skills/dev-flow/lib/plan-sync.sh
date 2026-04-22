@@ -153,7 +153,8 @@ build_issue_body_from_plan() {
     else
         plan_path="docs/products/plans/${plan_name}.md"
     fi
-    local github_url="https://github.com/${repo}/blob/main/${plan_path}"
+    local github_url
+    github_url=$(build_repo_blob_url "$repo" "$plan_path")
     
     # Build sections using shared renderer from issue.sh
     local sections=""
@@ -220,10 +221,7 @@ build_issue_body_from_plan() {
     sections+=$'\n'
     
     # Related Resources table using shared helper
-    sections+="## Related Resources"$'\n\n'
-    sections+="| Resource | Link |"$'\n'
-    sections+="|----------|------|"$'\n'
-    sections+=$(_render_related_resources_row "Plan" "[$plan_name]($github_url)")
+    sections+=$(_render_related_resources_table "" "[$plan_name]($github_url)")
     
     printf '%s\n' "$sections"
 }
@@ -356,7 +354,8 @@ update_issue_plan_link() {
         echo "ontology/plans/done/$(basename "$archived_file")")
     
     # Build GitHub blob URL for clickable link in Issue
-    local github_url="https://github.com/${repo}/blob/main/docs/products/${relative_path}"
+    local github_url
+    github_url=$(build_repo_blob_url "$repo" "docs/products/${relative_path}")
     
     # Get current Issue body
     local current_body

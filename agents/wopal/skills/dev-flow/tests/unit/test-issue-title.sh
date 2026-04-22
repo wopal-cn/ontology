@@ -158,6 +158,22 @@ run_tests() {
         test_fail "Expected pass for valid enhance title, got exit code $LAST_EXIT_CODE"
         echo "Output: $LAST_OUTPUT"
     fi
+
+    # ============================================
+    test_start "validate_issue_title: valid perf type with scope"
+
+    local perf_title="perf(dev-flow): reduce label sync overhead"
+
+    run_cmd "validate_issue_title '$perf_title'"
+
+    if [[ "$LAST_EXIT_CODE" -eq 0 ]]; then
+        test_pass
+    else
+        test_fail "Expected pass for valid perf title, got exit code $LAST_EXIT_CODE"
+        echo "Output: $LAST_OUTPUT"
+    fi
     
     test_summary
 }
+
+run_tests

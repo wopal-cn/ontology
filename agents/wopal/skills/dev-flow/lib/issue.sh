@@ -113,12 +113,22 @@ extract_scope() {
 # Issue Title Validation
 # ============================================
 
+infer_issue_type_from_title() {
+    local title="$1"
+    local raw_type=""
+
+    raw_type=$(echo "$title" | sed -nE 's/^([a-z]+)(\([^)]+\))?:.*/\1/p')
+    [[ -z "$raw_type" ]] && return 1
+
+    normalize_plan_type "$raw_type" 2>/dev/null || return 1
+}
+
 # Validate issue title format and length
 # Usage: validate_issue_title "<title>"
 # Returns: 0 on valid, 1 on invalid (outputs error message)
 # Format: <type>(<scope>): <description>
 # Constraints:
-#   - type must be valid (feat/fix/refactor/docs/test/chore/enhance)
+#   - type must be valid (feat/fix/perf/refactor/docs/test/chore/enhance)
 #   - scope is MANDATORY (must be present in parentheses)
 #   - description ≤ 50 chars
 #   - total title ≤ 72 chars
@@ -140,11 +150,11 @@ validate_issue_title() {
     
     # Validate type
     case "$type" in
-        feat|fix|refactor|docs|test|chore|enhance)
+        feat|fix|perf|refactor|docs|test|chore|enhance)
             ;;
         *)
             log_error "Invalid type: $type"
-            log_error "Valid types: feat, fix, refactor, docs, test, chore, enhance"
+            log_error "Valid types: feat, fix, perf, refactor, docs, test, chore, enhance"
             return 1
             ;;
     esac
@@ -235,12 +245,12 @@ extract_project() {
 _render_issue_section() {
     local heading="$1"
     local content="$2"
-    local fallback="${3:-<待填充>}"
+    local fallback="${3:-}"
     
-    if [[ -z "$content" ]]; then
-        printf '## %s\n\n%s\n' "$heading" "$fallback"
-    else
+    if [[ -n "$content" ]]; then
         printf '## %s\n\n%s\n' "$heading" "$content"
+    elif [[ -n "$fallback" ]]; then
+        printf '## %s\n\n%s\n' "$heading" "$fallback"
     fi
 }
 
@@ -278,54 +288,300 @@ _render_related_resources_row() {
     fi
 }
 
-# Build structured issue body from individual fields
-# Usage: build_structured_issue_body [--type <type>] <goal> <background> [fix_sections] <scope> <out_of_scope> <reference>
-# fix_sections (for type=fix only): confirmed_bugs, content_model_defects, cleanup_scope, key_findings
-# Section order for fix: Goal → Background → Confirmed Bugs → Content Model Defects → Cleanup Scope → Key Findings → In Scope → Out of Scope → Acceptance Criteria → Related Resources
-# Section order for others: Goal → Background → In Scope → Out of Scope → Acceptance Criteria → Related Resources
-build_structured_issue_body() {
-    local issue_type=""
+_render_related_resources_table() {
+    local reference="$1"
+    local plan_value="${2:-_待关联_}"
+
+    printf '## Related Resources\n\n| Resource | Link |\n|----------|------|\n'
+    _render_related_resources_row "Research" "$reference"
+    printf '| Plan | %s |\n' "$plan_value"
+}
+
+get_issue_template_path() {
+    local issue_type="${1:-feature}"
+
+    case "$issue_type" in
+        feature|enhance|chore) echo "$SKILL_DIR/templates/issue.md" ;;
+        fix)                   echo "$SKILL_DIR/templates/issue-fix.md" ;;
+        perf)                  echo "$SKILL_DIR/templates/issue-perf.md" ;;
+        refactor)              echo "$SKILL_DIR/templates/issue-refactor.md" ;;
+        docs)                  echo "$SKILL_DIR/templates/issue-docs.md" ;;
+        test)                  echo "$SKILL_DIR/templates/issue-test.md" ;;
+        *)                     return 1 ;;
+    esac
+}
+
+build_repo_blob_url() {
+    local repo="$1"
+    local repo_path="$2"
+
+    printf 'https://github.com/%s/blob/main/%s' "$repo" "$repo_path"
+}
+
+_upsert_related_resources_row() {
+    local body="$1"
+    local heading="$2"
+    local label="$3"
+    local value="$4"
+    local row="| ${label} | ${value} |"
+
+    printf '%s\n' "$body" | awk -v heading="$heading" -v label="$label" -v row="$row" '
+    BEGIN { in_section = 0; replaced = 0 }
+    $0 == heading { in_section = 1; print; next }
+    in_section && /^##[^#]/ {
+        if (!replaced) print row
+        in_section = 0
+        replaced = 1
+        print
+        next
+    }
+    in_section && $0 ~ "^\\| " label " \\|" {
+        print row
+        replaced = 1
+        next
+    }
+    { print }
+    END {
+        if (in_section && !replaced) print row
+    }'
+}
+
+extract_issue_section() {
+    local body="$1"
+    local heading="$2"
+
+    printf '%s\n' "$body" | awk -v heading="## ${heading}" '
+    BEGIN { in_section = 0 }
+    $0 == heading { in_section = 1; next }
+    in_section && /^##[^#]/ { exit }
+    in_section { print }
+    '
+}
+
+replace_issue_section() {
+    local body="$1"
+    local heading="$2"
+    local content="$3"
+
+    local marker="__DEV_FLOW_SECTION_CONTENT__"
+    local rendered
+
+    rendered=$(printf '%s\n' "$body" | awk -v heading="## ${heading}" -v marker="$marker" '
+    BEGIN { in_section = 0; replaced = 0 }
+    $0 == heading {
+        print $0
+        print ""
+        print marker
+        in_section = 1
+        replaced = 1
+        next
+    }
+    in_section && /^##[^#]/ {
+        in_section = 0
+        print
+        next
+    }
+    !in_section { print }
+    END {
+        if (!replaced) {
+            print ""
+            print heading
+            print ""
+            print marker
+        }
+    }')
+
+    if [[ -n "$content" ]]; then
+        printf '%s\n' "$rendered" | DEV_FLOW_SECTION_CONTENT="$content" perl -0pe 's/__DEV_FLOW_SECTION_CONTENT__/$ENV{DEV_FLOW_SECTION_CONTENT}/g'
+    else
+        printf '%s\n' "$rendered" | perl -0pe 's/^__DEV_FLOW_SECTION_CONTENT__\n?//mg'
+    fi
+}
+
+_issue_field_to_section() {
+    case "$1" in
+        goal)                  echo "Goal" ;;
+        background)            echo "Background" ;;
+        confirmed_bugs)        echo "Confirmed Bugs" ;;
+        content_model_defects) echo "Content Model Defects" ;;
+        cleanup_scope)         echo "Cleanup Scope" ;;
+        key_findings)          echo "Key Findings" ;;
+        baseline)              echo "Baseline" ;;
+        target)                echo "Target" ;;
+        affected_components)   echo "Affected Components" ;;
+        refactor_strategy)     echo "Refactor Strategy" ;;
+        target_documents)      echo "Target Documents" ;;
+        audience)              echo "Audience" ;;
+        test_scope)            echo "Test Scope" ;;
+        test_strategy)         echo "Test Strategy" ;;
+        scope)                 echo "In Scope" ;;
+        out_of_scope)          echo "Out of Scope" ;;
+        acceptance_criteria)   echo "Acceptance Criteria" ;;
+        *)                     return 1 ;;
+    esac
+}
+
+render_issue_field_content() {
+    local field="$1"
+    local value="$2"
+
+    case "$field" in
+        scope|out_of_scope|affected_components|target_documents)
+            _format_issue_list "$value" "- " ""
+            ;;
+        *)
+            printf '%s' "$value"
+            ;;
+    esac
+}
+
+update_structured_issue_body() {
+    local body="$1"
+    shift
+
+    local title=""
+    local type=""
+    local project=""
     local goal=""
     local background=""
     local confirmed_bugs=""
     local content_model_defects=""
     local cleanup_scope=""
     local key_findings=""
+    local baseline=""
+    local target=""
+    local affected_components=""
+    local refactor_strategy=""
+    local target_documents=""
+    local audience=""
+    local test_scope=""
+    local test_strategy=""
     local scope=""
     local out_of_scope=""
     local reference=""
-    
-    # Parse arguments - support both old positional and new --type aware
-    if [[ "$1" == "--type" ]]; then
-        issue_type="$2"
-        shift 2
+    local acceptance_criteria=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title)                  title="$2"; shift 2 ;;
+            --type)                   type="$2"; shift 2 ;;
+            --project)                project="$2"; shift 2 ;;
+            --goal)                   goal="$2"; shift 2 ;;
+            --background)             background="$2"; shift 2 ;;
+            --confirmed-bugs)         confirmed_bugs="$2"; shift 2 ;;
+            --content-model-defects)  content_model_defects="$2"; shift 2 ;;
+            --cleanup-scope)          cleanup_scope="$2"; shift 2 ;;
+            --key-findings)           key_findings="$2"; shift 2 ;;
+            --baseline)               baseline="$2"; shift 2 ;;
+            --target)                 target="$2"; shift 2 ;;
+            --affected-components)    affected_components="$2"; shift 2 ;;
+            --refactor-strategy)      refactor_strategy="$2"; shift 2 ;;
+            --target-documents)       target_documents="$2"; shift 2 ;;
+            --audience)               audience="$2"; shift 2 ;;
+            --test-scope)             test_scope="$2"; shift 2 ;;
+            --test-strategy)          test_strategy="$2"; shift 2 ;;
+            --scope)                  scope="$2"; shift 2 ;;
+            --out-of-scope)           out_of_scope="$2"; shift 2 ;;
+            --reference)              reference="$2"; shift 2 ;;
+            --acceptance-criteria)    acceptance_criteria="$2"; shift 2 ;;
+            *)
+                log_error "Unknown update_structured_issue_body parameter: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    local updated_body="$body"
+    local field raw_value section content
+
+    for field in goal background confirmed_bugs content_model_defects cleanup_scope key_findings baseline target affected_components refactor_strategy target_documents audience test_scope test_strategy scope out_of_scope acceptance_criteria; do
+        raw_value="${!field}"
+        [[ -z "$raw_value" ]] && continue
+        section=$(_issue_field_to_section "$field") || continue
+        content=$(render_issue_field_content "$field" "$raw_value")
+        updated_body=$(replace_issue_section "$updated_body" "$section" "$content")
+    done
+
+    if [[ -n "$reference" ]]; then
+        if echo "$updated_body" | grep -q "^## Related Resources$"; then
+            updated_body=$(_upsert_related_resources_row "$updated_body" "## Related Resources" "Research" "$reference")
+        elif echo "$updated_body" | grep -q "^## 关联资源$"; then
+            updated_body=$(_upsert_related_resources_row "$updated_body" "## 关联资源" "Research" "$reference")
+        else
+            updated_body+=$'\n\n'
+            updated_body+=$(_render_related_resources_table "$reference")
+        fi
     fi
+
+    printf '%s\n' "$updated_body"
+}
+
+# Build structured issue body from individual fields
+# Usage: build_structured_issue_body [--type <type>] <goal> <background> [fix_sections] <scope> <out_of_scope> <reference>
+# fix_sections (for type=fix only): confirmed_bugs, content_model_defects, cleanup_scope, key_findings
+# Section order for fix: Goal → Background → Confirmed Bugs → Content Model Defects → Cleanup Scope → Key Findings → In Scope → Out of Scope → Acceptance Criteria → Related Resources
+# Section order for others: Goal → Background → In Scope → Out of Scope → Acceptance Criteria → Related Resources
+build_structured_issue_body() {
+    local issue_type="feature"
+    local goal=""
+    local background=""
+    local confirmed_bugs=""
+    local content_model_defects=""
+    local cleanup_scope=""
+    local key_findings=""
+    local baseline=""
+    local target=""
+    local affected_components=""
+    local refactor_strategy=""
+    local target_documents=""
+    local audience=""
+    local test_scope=""
+    local test_strategy=""
+    local scope=""
+    local out_of_scope=""
+    local reference=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --type)                  issue_type="$2"; shift 2 ;;
+            --goal)                  goal="$2"; shift 2 ;;
+            --background)            background="$2"; shift 2 ;;
+            --confirmed-bugs)        confirmed_bugs="$2"; shift 2 ;;
+            --content-model-defects) content_model_defects="$2"; shift 2 ;;
+            --cleanup-scope)         cleanup_scope="$2"; shift 2 ;;
+            --key-findings)          key_findings="$2"; shift 2 ;;
+            --baseline)              baseline="$2"; shift 2 ;;
+            --target)                target="$2"; shift 2 ;;
+            --affected-components)   affected_components="$2"; shift 2 ;;
+            --refactor-strategy)     refactor_strategy="$2"; shift 2 ;;
+            --target-documents)      target_documents="$2"; shift 2 ;;
+            --audience)              audience="$2"; shift 2 ;;
+            --test-scope)            test_scope="$2"; shift 2 ;;
+            --test-strategy)         test_strategy="$2"; shift 2 ;;
+            --scope)                 scope="$2"; shift 2 ;;
+            --out-of-scope)          out_of_scope="$2"; shift 2 ;;
+            --reference)             reference="$2"; shift 2 ;;
+            *)
+                log_error "Unknown build_structured_issue_body parameter: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    local template_file
+    template_file=$(get_issue_template_path "$issue_type") || {
+        log_error "Unsupported issue template type: $issue_type"
+        return 1
+    }
+    [[ -f "$template_file" ]] || {
+        log_error "Issue template missing: $template_file"
+        return 1
+    }
     
-    # For fix type, expect 9 args: goal, background, confirmed_bugs, content_model_defects, cleanup_scope, key_findings, scope, out_of_scope, reference
-    # For other types, expect 5 args: goal, background, scope, out_of_scope, reference
-    if [[ "$issue_type" == "fix" ]]; then
-        goal="${1:-}"
-        background="${2:-}"
-        confirmed_bugs="${3:-}"
-        content_model_defects="${4:-}"
-        cleanup_scope="${5:-}"
-        key_findings="${6:-}"
-        scope="${7:-}"
-        out_of_scope="${8:-}"
-        reference="${9:-}"
-    else
-        # Legacy positional mode (no --type)
-        goal="${1:-}"
-        background="${2:-}"
-        scope="${3:-}"
-        out_of_scope="${4:-}"
-        reference="${5:-}"
-    fi
+    local in_scope_text out_of_scope_text
     
-    local in_scope_text out_of_scope_text body
-    
-    in_scope_text=$(_format_issue_list "$scope" "- " $'- 范围项 1\n- 范围项 2')
-    out_of_scope_text=$(_format_issue_list "$out_of_scope" "- " "- 不做的项（原因）")
+    in_scope_text=$(_format_issue_list "$scope" "- " "")
+    out_of_scope_text=$(_format_issue_list "$out_of_scope" "- " "")
     
     # Build sections using shared renderer
     local sections=""
@@ -335,30 +591,52 @@ build_structured_issue_body() {
     sections+=$'\n'
     
     # Background
-    sections+=$(_render_issue_section "Background" "$background" "<背景和问题描述>")
+    sections+=$(_render_issue_section "Background" "$background")
     sections+=$'\n'
     
-    # Fix-specific audit sections (only for fix type)
-    if [[ "$issue_type" == "fix" ]]; then
-        sections+=$(_render_issue_section "Confirmed Bugs" "$confirmed_bugs" "<审计确认的具体 bug 列表>")
-        sections+=$'\n'
-        
-        sections+=$(_render_issue_section "Content Model Defects" "$content_model_defects" "<内容模型层面的问题诊断>")
-        sections+=$'\n'
-        
-        sections+=$(_render_issue_section "Cleanup Scope" "$cleanup_scope" "<需要清理的范围>")
-        sections+=$'\n'
-        
-        sections+=$(_render_issue_section "Key Findings" "$key_findings" "<审计关键发现>")
-        sections+=$'\n'
-    fi
+    case "$issue_type" in
+        fix)
+            sections+=$(_render_issue_section "Confirmed Bugs" "$confirmed_bugs")
+            sections+=$'\n'
+            sections+=$(_render_issue_section "Content Model Defects" "$content_model_defects")
+            sections+=$'\n'
+            sections+=$(_render_issue_section "Cleanup Scope" "$cleanup_scope")
+            sections+=$'\n'
+            sections+=$(_render_issue_section "Key Findings" "$key_findings")
+            sections+=$'\n'
+            ;;
+        perf)
+            sections+=$(_render_issue_section "Baseline" "$baseline")
+            sections+=$'\n'
+            sections+=$(_render_issue_section "Target" "$target")
+            sections+=$'\n'
+            ;;
+        refactor)
+            sections+=$(_render_issue_section "Affected Components" "$affected_components")
+            sections+=$'\n'
+            sections+=$(_render_issue_section "Refactor Strategy" "$refactor_strategy")
+            sections+=$'\n'
+            ;;
+        docs)
+            sections+=$(_render_issue_section "Target Documents" "$target_documents")
+            sections+=$'\n'
+            sections+=$(_render_issue_section "Audience" "$audience")
+            sections+=$'\n'
+            ;;
+        test)
+            sections+=$(_render_issue_section "Test Scope" "$test_scope")
+            sections+=$'\n'
+            sections+=$(_render_issue_section "Test Strategy" "$test_strategy")
+            sections+=$'\n'
+            ;;
+    esac
     
     # In Scope
-    sections+=$(_render_issue_section "In Scope" "$in_scope_text" $'- 范围项 1\n- 范围项 2')
+    sections+=$(_render_issue_section "In Scope" "$in_scope_text")
     sections+=$'\n'
     
     # Out of Scope
-    sections+=$(_render_issue_section "Out of Scope" "$out_of_scope_text" "- 不做的项（原因）")
+    sections+=$(_render_issue_section "Out of Scope" "$out_of_scope_text")
     sections+=$'\n'
     
     # Acceptance Criteria
@@ -366,11 +644,7 @@ build_structured_issue_body() {
     sections+=$'\n'
     
     # Related Resources table
-    sections+="## Related Resources"$'\n\n'
-    sections+="| Resource | Link |"$'\n'
-    sections+="|----------|------|"$'\n'
-    sections+=$(_render_related_resources_row "Research" "$reference")
-    sections+="| Plan | _待关联_ |"$'\n'
+    sections+=$(_render_related_resources_table "$reference")
     
     printf '%s\n' "$sections"
 }
@@ -396,50 +670,35 @@ update_issue_link() {
     local current_body
     current_body=$(gh issue view "$issue_number" --repo "$repo" --json body -q .body)
 
-    # Escape special characters for sed
-    local escaped_value
-    escaped_value=$(echo "$link_value" | sed 's/#/\\#/g')
     local new_body="$current_body"
-    local placeholder=""
     local label=""
 
     case "$link_type" in
-        prd)
-            placeholder="| PRD | _待关联_ |"
-            label="PRD"
-            ;;
-        plan)
-            placeholder="| Plan | _待关联_ |"
-            label="Plan"
-            ;;
-        pr)
-            placeholder="| PR | _待关联_ |"
-            label="PR"
-            ;;
+        prd)       label="PRD" ;;
+        plan)      label="Plan" ;;
+        pr)        label="PR" ;;
+        research|reference) label="Research" ;;
         *)
             log_error "Invalid link type: $link_type"
             return 1
             ;;
     esac
 
-    # Check if placeholder exists
-    if echo "$current_body" | grep -qF "$placeholder"; then
-        # Replace placeholder
-        new_body=$(echo "$current_body" | sed "s#$placeholder#| $label | $escaped_value |#")
-    elif echo "$current_body" | grep -q "## 关联资源"; then
-        # Has section but no placeholder, append line
-        new_body=$(echo "$current_body" | sed "/## 关联资源/a| $label | $escaped_value |")
+    if echo "$current_body" | grep -q "^## Related Resources$"; then
+        new_body=$(_upsert_related_resources_row "$current_body" "## Related Resources" "$label" "$link_value")
+    elif echo "$current_body" | grep -q "^## 关联资源$"; then
+        new_body=$(_upsert_related_resources_row "$current_body" "## 关联资源" "$label" "$link_value")
     else
         # No section, append entire section
         local link_section="
 
 ---
 
-## 关联资源
+## Related Resources
 
-| 资源 | 链接 |
-| |------|------|
-| $label | $escaped_value |"
+| Resource | Link |
+|----------|------|
+| $label | $link_value |"
         new_body="${current_body}${link_section}"
     fi
 
@@ -451,7 +710,7 @@ update_issue_link() {
 # ============================================
 
 # Create Issue
-# Usage: create_issue --title "<title>" --project <project> --type <type> [options]
+# Usage: create_issue --title "<title>" --project <project> [--type <type>] [options]
 # Options:
 #   --body "<body>"         Issue body content (fallback if no structured params)
 #   --label "<label>"       Additional labels (can be used multiple times)
@@ -482,6 +741,14 @@ create_issue() {
     local content_model_defects=""
     local cleanup_scope=""
     local key_findings=""
+    local baseline=""
+    local target=""
+    local affected_components=""
+    local refactor_strategy=""
+    local target_documents=""
+    local audience=""
+    local test_scope=""
+    local test_strategy=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -545,6 +812,38 @@ create_issue() {
                 key_findings="$2"
                 shift 2
                 ;;
+            --baseline)
+                baseline="$2"
+                shift 2
+                ;;
+            --target)
+                target="$2"
+                shift 2
+                ;;
+            --affected-components)
+                affected_components="$2"
+                shift 2
+                ;;
+            --refactor-strategy)
+                refactor_strategy="$2"
+                shift 2
+                ;;
+            --target-documents)
+                target_documents="$2"
+                shift 2
+                ;;
+            --audience)
+                audience="$2"
+                shift 2
+                ;;
+            --test-scope)
+                test_scope="$2"
+                shift 2
+                ;;
+            --test-strategy)
+                test_strategy="$2"
+                shift 2
+                ;;
             *)
                 log_error "Unknown parameter: $1"
                 return 1
@@ -554,16 +853,30 @@ create_issue() {
 
     [[ -z "$title" ]] && { log_error "Missing --title"; return 1; }
     [[ -z "$project" ]] && { log_error "Missing --project"; return 1; }
-    [[ -z "$type" ]] && { log_error "Missing --type"; return 1; }
-
     # Validate title format and length
     validate_issue_title "$title" || return 1
 
     local plan_type
-    plan_type=$(normalize_plan_type "$type") || {
-        log_error "Invalid --type: $type"
-        return 1
-    }
+    local inferred_type=""
+    inferred_type=$(infer_issue_type_from_title "$title" 2>/dev/null || true)
+
+    if [[ -n "$type" ]]; then
+        plan_type=$(normalize_plan_type "$type") || {
+            log_error "Invalid --type: $type"
+            return 1
+        }
+
+        if [[ -n "$inferred_type" && "$plan_type" != "$inferred_type" ]]; then
+            log_error "Type mismatch: title implies '$inferred_type' but --type is '$plan_type'"
+            return 1
+        fi
+    else
+        if [[ -z "$inferred_type" ]]; then
+            log_error "Missing --type and cannot infer type from title"
+            return 1
+        fi
+        plan_type="$inferred_type"
+    fi
 
     local type_label
     type_label=$(plan_type_to_issue_label "$plan_type") || {
@@ -571,13 +884,27 @@ create_issue() {
         return 1
     }
 
-    # Build structured body if any structured params provided
-    if [[ -n "$goal" || -n "$background" || -n "$scope" || -n "$out_of_scope" || -n "$reference" || -n "$confirmed_bugs" ]]; then
-        if [[ "$plan_type" == "fix" ]]; then
-            body=$(build_structured_issue_body --type fix "$goal" "$background" "$confirmed_bugs" "$content_model_defects" "$cleanup_scope" "$key_findings" "$scope" "$out_of_scope" "$reference")
-        else
-            body=$(build_structured_issue_body "$goal" "$background" "$scope" "$out_of_scope" "$reference")
-        fi
+    # Build structured body through the shared renderer whenever caller does not provide raw body.
+    if [[ -z "$body" || -n "$goal" || -n "$background" || -n "$scope" || -n "$out_of_scope" || -n "$reference" || -n "$confirmed_bugs" || -n "$baseline" || -n "$affected_components" || -n "$target_documents" || -n "$test_scope" ]]; then
+        body=$(build_structured_issue_body \
+            --type "$plan_type" \
+            --goal "$goal" \
+            --background "$background" \
+            --confirmed-bugs "$confirmed_bugs" \
+            --content-model-defects "$content_model_defects" \
+            --cleanup-scope "$cleanup_scope" \
+            --key-findings "$key_findings" \
+            --baseline "$baseline" \
+            --target "$target" \
+            --affected-components "$affected_components" \
+            --refactor-strategy "$refactor_strategy" \
+            --target-documents "$target_documents" \
+            --audience "$audience" \
+            --test-scope "$test_scope" \
+            --test-strategy "$test_strategy" \
+            --scope "$scope" \
+            --out-of-scope "$out_of_scope" \
+            --reference "$reference")
     fi
 
     local repo

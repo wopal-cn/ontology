@@ -76,12 +76,12 @@ cmd_plan() {
         fi
         if [[ -z "$plan_type" ]]; then
             log_error "--type required when using --title"
-            echo "Available types: feature, enhance, fix, refactor, docs, chore, test"
+            echo "Available types: feature, enhance, fix, perf, refactor, docs, chore, test"
             exit 1
         fi
         normalize_plan_type "$plan_type" >/dev/null 2>&1 || {
             log_error "Invalid type: $plan_type"
-            echo "Available types: feature, enhance, fix, refactor, docs, chore, test"
+            echo "Available types: feature, enhance, fix, perf, refactor, docs, chore, test"
             exit 1
         }
     fi
@@ -209,7 +209,9 @@ cmd_plan() {
         create_plan "$plan_name" --project "$project" --issue "$issue_number" --type "$plan_type" ${prd_path:+--prd "$prd_path"} ${deep_flag} >/dev/null
 
         plan_rel_path="docs/products/${project}/plans/${plan_name}.md"
-        update_issue_link "$issue_number" "$repo" "plan" "[${plan_name}](${plan_rel_path})"
+        local plan_url
+        plan_url=$(build_repo_blob_url "$repo" "$plan_rel_path")
+        update_issue_link "$issue_number" "$repo" "plan" "[${plan_name}](${plan_url})"
         ensure_issue_labels "$issue_number" "$plan_file" "$repo"
 
         echo "Plan: $plan_file"

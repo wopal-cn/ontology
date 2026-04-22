@@ -3,7 +3,7 @@
 # Usage: flow.sh <command> <issue> [options]
 #
 # Commands:
-#   new-issue           创建规范化的 Issue
+#   issue               创建或更新规范化的 Issue
 #   sync <issue>        手动同步 Plan 到 Issue
 #   plan <issue>        创建 Plan 并进入规划阶段
 #   approve <issue>     提交审批 → 执行
@@ -22,7 +22,7 @@ set -e
 # Path Detection & Library Loading
 # ============================================
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Load libraries in correct dependency order:
@@ -58,6 +58,7 @@ _extract_type_from_title() {
         feat\(*|feat:*)     echo "feature" ;;
         feature\(*|feature:*) echo "feature" ;;
         enhance\(*|enhance:*) echo "enhance" ;;
+        perf\(*|perf:*)     echo "perf" ;;
         refactor\(*|refactor:*) echo "refactor" ;;
         chore\(*|chore:*|ci\(*|ci:*) echo "chore" ;;
         docs\(*|docs:*)     echo "docs" ;;
@@ -135,7 +136,7 @@ find_plan_by_issue() {
             echo "$plan_file"
             return 0
         fi
-    done < <(find "$search_dir" -name "*.md" -not -path "*/done/*" -print0 2>/dev/null)
+    done < <(find "$search_dir" -name "*.md" -print0 2>/dev/null)
 
     return 1
 }
@@ -215,7 +216,7 @@ get_plan_name() {
 
 # source cmd/ files (explicit order — utility.sh first)
 source "$SKILL_DIR/scripts/cmd/utility.sh"
-source "$SKILL_DIR/scripts/cmd/new-issue.sh"
+source "$SKILL_DIR/scripts/cmd/issue.sh"
 source "$SKILL_DIR/scripts/cmd/sync.sh"
 source "$SKILL_DIR/scripts/cmd/plan.sh"
 source "$SKILL_DIR/scripts/cmd/approve.sh"
@@ -228,22 +229,28 @@ source "$SKILL_DIR/scripts/cmd/query.sh"
 # Main Entry Point
 # ============================================
 
-case "${1:-help}" in
-    new-issue)      shift; cmd_new_issue "$@" ;;
-    sync)           shift; cmd_sync "$@" ;;
-    plan)           shift; cmd_plan "$@" ;;
-    approve)        shift; cmd_approve "$@" ;;
-    complete)       shift; cmd_complete "$@" ;;
-    verify)         shift; cmd_verify "$@" ;;
-    archive)        shift; cmd_archive "$@" ;;
-    status)         shift; cmd_status "$@" ;;
-    list)           shift; cmd_list "$@" ;;
-    decompose-prd)  shift; cmd_decompose_prd "$@" ;;
-    reset)          shift; cmd_reset "$@" ;;
-    help|--help|-h) cmd_help ;;
-    *)
-        log_error "Unknown command: $1"
-        cmd_help
-        exit 1
-        ;;
-esac
+main() {
+    case "${1:-help}" in
+        issue)          shift; cmd_issue "$@" ;;
+        sync)           shift; cmd_sync "$@" ;;
+        plan)           shift; cmd_plan "$@" ;;
+        approve)        shift; cmd_approve "$@" ;;
+        complete)       shift; cmd_complete "$@" ;;
+        verify)         shift; cmd_verify "$@" ;;
+        archive)        shift; cmd_archive "$@" ;;
+        status)         shift; cmd_status "$@" ;;
+        list)           shift; cmd_list "$@" ;;
+        decompose-prd)  shift; cmd_decompose_prd "$@" ;;
+        reset)          shift; cmd_reset "$@" ;;
+        help|--help|-h) cmd_help ;;
+        *)
+            log_error "Unknown command: $1"
+            cmd_help
+            exit 1
+            ;;
+    esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
