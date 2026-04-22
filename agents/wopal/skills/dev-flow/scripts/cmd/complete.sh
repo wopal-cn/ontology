@@ -61,6 +61,18 @@ cmd_complete() {
         exit 1
     fi
 
+    # Check step checkboxes in Implementation and Test Plan (hard gate)
+    if ! check_step_completion "$plan_file"; then
+        echo ""
+        log_error "Cannot complete: Implementation/Test Plan steps not satisfied"
+        echo ""
+        echo "Please check the completed steps and update the Plan file:"
+        echo "  $plan_file"
+        echo ""
+        echo "After completing, run: flow.sh complete $input"
+        exit 1
+    fi
+
     # Check Agent Verification Acceptance Criteria
     if ! check_acceptance_criteria "$plan_file"; then
         echo ""

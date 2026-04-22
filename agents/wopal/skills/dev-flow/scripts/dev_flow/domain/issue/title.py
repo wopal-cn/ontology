@@ -123,6 +123,15 @@ def validate_issue_title(title: str) -> None:
             f"Description: {description}"
         )
     
+    # Check description is ASCII (English only)
+    # Per AGENTS.md Issue 标题规范, description must be English imperative sentence
+    if not description.isascii():
+        raise ValidationError(
+            f"Description must be English (ASCII characters only)\n"
+            f"Per AGENTS.md Issue 标题规范: description should be English imperative sentence\n"
+            f"Your description: {description}"
+        )
+    
     # Check total title length (<= 72 chars)
     if len(title) > 72:
         raise ValidationError(

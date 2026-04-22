@@ -49,6 +49,12 @@ plan → approve → approve --confirm → complete → verify --confirm → arc
 1. **Plan 写完后：`--check` → 必要时 `sync <issue> --body-only` → `approve` → 等用户审批。**
 2. **实施完成后：勾选已完成步骤 → 完成 Agent Verification → `complete` → 再等用户验证。**
 
+   **步骤勾选范围**：
+   - Implementation：每个 Task 的 **Changes** 和 **Verification** 里的 `- [ ] Step N:` 格式 checkbox
+   - Test Plan：每个 Case 的 **Execution** 里的 `- [ ] Step N:` 格式 checkbox
+   
+   `complete` 会强制校验以上所有 Step checkbox 必须全部勾选，否则阻断并提示。
+
 ## 状态机与命令映射
 
 | 命令 | 前置状态 | 后置状态 | 作用 |
@@ -136,12 +142,21 @@ flow.sh plan --title "<type>(<scope>): <description>" --project <name> --type <t
 
 不要直接让用户验证。先完成这几步：
 
-1. 回看 Plan，确认已完成步骤都已勾选。
+1. 回看 Plan，确认**所有步骤都已勾选**（Implementation + Test Plan 的 Step checkbox）。
 2. 完成并勾选 `### Agent Verification`。
 3. 然后必须执行：
    ```bash
    flow.sh complete <issue>
    ```
+
+`complete` 的硬门控：
+- Step completion：Implementation / Test Plan 中所有 `- [ ] Step N:` 格式 checkbox 必须勾选
+- Agent Verification：`### Agent Verification` 中所有 checkbox 必须勾选
+
+门控失败时会阻断并提示：
+- 显示未勾选的步骤列表
+- 提示 Agent 检查工作并完成勾选
+- 再次执行 `complete`
 
 `complete` 后，任务正式进入 `verifying`。
 
@@ -262,13 +277,15 @@ SKILL.md 不重复模板章节内容，只规定流程要求：
 flow.sh issue create --title "<type>(<scope>): <description>" --project <name> [options]
 ```
 
-常用参数：
-- `--goal`
+**必填参数**：
+- `--goal "<一句话目标>"` — 必填，不传会产生占位符 `<一句话描述目标>`
+- title 的 `<description>` 必须是英文祈使句（≤50 chars），格式如 `add missing config keys`
+
+**常用参数**：
 - `--background`
 - `--scope`
 - `--out-of-scope`
 - `--reference`
-- `--body`
 
 类型专属参数按需使用：
 - perf：`--baseline` / `--target`
@@ -340,11 +357,12 @@ flow.sh reset <plan-name>
 ## 边缘场景
 
 1. **已有 Plan 再次执行 `plan`**：不重复创建，继续基于现有 Plan 推进。
-2. **`complete` 时 AC 未完成**：先补齐 `Agent Verification`，不要强行进入 `verifying`。
-3. **`verify --confirm` 时 PR 未 merged**：先等 PR merge。
-4. **`verify --confirm` 时用户未勾选最终 checkbox**：先让用户完成 User Validation。
-5. **目标项目工作区不干净**：这表示当前工作区不适合继续执行；先清理/提交当前变更，或改用 `--worktree`。
-6. **参数选择规则**：Issue 驱动一律传 issue number；无 Issue 的 Plan 驱动一律传 plan-name。
+2. **`complete` 时 Step 未完成**：先勾选 Implementation / Test Plan 中所有 `- [ ] Step N:` 格式的 checkbox，不要强行进入 `verifying`。
+3. **`complete` 时 Agent Verification 未完成**：先补齐 `Agent Verification`，不要强行进入 `verifying`。
+4. **`verify --confirm` 时 PR 未 merged**：先等 PR merge。
+5. **`verify --confirm` 时用户未勾选最终 checkbox**：先让用户完成 User Validation。
+6. **目标项目工作区不干净**：这表示当前工作区不适合继续执行；先清理/提交当前变更，或改用 `--worktree`。
+7. **参数选择规则**：Issue 驱动一律传 issue number；无 Issue 的 Plan 驱动一律传 plan-name。
 
 ## 错误处理
 
@@ -353,6 +371,8 @@ flow.sh reset <plan-name>
 | `Invalid transition` | 回到正确状态顺序执行 |
 | `Plan not found` | 先运行 `plan` |
 | `check-doc failed` | 修好 Plan 再 `approve` |
+| `Step completion failed` | 勾选 Implementation / Test Plan 中所有 Step checkbox，再 `complete` |
+| `Agent Verification failed` | 补齐 Agent Verification checkbox，再 `complete` |
 | `dirty workspace` | 当前工作区不适合继续执行；先清理/提交，或改用 `--worktree` |
 | `PR not merged yet` | 等 merge 后再 `verify --confirm` |
 | `User Validation gate failed` | 让用户完成验证并勾选最终 checkbox |

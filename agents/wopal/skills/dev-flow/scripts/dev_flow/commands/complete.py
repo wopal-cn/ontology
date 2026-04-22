@@ -32,6 +32,7 @@ from dev_flow.domain.plan.metadata import (
 from dev_flow.domain.validation.check_doc import (
     ValidationError,
     check_acceptance_criteria,
+    check_step_completion,
 )
 from dev_flow.domain.workflow import (
     parse_plan_status,
@@ -289,7 +290,20 @@ def cmd_complete(args: argparse.Namespace) -> int:
 
         return 1
 
-    # 4. Check Agent Verification Acceptance Criteria (hard gate)
+    # 4. Check step checkboxes in Implementation and Test Plan (hard gate)
+    try:
+        check_step_completion(plan_path)
+    except ValidationError as e:
+        log_error("")
+        log_error(f"Cannot complete: {e}")
+        log_error("")
+        log_error("Please check the completed steps and update the Plan file:")
+        log_error(f"  {plan_path}")
+        log_error("")
+        log_error(f"After completing, run: flow.sh complete {issue_number}")
+        return 1
+
+    # 5. Check Agent Verification Acceptance Criteria (hard gate)
     try:
         check_acceptance_criteria(plan_path)
     except ValidationError as e:
@@ -302,7 +316,7 @@ def cmd_complete(args: argparse.Namespace) -> int:
         log_error(f"After completing, run: flow.sh complete {issue_number}")
         return 1
 
-    # 5. Resolve repo for Issue sync
+    # 6. Resolve repo for Issue sync
     repo = _resolve_repo()
 
     # Extract Issue number from Plan metadata
@@ -371,11 +385,18 @@ def cmd_complete(args: argparse.Namespace) -> int:
             # Persist PR URL in Plan metadata
             set_plan_field(plan_path, "PR", pr_url)
 
+        effective_issue = plan_issue or issue_number
+
+        if effective_issue:
+            next_ref = str(effective_issue)
+        else:
+            next_ref = plan_name
+
         print("")
         print("Status: verifying (PR opened)")
         print("")
         print("Waiting for PR merge. After user confirms, run:")
-        print(f"  flow.sh verify {plan_name} --confirm")
+        print(f"  flow.sh verify {next_ref} --confirm")
 
     else:
         # Without PR path: state transition + sync

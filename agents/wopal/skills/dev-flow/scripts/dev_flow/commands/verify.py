@@ -401,10 +401,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
     else:
         print("Reason: user validation confirmed")
     print("")
-    print(f"Next: flow.sh archive {plan_name}")
+    print(f"Next: flow.sh archive {issue_number}")
     print("")
     print("Ready to archive. Run:")
-    print(f"  flow.sh archive {plan_name}")
+    print(f"  flow.sh archive {issue_number}")
 
     return 0
 

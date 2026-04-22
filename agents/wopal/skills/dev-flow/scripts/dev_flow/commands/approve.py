@@ -580,10 +580,13 @@ def cmd_approve(args: argparse.Namespace) -> int:
         print(f"Issue: #{issue_number}")
     if worktree_created:
         print(f"Worktree: {workspace_root}/.worktrees/{project}-{branch}")
+    
+    # Use issue_number for Issue-driven mode, plan_name for no-issue mode
+    next_ref = str(issue_number) if issue_number else plan_name
     print("")
-    print(f"Next: flow.sh complete {plan_name}")
+    print(f"Next: flow.sh complete {next_ref}")
     print("")
-    print(f"实施完成后，执行: flow.sh complete {plan_name}")
+    print(f"实施完成后，执行: flow.sh complete {next_ref}")
     
     return 0
 

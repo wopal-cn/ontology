@@ -653,6 +653,145 @@ check_acceptance_criteria() {
     return 0
 }
 
+# Check if all step checkboxes in Implementation and Test Plan are completed
+# Usage: check_step_completion <plan_file>
+# Returns: 0 if all steps checked or no steps found, 1 if incomplete
+# Output: incomplete step items (if any)
+#
+# Scans:
+#   - Implementation section: each Task's **Changes** and **Verification** step checkboxes
+#   - Test Plan section: each Case's Execution step checkboxes
+#   - Only checks checkboxes matching: '- [ ] Step N:' or '- [x] Step N:'
+check_step_completion() {
+    local plan_file="$1"
+    
+    if [[ ! -f "$plan_file" ]]; then
+        log_error "Plan file not found: $plan_file"
+        return 1
+    fi
+    
+    local unchecked_steps=()
+    
+    # Extract Implementation section
+    local impl_section
+    impl_section=$(sed -n '/^## Implementation/,/^##[^#]/{ /^## Implementation/d; /^##[^#]/d; p; }' "$plan_file")
+    
+    if [[ -n "$impl_section" ]]; then
+        # Process each Task section
+        local in_task=false
+        local task_title=""
+        local in_changes=false
+        local in_verification=false
+        
+        while IFS= read -r line; do
+            # Detect Task heading
+            if [[ "$line" =~ ^###\ Task\ [0-9]+:\ (.+) ]]; then
+                task_title="${BASH_REMATCH[1]}"
+                in_task=true
+                in_changes=false
+                in_verification=false
+                continue
+            fi
+            
+            if [[ "$line" =~ ^###\ [^T] || "$line" =~ ^##[^#] ]]; then
+                in_task=false
+                in_changes=false
+                in_verification=false
+                continue
+            fi
+            
+            if ! $in_task; then
+                continue
+            fi
+            
+            # Detect Changes/Verification block boundaries
+            if [[ "$line" =~ \*\*Changes\*\*: ]]; then
+                in_changes=true
+                in_verification=false
+                continue
+            fi
+            if [[ "$line" =~ \*\*Verification\*\*: ]]; then
+                in_changes=false
+                in_verification=true
+                continue
+            fi
+            if [[ "$line" =~ ^### ]]; then
+                in_changes=false
+                in_verification=false
+                continue
+            fi
+            
+            # Check for unchecked Step in Changes or Verification
+            if ($in_changes || $in_verification) && [[ "$line" =~ ^[[:space:]]*-\ \[\ \]\ Step\ [0-9]+: ]]; then
+                local block_name="Changes"
+                $in_verification && block_name="Verification"
+                unchecked_steps+=("Task '${task_title}' ${block_name}: ${line#"${line%%[![:space:]]*}"}")
+            fi
+        done <<< "$impl_section"
+    fi
+    
+    # Extract Test Plan section
+    local testplan_section
+    testplan_section=$(sed -n '/^## Test Plan/,/^##[^#]/{ /^## Test Plan/d; /^##[^#]/d; p; }' "$plan_file")
+    
+    if [[ -n "$testplan_section" ]]; then
+        local in_case=false
+        local in_execution=false
+        local case_title=""
+        
+        while IFS= read -r line; do
+            # Detect Case heading (level 4 or 5)
+            if [[ "$line" =~ ^#{4,5}\ *Case\ [^#\ ]+ ]]; then
+                case_title=$(echo "$line" | sed 's/^#\+\s*//' | sed 's/:.*//' | xargs)
+                in_case=true
+                in_execution=false
+                continue
+            fi
+            
+            if [[ "$line" =~ ^#{4,5}[^#] ]] && ! [[ "$line" =~ Case ]]; then
+                in_case=false
+                in_execution=false
+                continue
+            fi
+            
+            if ! $in_case; then
+                continue
+            fi
+            
+            # Detect Execution block
+            if [[ "$line" =~ -[[:space:]]*Execution: ]]; then
+                in_execution=true
+                continue
+            fi
+            # End Execution block at Expected or next block
+            if $in_execution && [[ "$line" =~ -[[:space:]]*Expected ]]; then
+                in_execution=false
+                continue
+            fi
+            
+            # Check for unchecked Step in Execution
+            if $in_execution && [[ "$line" =~ ^[[:space:]]*-\ \[\ \]\ Step\ [0-9]+: ]]; then
+                unchecked_steps+=("Test Case '${case_title}': ${line#"${line%%[![:space:]]*}"}")
+            fi
+        done <<< "$testplan_section"
+    fi
+    
+    if [[ ${#unchecked_steps[@]} -gt 0 ]]; then
+        log_error "Implementation/Test Plan steps not completed:"
+        echo ""
+        for step in "${unchecked_steps[@]}"; do
+            echo "  $step"
+        done
+        echo ""
+        echo "Please check the completed steps and update the Plan file:"
+        echo "  $plan_file"
+        echo ""
+        return 1
+    fi
+    
+    return 0
+}
+
 # Get incomplete Acceptance Criteria count
 # Usage: get_incomplete_ac_count <plan_file>
 # Output: number of incomplete items

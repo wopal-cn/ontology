@@ -48,10 +48,20 @@
 **Files**: `path/to/file`
 
 **Changes**:
+<!--
+  ⚠️ 每个 Step 必须用 `- [ ] Step N: 描述` 格式，保持原子粒度
+  禁止用单个 checkbox 概括整个改动
+-->
+
 - [ ] Step 1: 具体改动点 1
 - [ ] Step 2: 具体改动点 2
 
-**Verification**: 验证命令或验证方法
+**Verification**:
+<!--
+  ⚠️ 必须用 `- [ ] Step N: 描述` 格式的 checkbox 步骤
+  禁止只写文字描述而无 step checkbox
+  至少包含：执行验证命令 + 确认通过两个步骤
+-->
 
 - [ ] Step 1: 具体操作
 - [ ] Step 2: 验证通过

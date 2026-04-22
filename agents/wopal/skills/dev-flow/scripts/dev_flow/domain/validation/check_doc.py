@@ -283,3 +283,103 @@ def check_acceptance_criteria(plan_file: str) -> None:
     if not checked:
         # No items found - pass
         return
+
+
+def check_step_completion(plan_file: str) -> None:
+    """
+    Check if all step checkboxes in Implementation and Test Plan are completed.
+    
+    This is a hard gate for complete command.
+    
+    Scans:
+    - Implementation section: each Task's **Changes** and **Verification** step checkboxes
+    - Test Plan section: each Case's Execution step checkboxes
+    
+    Only checks checkboxes that match Step pattern: '- [ ] Step N:' or '- [x] Step N:'
+    
+    Args:
+        plan_file: Path to plan file
+        
+    Raises:
+        ValidationError: If any step checkboxes are unchecked
+    """
+    with open(plan_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    unchecked_steps = []
+    
+    # ============================================
+    # 1. Check Implementation section
+    # ============================================
+    impl_section = _extract_level2_section(content, "## Implementation")
+    
+    if impl_section:
+        # Find each Task section
+        task_pattern = r'^### Task \d+: (.+?)\n(.*?)(?=^### Task|^##[^#]|\Z)'
+        tasks = re.findall(task_pattern, impl_section, re.MULTILINE | re.DOTALL)
+        
+        for task_title, task_content in tasks:
+            # Check Changes block for unchecked steps
+            changes_match = re.search(
+                r'\*\*Changes\*\*:\s*\n(.*?)(?:\*\*Verification\*\*:|^###|^##|\Z)',
+                task_content, re.MULTILINE | re.DOTALL
+            )
+            if changes_match:
+                changes_block = changes_match.group(1).strip()
+                unchecked_in_changes = re.findall(
+                    r'^\s*-\s+\[\s*\]\s+Step\s+\d+:.*$',
+                    changes_block,
+                    re.MULTILINE
+                )
+                for step in unchecked_in_changes:
+                    unchecked_steps.append(f"Task '{task_title}' Changes: {step.strip()}")
+            
+            # Check Verification block for unchecked steps
+            verification_match = re.search(
+                r'\*\*Verification\*\*:\s*\n(.*?)(?=^###|^##|\Z)',
+                task_content, re.MULTILINE | re.DOTALL
+            )
+            if verification_match:
+                verification_block = verification_match.group(1).strip()
+                unchecked_in_verification = re.findall(
+                    r'^\s*-\s+\[\s*\]\s+Step\s+\d+:.*$',
+                    verification_block,
+                    re.MULTILINE
+                )
+                for step in unchecked_in_verification:
+                    unchecked_steps.append(f"Task '{task_title}' Verification: {step.strip()}")
+    
+    # ============================================
+    # 2. Check Test Plan section
+    # ============================================
+    testplan_section = _extract_level2_section(content, "## Test Plan")
+    
+    if testplan_section:
+        # Find each Case (level-4 or level-5 heading)
+        case_pattern = r'^#{4,5}\s*Case\s*([^#\n]+)\n(.*?)(?=^#{4,5}[^#]|\Z)'
+        cases = re.findall(case_pattern, testplan_section, re.MULTILINE | re.DOTALL)
+        
+        for case_name, case_content in cases:
+            # Extract Execution block
+            execution_match = re.search(
+                r'-\s*Execution:\s*\n(.*?)(?=-\s*Expected|\Z)',
+                case_content,
+                re.MULTILINE | re.DOTALL
+            )
+            if execution_match:
+                execution_block = execution_match.group(1).strip()
+                unchecked_in_execution = re.findall(
+                    r'^\s*-\s+\[\s*\]\s+Step\s+\d+:.*$',
+                    execution_block,
+                    re.MULTILINE
+                )
+                for step in unchecked_in_execution:
+                    unchecked_steps.append(f"Test Case '{case_name.strip()}': {step.strip()}")
+    
+    if unchecked_steps:
+        unchecked_str = "\n".join(unchecked_steps)
+        raise ValidationError(
+            f"Implementation/Test Plan steps not completed:\n\n{unchecked_str}\n\n"
+            f"Please check the completed steps in the Plan file:\n  {plan_file}\n\n"
+            f"After completing, run: flow.sh complete"
+        )
