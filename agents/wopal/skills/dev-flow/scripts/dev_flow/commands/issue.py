@@ -320,7 +320,7 @@ def cmd_issue_create(args: argparse.Namespace) -> int:
         return 1
     
     # Validate project name format
-    if not re.match(r^[a-z0-9-]+$', project):
+    if not re.match(r'^[a-z0-9-]+$', project):
         log_error(f"Invalid project name: {project}")
         log_error("Project name must be lowercase alphanumeric with hyphens")
         return 1

@@ -11,6 +11,8 @@ import sys
 
 from dev_flow import __version__
 from dev_flow.commands.issue import register_issue_parser, cmd_issue
+from dev_flow.commands.query import register_query_parser, cmd_query
+from dev_flow.commands.sync import register_sync_parser, cmd_sync
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,6 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
     # Register issue subcommand
     register_issue_parser(subparsers)
 
+    # Register query subcommand
+    register_query_parser(subparsers)
+
+    # Register sync subcommand
+    register_sync_parser(subparsers)
+
     return parser
 
 
@@ -45,6 +53,14 @@ def main(argv: list[str] | None = None) -> int:
     # Dispatch issue subcommand
     if args.command == "issue":
         return cmd_issue(args)
+
+    # Dispatch query subcommand
+    if args.command == "query":
+        return cmd_query(args)
+
+    # Dispatch sync subcommand
+    if args.command == "sync":
+        return cmd_sync(args)
 
     return 0
 
