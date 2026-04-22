@@ -43,7 +43,7 @@ setup_fixture() {
     
     # Clean up any existing fixture
     if [[ -d "$fixture_dir" ]]; then
-        rm -rf "$fixture_dir"
+        rm -rf "$fixture_dir" 2>/dev/null || true
     fi
     mkdir -p "$fixture_dir"
     
@@ -53,8 +53,11 @@ setup_fixture() {
 # Cleanup fixture environment
 # Usage: cleanup_fixture
 cleanup_fixture() {
+    # Return to safe directory before removing fixture
+    cd /tmp 2>/dev/null || cd "$HOME" 2>/dev/null || true
+    
     if [[ -n "${FIXTURE_DIR:-}" && -d "${FIXTURE_DIR:-}" ]]; then
-        rm -rf "$FIXTURE_DIR"
+        rm -rf "$FIXTURE_DIR" 2>/dev/null || true
     fi
 }
 
@@ -205,9 +208,10 @@ get_file_last_commit() {
     git log -n 1 --format='%H' -- "$file_path" 2>/dev/null || echo ""
 }
 
-# Check if commit is in remote
-# Usage: is_commit_in_remote <workspace_path> <commit> [remote] [branch]
-is_commit_in_remote() {
+# Check if commit is in remote (fixture-specific, avoids conflict with lib/git.sh)
+# Usage: fixture_is_commit_in_remote <workspace_path> <commit> [remote] [branch]
+# Note: Different signature from lib/git.sh's is_commit_in_remote(commit, remote_branch)
+fixture_is_commit_in_remote() {
     local workspace_path="$1"
     local commit="$2"
     local remote="${3:-origin}"

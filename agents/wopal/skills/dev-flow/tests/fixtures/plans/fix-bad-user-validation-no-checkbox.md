@@ -68,6 +68,7 @@
 ### User Validation
 
 #### Scenario 1: 基本功能验证
+
 - Goal: 用户验证功能是否正常
 - Precondition: 功能已实现
 - User Actions:
@@ -75,4 +76,9 @@
   2. 确认结果正确
 - Expected Result: 功能正常工作
 
-注意：此处故意缺少最终确认 checkbox，用于测试校验逻辑
+用户已完成以下验证：
+
+- 本地测试通过
+- 代码审查完成
+
+注意：此 fixture 故意缺少最终确认 checkbox，用于测试"有 User Validation section 但无 checkbox 应失败"的场景

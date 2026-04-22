@@ -65,8 +65,4 @@
 
 - [x] 旧 Plan 通过 check-doc 校验
 
-### User Validation
-
-#### Scenario 1: N/A
-
-N/A — 此 fixture 用于向后兼容测试
+注意：此 fixture 是旧格式 Plan，故意缺少 ### User Validation section，用于测试 backward compat
