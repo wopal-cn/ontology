@@ -441,7 +441,16 @@ def cmd_archive(args: argparse.Namespace) -> int:
         workspace_root=str(workspace_root),
     )
     
-    # 6. Commit archived plan
+    # 6. Stage all changes (rename + sync content updates)
+    archived_rel = Path(archived_file).relative_to(workspace_root)
+    subprocess.run(
+        ["git", "add", str(archived_rel)],
+        cwd=str(workspace_root),
+        capture_output=True,
+        check=True,
+    )
+
+    # 7. Commit archived plan
     commit_archived_plan(archived_file, plan_issue, workspace_root)
     
     # 7. Close Issue
