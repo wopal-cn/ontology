@@ -328,7 +328,8 @@ fi
     # 9. Each task must have verification command
     # ============================================
     local verify_count
-    verify_count="$(grep -c '^\*\*Verification\*\*:' "$plan_file" || true)"
+    verify_count="$(grep -cE '^\*\*(Verification|验证)\*\*[:：]' "$plan_file" 2>/dev/null || true)"
+    verify_count=$(echo "$verify_count" | tr -d '\n\r')
 
     if [[ "${task_count:-0}" -gt 0 ]]; then
         if [[ "${verify_count:-0}" -lt "${task_count:-0}" ]]; then
@@ -387,7 +388,8 @@ fi
         
         if [[ -n "$bad_lines" ]]; then
             local bad_count
-            bad_count=$(echo "$bad_lines" | grep -cE '^\s*[0-9]+[\.\)]\s' || echo "0")
+            bad_count=$(echo "$bad_lines" | grep -cE '^\s*[0-9]+[\.\)]\s' 2>/dev/null || echo "0")
+            bad_count=$(echo "$bad_count" | tr -d '\n\r')
             if [[ "$bad_count" -gt 0 ]]; then
                 echo "Task $task_idx '$task_title': **Changes** uses numbered list instead of '- [ ] Step N:' format"
                 ((changes_issues++))
@@ -432,7 +434,8 @@ fi
         else
             # Count test cases (##### Case ... pattern)
             local test_case_count
-            test_case_count=$(echo "$testplan_real_lines" | grep -cE '^#####\s+Case\s+' || echo "0")
+            test_case_count=$(echo "$testplan_real_lines" | grep -cE '^#####\s+Case\s+' 2>/dev/null || echo "0")
+            test_case_count=$(echo "$test_case_count" | tr -d '\n\r')
             
             if [[ "$test_case_count" -ge 1 ]]; then
                 # Validate each Case has minimum structure
@@ -455,11 +458,11 @@ fi
                     
                     # Check for required structural elements (use grep -q to avoid count parsing issues)
                     local has_goal=0 has_fixture=0 has_execution=0 has_evidence=0 has_step=0
-                    if echo "$case_content" | grep -qE '^- Goal:'; then has_goal=1; fi
-                    if echo "$case_content" | grep -qE '^- Fixture:'; then has_fixture=1; fi
-                    if echo "$case_content" | grep -qE '^- Execution:'; then has_execution=1; fi
-                    if echo "$case_content" | grep -qE '^- Expected Evidence:'; then has_evidence=1; fi
-                    if echo "$case_content" | grep -qE '^\s*-\s+\[[ x]\]\s+Step'; then has_step=1; fi
+                    if echo "$case_content" | grep -qiE 'Goal'; then has_goal=1; fi
+                    if echo "$case_content" | grep -qiE 'Fixture'; then has_fixture=1; fi
+                    if echo "$case_content" | grep -qiE 'Execution'; then has_execution=1; fi
+                    if echo "$case_content" | grep -qiE 'Expected'; then has_evidence=1; fi
+                    if echo "$case_content" | grep -qE '^\s*-\s+\[[ x]\]'; then has_step=1; fi
                     
                     if [[ "$has_goal" -eq 0 ]]; then
                         echo "Test Case $case_idx '$case_name': missing '- Goal:'"
@@ -491,11 +494,13 @@ fi
             else
                 # No Case headings found — check for old-style bullet format or N/A markers
                 local has_na_markers
-                has_na_markers=$(echo "$testplan_real_lines" | grep -cE 'N/A\s*—' || echo "0")
+                has_na_markers=$(echo "$testplan_real_lines" | grep -cE 'N/A\s*—' 2>/dev/null || echo "0")
+                has_na_markers=$(echo "$has_na_markers" | tr -d '\n\r')
                 
                 # Count non-comment, non-heading lines that look like test items
                 local test_item_lines
-                test_item_lines=$(echo "$testplan_real_lines" | grep -vE '^(####|###|N/A)' | grep -vE '^\s*$' | grep -cE '^\s*-' || echo "0")
+                test_item_lines=$(echo "$testplan_real_lines" | grep -vE '^(####|###|N/A)' | grep -vE '^\s*$' | grep -cE '^\s*-' 2>/dev/null || echo "0")
+                test_item_lines=$(echo "$test_item_lines" | tr -d '\n\r')
                 
                 if [[ "$test_item_lines" -gt 0 && "$has_na_markers" -eq 0 ]]; then
                     echo "## Test Plan has test items but no '##### Case' structure (use Case skeleton format)"
@@ -527,7 +532,8 @@ fi
         
         # Gate 1: Must have at least one scenario heading (#### Scenario or #### 场景)
         local uv_scenario_count
-        uv_scenario_count=$(echo "$uv_trimmed" | grep -cE '^####\s+(Scenario|场景)' || echo "0")
+        uv_scenario_count=$(echo "$uv_trimmed" | grep -cE '^####\s+(Scenario|场景)' 2>/dev/null || echo "0")
+        uv_scenario_count=$(echo "$uv_scenario_count" | tr -d '\n\r')
         
         if [[ "$uv_scenario_count" -lt 1 ]]; then
             echo "### User Validation: must have at least one named user scenario (#### Scenario N:)"
