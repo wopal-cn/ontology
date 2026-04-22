@@ -13,6 +13,7 @@ from dev_flow import __version__
 from dev_flow.commands.issue import register_issue_parser, cmd_issue
 from dev_flow.commands.query import register_query_parser, cmd_query
 from dev_flow.commands.sync import register_sync_parser, cmd_sync
+from dev_flow.commands.archive import register_archive_parser, cmd_archive
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,6 +39,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Register sync subcommand
     register_sync_parser(subparsers)
+
+    # Register archive subcommand
+    register_archive_parser(subparsers)
 
     return parser
 
@@ -78,6 +82,10 @@ def main(argv: list[str] | None = None) -> int:
     # Dispatch sync subcommand
     if args.command == "sync":
         return cmd_sync(args)
+
+    # Dispatch archive subcommand
+    if args.command == "archive":
+        return cmd_archive(args)
 
     return 0
 

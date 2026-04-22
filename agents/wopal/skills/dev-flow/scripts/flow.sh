@@ -1,5 +1,5 @@
 #!/bin/bash
-# dev-flow — hybrid wrapper (Phase 3: issue/query/sync routed to Python)
+# dev-flow — hybrid wrapper (Phase 3: issue/query/sync/archive routed to Python)
 # Usage: flow.sh <command> <issue-or-plan> [options]
 #
 # This wrapper routes commands to either Python implementation or legacy Bash.
@@ -9,8 +9,9 @@
 #   - issue create/update → Python
 #   - query status/list → Python
 #   - sync → Python
+#   - archive → Python (with Target Project repo dirty gate)
 #   - help → Python
-#   - plan/approve/complete/verify/archive → legacy fallback
+#   - plan/approve/complete/verify → legacy fallback
 
 set -e
 
@@ -19,7 +20,7 @@ LEGACY_SCRIPT="$SCRIPT_DIR/flow-legacy.sh"
 PYTHON_SCRIPT="$SCRIPT_DIR/flow.py"
 
 # Commands routed to Python implementation
-PYTHON_COMMANDS="issue|query|sync|help"
+PYTHON_COMMANDS="issue|query|sync|archive|help"
 
 # Check if legacy script exists
 if [[ ! -f "$LEGACY_SCRIPT" ]]; then
