@@ -14,6 +14,7 @@ from dev_flow.commands.issue import register_issue_parser, cmd_issue
 from dev_flow.commands.query import register_query_parser, cmd_query
 from dev_flow.commands.sync import register_sync_parser, cmd_sync
 from dev_flow.commands.archive import register_archive_parser, cmd_archive
+from dev_flow.commands.approve import register_approve_parser, cmd_approve
 from dev_flow.commands.complete import register_complete_parser, cmd_complete
 from dev_flow.commands.verify import register_verify_parser, cmd_verify
 from dev_flow.commands.plan import register_plan_parser, cmd_plan
@@ -45,6 +46,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Register archive subcommand
     register_archive_parser(subparsers)
+
+    # Register approve subcommand
+    register_approve_parser(subparsers)
 
     # Register complete subcommand
     register_complete_parser(subparsers)
@@ -100,6 +104,10 @@ def main(argv: list[str] | None = None) -> int:
     # Dispatch archive subcommand
     if args.command == "archive":
         return cmd_archive(args)
+
+    # Dispatch approve subcommand
+    if args.command == "approve":
+        return cmd_approve(args)
 
     # Dispatch complete subcommand
     if args.command == "complete":

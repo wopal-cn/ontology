@@ -23,7 +23,7 @@ LEGACY_SCRIPT="$SCRIPT_DIR/flow-legacy.sh"
 PYTHON_SCRIPT="$SCRIPT_DIR/flow.py"
 
 # Commands routed to Python implementation
-PYTHON_COMMANDS="issue|plan|query|sync|archive|approve|complete|verify|help"
+PYTHON_COMMANDS="issue|plan|query|sync|archive|complete|verify|help"
 
 # Check if legacy script exists
 if [[ ! -f "$LEGACY_SCRIPT" ]]; then
