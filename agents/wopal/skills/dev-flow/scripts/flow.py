@@ -10,6 +10,7 @@ import argparse
 import sys
 
 from dev_flow import __version__
+from dev_flow.commands.issue import register_issue_parser, cmd_issue
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,6 +28,9 @@ def build_parser() -> argparse.ArgumentParser:
     # Placeholder: will be populated by later phase commands
     _ = subparsers.add_parser("help", help="Show help")
 
+    # Register issue subcommand
+    register_issue_parser(subparsers)
+
     return parser
 
 
@@ -37,6 +41,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "help" or args.command is None:
         parser.print_help()
         return 0
+
+    # Dispatch issue subcommand
+    if args.command == "issue":
+        return cmd_issue(args)
 
     return 0
 
