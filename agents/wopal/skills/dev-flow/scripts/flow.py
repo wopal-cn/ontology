@@ -1,0 +1,163 @@
+"""Flow CLI — Python entry point for dev-flow.
+
+Phase 0 skeleton: only provides --help and version; all subcommands
+will be dispatched here in later phases by switching the hybrid router.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from dev_flow import __version__
+from dev_flow.commands.issue import register_issue_parser, cmd_issue
+from dev_flow.commands.query import register_query_parser, cmd_query, cmd_query_status, cmd_query_list
+from dev_flow.commands.sync import register_sync_parser, cmd_sync
+from dev_flow.commands.archive import register_archive_parser, cmd_archive
+from dev_flow.commands.approve import register_approve_parser, cmd_approve
+from dev_flow.commands.complete import register_complete_parser, cmd_complete
+from dev_flow.commands.verify import register_verify_parser, cmd_verify
+from dev_flow.commands.plan import register_plan_parser, cmd_plan
+from dev_flow.commands.decompose import register_decompose_parser, cmd_decompose
+from dev_flow.commands.reset import register_reset_parser, cmd_reset
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="flow.py",
+        description="Dev-flow CLI (Python implementation)",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    # Help subcommand with detailed output
+    help_parser = subparsers.add_parser("help", help="Show help")
+
+    # Register issue subcommand
+    register_issue_parser(subparsers)
+
+    # Register query subcommand
+    register_query_parser(subparsers)
+
+    # Register sync subcommand
+    register_sync_parser(subparsers)
+
+    # Register archive subcommand
+    register_archive_parser(subparsers)
+
+    # Register approve subcommand
+    register_approve_parser(subparsers)
+
+    # Register complete subcommand
+    register_complete_parser(subparsers)
+
+    # Register verify subcommand
+    register_verify_parser(subparsers)
+
+    # Register plan subcommand
+    register_plan_parser(subparsers)
+
+    # Register decompose-prd subcommand (top-level alias)
+    register_decompose_parser(subparsers)
+
+    # Register reset subcommand
+    register_reset_parser(subparsers)
+
+    # Register status as top-level alias (dispatches to query status)
+    status_parser = subparsers.add_parser("status", help="Show Issue/Plan status")
+    status_parser.add_argument("issue", nargs="?", help="Issue number")
+
+    # Register list as top-level alias (dispatches to query list)
+    list_parser = subparsers.add_parser("list", help="List active Plans")
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.command == "help" or args.command is None:
+        # Print detailed help with all subcommands and their nested commands
+        parser.print_help()
+        print()
+        print("Available subcommands:")
+        print("  issue create    Create a new GitHub Issue")
+        print("  issue update    Update an existing GitHub Issue")
+        print("  query status    Show Issue/Plan status")
+        print("  query list      List active Plans")
+        print("  sync            Sync Plan to Issue (body + labels)")
+        print("  sync --body-only    Sync only Issue body")
+        print("  sync --labels-only  Sync only Issue labels")
+        print()
+        print("Workflow commands:")
+        print("  plan            Create or locate a Plan")
+        print("  approve         Review and approve a Plan")
+        print("  complete        Mark implementation complete")
+        print("  verify          Verify and confirm completion")
+        print("  archive         Archive a completed Plan")
+        print()
+        print("Utility commands:")
+        print("  status          Alias for 'query status'")
+        print("  list            Alias for 'query list'")
+        print("  decompose-prd   Create Issues from PRD phases")
+        print("  reset           Reset Plan to planning status")
+        return 0
+
+    # Dispatch issue subcommand
+    if args.command == "issue":
+        return cmd_issue(args)
+
+    # Dispatch query subcommand
+    if args.command == "query":
+        return cmd_query(args)
+
+    # Dispatch sync subcommand
+    if args.command == "sync":
+        return cmd_sync(args)
+
+    # Dispatch archive subcommand
+    if args.command == "archive":
+        return cmd_archive(args)
+
+    # Dispatch approve subcommand
+    if args.command == "approve":
+        return cmd_approve(args)
+
+    # Dispatch complete subcommand
+    if args.command == "complete":
+        return cmd_complete(args)
+
+    # Dispatch verify subcommand
+    if args.command == "verify":
+        return cmd_verify(args)
+
+    # Dispatch plan subcommand
+    if args.command == "plan":
+        return cmd_plan(args)
+
+    # Dispatch decompose-prd subcommand
+    if args.command == "decompose-prd":
+        return cmd_decompose(args)
+
+    # Dispatch reset subcommand
+    if args.command == "reset":
+        return cmd_reset(args)
+
+    # Dispatch status as alias for query status
+    if args.command == "status":
+        return cmd_query_status(args)
+
+    # Dispatch list as alias for query list
+    if args.command == "list":
+        return cmd_query_list(args)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

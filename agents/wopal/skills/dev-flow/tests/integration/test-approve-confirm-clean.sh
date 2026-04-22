@@ -170,7 +170,7 @@ EOF
 
     local latest_commit
     latest_commit=$(git -C "$workspace_path" rev-parse HEAD)
-    if is_commit_in_remote "$workspace_path" "$latest_commit" "origin" "$default_branch"; then
+    if fixture_is_commit_in_remote "$workspace_path" "$latest_commit" "origin" "$default_branch"; then
         test_pass "Latest commit was pushed to remote"
     else
         test_fail "Latest commit was not pushed to remote"
@@ -187,3 +187,7 @@ EOF
     cleanup_fixture
     test_summary
 }
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    run_tests
+fi

@@ -12,7 +12,7 @@ source "$SKILL_DIR/lib/labels.sh"
 source "$SKILL_DIR/lib/issue.sh"
 source "$SKILL_DIR/lib/plan.sh"
 source "$SKILL_DIR/lib/plan-sync.sh"
-source "$SKILL_DIR/scripts/flow.sh"
+source "$SKILL_DIR/scripts/flow-legacy.sh"
 
 run_tests() {
     test_start "build_repo_blob_url creates GitHub blob links"
@@ -54,4 +54,6 @@ EOF
     test_summary
 }
 
-run_tests
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    run_tests
+fi

@@ -162,3 +162,7 @@ EOF
     cleanup_fixture
     test_summary
 }
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    run_tests
+fi

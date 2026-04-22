@@ -99,9 +99,9 @@ run_tests() {
 # ============================================
 test_start "No User Validation section passes with warning (backward compat)"
 
-# fixture: fix-bad-user-validation-no-checkbox.md lacks User Validation section
+# fixture: feature-old-plan-no-techcontext.md has NO User Validation section (true backward compat case)
 # check_doc_plan should pass (backward compat) with warning
-local plan_file="$FIXTURES_DIR/fix-bad-user-validation-no-checkbox.md"
+local plan_file="$FIXTURES_DIR/feature-old-plan-no-techcontext.md"
 
 run_cmd "check_doc_plan '$plan_file'"
 

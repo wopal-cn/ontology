@@ -77,19 +77,21 @@ run_test_file() {
     echo "Running: $(basename "$test_file")"
     echo "============================================"
     
-    # Set SKILL_DIR for sourced library files
-    export SKILL_DIR="$SKILL_DIR"
-    
-    # Source and run the test file
-    # Each test file should define run_tests() function
-    source "$test_file"
-    
-    if declare -f run_tests >/dev/null 2>&1; then
-        run_tests
-    else
-        log_error "Test file missing run_tests function: $test_file"
-        return 1
-    fi
+    (
+        # Isolate each test file to prevent function/env leakage
+        export SKILL_DIR="$SKILL_DIR"
+
+        # Source and run the test file
+        # Each test file should define run_tests() function
+        source "$test_file"
+
+        if declare -f run_tests >/dev/null 2>&1; then
+            run_tests
+        else
+            log_error "Test file missing run_tests function: $test_file"
+            return 1
+        fi
+    )
 }
 
 # ============================================
