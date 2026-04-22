@@ -14,6 +14,9 @@ from dev_flow.commands.issue import register_issue_parser, cmd_issue
 from dev_flow.commands.query import register_query_parser, cmd_query
 from dev_flow.commands.sync import register_sync_parser, cmd_sync
 from dev_flow.commands.archive import register_archive_parser, cmd_archive
+from dev_flow.commands.complete import register_complete_parser, cmd_complete
+from dev_flow.commands.verify import register_verify_parser, cmd_verify
+from dev_flow.commands.plan import register_plan_parser, cmd_plan
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,6 +46,15 @@ def build_parser() -> argparse.ArgumentParser:
     # Register archive subcommand
     register_archive_parser(subparsers)
 
+    # Register complete subcommand
+    register_complete_parser(subparsers)
+
+    # Register verify subcommand
+    register_verify_parser(subparsers)
+
+    # Register plan subcommand
+    register_plan_parser(subparsers)
+
     return parser
 
 
@@ -66,9 +78,11 @@ def main(argv: list[str] | None = None) -> int:
         print("Workflow commands (legacy):")
         print("  plan            Create or locate a Plan")
         print("  approve         Review and approve a Plan")
+        print("  archive         Archive a completed Plan")
+        print()
+        print("Python-implemented workflow commands:")
         print("  complete        Mark implementation complete")
         print("  verify          Verify and confirm completion")
-        print("  archive         Archive a completed Plan")
         return 0
 
     # Dispatch issue subcommand
@@ -86,6 +100,18 @@ def main(argv: list[str] | None = None) -> int:
     # Dispatch archive subcommand
     if args.command == "archive":
         return cmd_archive(args)
+
+    # Dispatch complete subcommand
+    if args.command == "complete":
+        return cmd_complete(args)
+
+    # Dispatch verify subcommand
+    if args.command == "verify":
+        return cmd_verify(args)
+
+    # Dispatch plan subcommand
+    if args.command == "plan":
+        return cmd_plan(args)
 
     return 0
 
