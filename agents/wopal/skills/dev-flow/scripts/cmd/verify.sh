@@ -70,7 +70,23 @@ cmd_verify() {
     # Check if this is PR path (pr/opened label present)
     local is_pr_path=false
     local pr_merged=false
-    if [[ -n "$issue_number" ]] && issue_has_label "$issue_number" "pr/opened" "$repo"; then
+    local plan_pr_url
+    plan_pr_url=$(get_plan_field "$plan_file" "PR")
+
+    if [[ -n "$plan_pr_url" ]]; then
+        is_pr_path=true
+
+        if is_pr_merged "$plan_pr_url"; then
+            pr_merged=true
+            log_success "PR merged: $plan_pr_url"
+        else
+            log_error "PR not merged yet"
+            echo "PR URL: $plan_pr_url"
+            echo ""
+            echo "Wait for PR to be merged before verifying."
+            exit 1
+        fi
+    elif [[ -n "$issue_number" ]] && issue_has_label "$issue_number" "pr/opened" "$repo"; then
         is_pr_path=true
         
         # Check PR merge status

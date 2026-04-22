@@ -1,19 +1,19 @@
 #!/bin/bash
 # dev-flow — 统一开发工作流 (4-state model)
-# Usage: flow.sh <command> <issue> [options]
+# Usage: flow.sh <command> <issue-or-plan> [options]
 #
 # Commands:
 #   issue               创建或更新规范化的 Issue
-#   sync <issue>        手动同步 Plan 到 Issue
-#   plan <issue>        创建 Plan 并进入规划阶段
-#   approve <issue>     提交审批 → 执行
-#   complete <issue>    完成开发 → 验证阶段
-#   verify <issue>      用户验证 → 完成
-#   archive <issue>     归档
+#   sync <issue-or-plan>        手动同步 Plan 到 Issue
+#   plan <issue> | plan --title ...        创建/定位 Plan 并进入规划阶段
+#   approve <issue-or-plan>     提交审批 → 执行
+#   complete <issue-or-plan>    完成开发 → 验证阶段
+#   verify <issue-or-plan>      用户验证 → 完成
+#   archive <issue-or-plan>     归档
 #   status <issue>      查看任务状态
 #   list                列出进行中任务
 #   decompose-prd <prd> 从 PRD 创建 Issue
-#   reset <issue>       重置到 planning 状态
+#   reset <issue-or-plan>       重置到 planning 状态
 #   help                显示帮助
 
 set -e

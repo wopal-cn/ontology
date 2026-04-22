@@ -1114,6 +1114,8 @@ EOF
 
     # Update Issue in space repo
     update_issue_link "$issue_number" "$space_repo" "pr" "$pr_url"
+
+    echo "$pr_url"
 }
 
 # Create PR for Plan (no Issue mode)

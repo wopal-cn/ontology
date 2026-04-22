@@ -125,7 +125,14 @@ cmd_archive() {
         if [[ "$diff_rc" -eq 0 ]]; then
             log_warn "No staged changes for archived plan"
         elif [[ "$diff_rc" -eq 1 ]]; then
-            if git -C "$root_dir" commit -m "chore: archive plan #$issue_number" >/dev/null 2>&1; then
+            local archive_commit_msg
+            if [[ -n "$issue_number" ]]; then
+                archive_commit_msg="chore: archive plan #$issue_number"
+            else
+                archive_commit_msg="chore: archive plan $(basename "$archived_file" .md)"
+            fi
+
+            if git -C "$root_dir" commit -m "$archive_commit_msg" >/dev/null 2>&1; then
                 git -C "$root_dir" push >/dev/null 2>&1 || log_warn "Failed to push archived plan"
             else
                 log_warn "Failed to commit archived plan"

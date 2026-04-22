@@ -3,7 +3,7 @@
 # Investigation (spike) is embedded in the planning phase - no separate command.
 # Usage:
 #   flow.sh plan <issue> [--project <name>] [--prd <path>] [--deep] [--check]
-#   flow.sh plan --title "<title>" --project <name> --type <type> [--prd <path>] [--deep] [--check]
+#   flow.sh plan --title "<title>" --project <name> --type <type> [--scope <scope>] [--prd <path>] [--deep] [--check]
 cmd_plan() {
     local issue_number=""
     local project=""
@@ -13,6 +13,42 @@ cmd_plan() {
     local title=""
     local plan_type=""
     local scope=""
+
+    _resolved_no_issue_scope() {
+        local resolved="${PLAN_SCOPE:-}"
+        if [[ -z "$resolved" ]]; then
+            resolved=$(extract_scope "$title")
+        fi
+        echo "$resolved"
+    }
+
+    _print_existing_plan_info() {
+        local existing_plan_file="$1"
+        local target_ref="$2"
+        local current_status
+        current_status=$(get_current_status "$existing_plan_file")
+
+        echo "Plan: $existing_plan_file"
+        echo "Status: $current_status"
+
+        case "$current_status" in
+            planning)
+                echo "Next: flow.sh approve $target_ref"
+                ;;
+            executing)
+                echo "Next: flow.sh complete $target_ref"
+                ;;
+            verifying)
+                echo "Next: flow.sh verify $target_ref --confirm"
+                ;;
+            done)
+                echo "Next: flow.sh archive $target_ref"
+                ;;
+            *)
+                echo "Next: continue from current plan state"
+                ;;
+        esac
+    }
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -64,7 +100,7 @@ cmd_plan() {
     if [[ -z "$issue_number" && -z "$title" ]]; then
         log_error "Either Issue number or --title required"
         echo "Usage: flow.sh plan <issue> [--project <name>] [--prd <path>] [--deep] [--check]"
-        echo "   or: flow.sh plan --title \"<title>\" --project <name> --type <type> [--deep] [--check]"
+        echo "   or: flow.sh plan --title \"<title>\" --project <name> --type <type> [--scope <scope>] [--deep] [--check]"
         exit 1
     fi
 
@@ -94,9 +130,15 @@ cmd_plan() {
         if [[ -n "$issue_number" ]]; then
             plan_file=$(find_plan_by_issue "$issue_number" 2>/dev/null || true)
         else
-            # For no-issue plans, find by title slug
+            # For no-issue plans, reconstruct the exact plan name
+            local resolved_scope
+            resolved_scope=$(_resolved_no_issue_scope)
+            if [[ -z "$resolved_scope" ]]; then
+                log_error "Scope required for no-issue plans. Add --scope <name> or use title pattern: type(scope): description"
+                exit 1
+            fi
             slug=$(title_to_slug "$title")
-            plan_name="${plan_type}-${slug}"
+            plan_name="${plan_type}-${resolved_scope}-${slug}"
             plan_dir=$(resolve_plan_dir --project "$project")
             plan_file="$plan_dir/${plan_name}.md"
         fi
@@ -106,7 +148,9 @@ cmd_plan() {
             if [[ -n "$issue_number" ]]; then
                 echo "Create plan first: flow.sh plan $issue_number"
             else
-                echo "Create plan first: flow.sh plan --title \"$title\" --project $project --type $plan_type"
+                local resolved_scope
+                resolved_scope=$(_resolved_no_issue_scope)
+                echo "Create plan first: flow.sh plan --title \"$title\" --project $project --type $plan_type --scope $resolved_scope"
             fi
             exit 1
         fi
@@ -130,9 +174,7 @@ cmd_plan() {
     if [[ -n "$issue_number" ]]; then
         plan_file=$(find_plan_by_issue "$issue_number" 2>/dev/null || true)
         if [[ -n "$plan_file" && -f "$plan_file" ]]; then
-            echo "Plan: $plan_file"
-            echo "Status: planning"
-            echo "Next: flow.sh approve $issue_number"
+            _print_existing_plan_info "$plan_file" "$issue_number"
             return 0
         fi
     fi
@@ -169,19 +211,11 @@ cmd_plan() {
     else
         # No Issue: use provided title, project, type
         PLAN_PROJECT="$project"
-        
+
         # Scope must be provided via --scope option or extracted from title pattern
         local scope=""
-        if [[ -n "$PLAN_SCOPE" ]]; then
-            scope="$PLAN_SCOPE"
-        else
-            # Bash 3.x compatibility: use variable for regex with parentheses
-            local scope_pattern='^[a-z]+\(([^)]+)\):'
-            if [[ "$title" =~ $scope_pattern ]]; then
-                scope="${BASH_REMATCH[1]}"
-            fi
-        fi
-        
+        scope=$(_resolved_no_issue_scope)
+
         if [[ -z "$scope" ]]; then
             log_error "Scope required for no-issue plans. Add --scope <name> or use title pattern: type(scope): description"
             exit 1
@@ -190,6 +224,13 @@ cmd_plan() {
         slug=$(title_to_slug "$title")
         slug=$(echo "$slug" | sed -E 's/^(fix|feat|feature|enhance|refactor|docs|chore|test)-//')
         plan_name="${plan_type}-${scope}-${slug}"
+
+        plan_dir=$(resolve_plan_dir --project "$project")
+        plan_file="$plan_dir/${plan_name}.md"
+        if [[ -f "$plan_file" ]]; then
+            _print_existing_plan_info "$plan_file" "$plan_name"
+            return 0
+        fi
     fi
 
     plan_dir=$(resolve_plan_dir --project "$project")

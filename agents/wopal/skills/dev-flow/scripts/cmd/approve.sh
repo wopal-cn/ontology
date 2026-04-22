@@ -1,7 +1,7 @@
 # cmd_approve: Approve plan and transition to executing phase
 # 4-state model: planning -> executing -> verifying -> done
 # --confirm triggers state transition to executing
-# --worktree creates isolated worktree for execution
+# --worktree creates isolated worktree for execution when isolation is desired
 # Issue sync is automatic when plan has Issue link
 #
 # Behavior:
@@ -278,7 +278,7 @@ cmd_approve() {
         echo "Issue: #$issue_number"
     fi
     if [[ "$worktree_created" == true ]]; then
-        echo "Worktree: $ROOT_DIR/.worktrees/${branch}"
+        echo "Worktree: $ROOT_DIR/.worktrees/${project}-${branch}"
     fi
     echo ""
     echo "Next: flow.sh complete $plan_name"

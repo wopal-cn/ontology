@@ -84,24 +84,29 @@ cmd_complete() {
     local issue_number
     issue_number=$(grep "Issue.*#" "$plan_file" | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
 
-    # ============================================
-    # STATE TRANSITION: executing -> verifying
-    # ============================================
-    
-    log_step "Transitioning state: executing -> verifying"
-    
-    # Update Plan status to verifying
-    update_plan_status "$plan_file" "verifying" >/dev/null 2>&1
-
     # Two paths: with PR or without PR
     if [[ "$create_pr" == true ]]; then
-        # With PR path: add pr/opened label (overlay)
         if [[ -z "$project" ]]; then
             log_error "Cannot create PR: no Target Project in plan"
             exit 1
         fi
+
+        local pr_url=""
         
         if [[ -n "$issue_number" ]]; then
+            pr_url=$(create_pr "$issue_number" --project "$project" --base main | tail -n 1) || {
+                log_error "Failed to create PR"
+                exit 1
+            }
+
+            # ============================================
+            # STATE TRANSITION: executing -> verifying
+            # ============================================
+            log_step "Transitioning state: executing -> verifying"
+            update_plan_status "$plan_file" "verifying" >/dev/null 2>&1
+
+            set_plan_field "$plan_file" "PR" "$pr_url"
+
             # Sync Issue status label to verifying
             local status_label
             status_label=$(plan_status_to_issue_label "verifying")
@@ -110,15 +115,18 @@ cmd_complete() {
             # Add PR label overlay
             add_pr_label "$issue_number" "$repo" >/dev/null 2>&1
             
-            # Create PR
-            create_pr "$issue_number" --project "$project" --base main >/dev/null 2>&1
-            
             # Sync Agent Verification AC to Issue body
             sync_plan_to_issue "$issue_number" "$plan_file" "$repo" >/dev/null 2>&1
         else
-            # No Issue: create PR without Issue reference
-            # Pass plan_file to avoid redundant resolution
-            create_pr_for_plan "$plan_name" --project "$project" --base main --plan-file "$plan_file" >/dev/null 2>&1
+            # No Issue: create PR without Issue reference, then persist PR URL in Plan metadata
+            pr_url=$(create_pr_for_plan "$plan_name" --project "$project" --base main --plan-file "$plan_file" | tail -n 1) || {
+                log_error "Failed to create PR"
+                exit 1
+            }
+
+            log_step "Transitioning state: executing -> verifying"
+            update_plan_status "$plan_file" "verifying" >/dev/null 2>&1
+            set_plan_field "$plan_file" "PR" "$pr_url"
         fi
 
         echo "Status: verifying (PR opened)"
@@ -126,6 +134,15 @@ cmd_complete() {
         echo "等待 PR merge，用户确认后，由 agent 执行:"
         echo "  flow.sh verify $plan_name --confirm"
     else
+        # ============================================
+        # STATE TRANSITION: executing -> verifying
+        # ============================================
+        
+        log_step "Transitioning state: executing -> verifying"
+        
+        # Update Plan status to verifying
+        update_plan_status "$plan_file" "verifying" >/dev/null 2>&1
+
         # Without PR path: transition to verifying (main state)
         if [[ -n "$issue_number" ]]; then
             # Sync Issue status label to verifying

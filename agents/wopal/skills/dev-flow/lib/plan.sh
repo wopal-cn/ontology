@@ -520,6 +520,41 @@ get_plan_field() {
     echo "$value"
 }
 
+# Set or insert a specific metadata field in Plan
+# Usage: set_plan_field <plan_file> <field_name> <field_value>
+set_plan_field() {
+    local plan_file="$1"
+    local field_name="$2"
+    local field_value="$3"
+
+    if [[ ! -f "$plan_file" ]]; then
+        log_error "Plan file not found: $plan_file"
+        return 1
+    fi
+
+    local tmp_file
+    tmp_file=$(mktemp)
+
+    if grep -q "^\- \*\*${field_name}\*\*:" "$plan_file"; then
+        awk -v field="$field_name" -v value="$field_value" '
+            $0 ~ ("^- \\\*\\\*" field "\\\*\\\*:") { print "- **" field "**: " value; next }
+            { print }
+        ' "$plan_file" > "$tmp_file"
+    else
+        awk -v field="$field_name" -v value="$field_value" '
+            {
+                print
+                if (!inserted && $0 ~ /^- \*\*Status\*\*:/) {
+                    print "- **" field "**: " value
+                    inserted=1
+                }
+            }
+        ' "$plan_file" > "$tmp_file"
+    fi
+
+    mv "$tmp_file" "$plan_file"
+}
+
 # Get Plan Type (normalized lowercase)
 # Usage: get_plan_type <plan_file>
 # Output: type value (feature/fix/refactor/docs/chore/test) or empty

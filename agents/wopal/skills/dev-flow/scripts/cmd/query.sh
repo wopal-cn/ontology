@@ -58,9 +58,14 @@ cmd_status() {
     # Check worktree status
     local slug
     slug=$(extract_slug "$plan_name")
-    local worktree_path="$ROOT_DIR/.worktrees/issue-${issue_number}-${slug}"
+    local branch="issue-${issue_number}-${slug}"
+    local worktree_path=""
 
-    if [[ -d "$worktree_path" ]]; then
+    if [[ -n "$project" ]]; then
+        worktree_path="$ROOT_DIR/.worktrees/${project}-${branch}"
+    fi
+
+    if [[ -n "$worktree_path" && -d "$worktree_path" ]]; then
         echo ""
         echo "Worktree: $worktree_path"
         local wt_branch

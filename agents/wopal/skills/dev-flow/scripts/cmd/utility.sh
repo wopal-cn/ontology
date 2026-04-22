@@ -184,7 +184,7 @@ cmd_help() {
     cat << 'EOF'
 dev-flow — 统一开发工作流 (4-state model)
 
-Usage: flow.sh <command> <issue> [options]
+Usage: flow.sh <command> <issue-or-plan> [options]
 
 生命周期命令:
   issue create --title "<title>" --project <name> [--type <type>] [options]
@@ -194,17 +194,18 @@ Usage: flow.sh <command> <issue> [options]
                                                        --target-documents/--audience, --test-scope/--test-strategy
                                             不传 --type 时从 title 前缀推断
   issue update <issue> [options]           更新结构化 Issue（Task 4 实现）
-  sync <issue> [--body-only|--labels-only]
-                                            手动同步 Plan 内容/labels 到 Issue（不推进状态）
+  sync <issue-or-plan> [--body-only|--labels-only]
+                                             手动同步 Plan 内容/labels 到 Issue（不推进状态）
   plan <issue> [--project <name>] [--prd <path>] [--check]
-                                           创建 Plan 并进入规划阶段（含调查）
-  approve <issue> --confirm [--worktree]
-                                           审批通过 → 进入执行阶段
-                                           ⚠️ 收到用户审批授权后由 agent 执行
-  complete <issue> [--pr]           完成开发 → 进入验证阶段
-  verify <issue> --confirm          用户验证通过 → 完成
-                                           ⚠️ 收到用户验证授权后由 agent 执行
-  archive <issue>                   归档收尾（Plan 已 done）
+  plan --title "<title>" --project <name> --type <type> [--scope <scope>] [--prd <path>] [--check]
+                                            创建或定位 Plan，并进入 planning（含调查）
+  approve <issue-or-plan> [--confirm] [--worktree]
+                                            审批通过 → 进入执行阶段
+                                            ⚠️ 收到用户审批授权后由 agent 执行
+  complete <issue-or-plan> [--pr]          完成开发 → 进入验证阶段
+  verify <issue-or-plan> [--confirm]       用户验证通过 → 完成
+                                            ⚠️ 收到用户验证授权后由 agent 执行
+  archive <issue-or-plan>                  归档收尾（Plan 已 done）
 
 查询命令:
   status <issue>                   查看任务状态
@@ -213,7 +214,7 @@ Usage: flow.sh <command> <issue> [options]
                                            从 PRD 创建 Issue
 
 其他:
-  reset <issue>                    重置到 planning 状态
+  reset <issue-or-plan>            重置到 planning 状态
   help                             显示帮助
 
 状态机 (4-state): planning -> executing -> verifying -> done
@@ -236,7 +237,7 @@ Overlay Labels:
   --body "<body>"    Issue 内容
   --reference <path>  Research 文档或外部引用
   --prd <path>       关联的 PRD 文件路径
-  --worktree         在隔离的 worktree 中执行（前置检查优先）
+  --worktree         在隔离的 worktree 中执行（用户明确要求或需要隔离时使用）
   --pr               完成时创建 PR
   --confirm          用户授权确认（由 agent 执行，不是让用户执行脚本）
 

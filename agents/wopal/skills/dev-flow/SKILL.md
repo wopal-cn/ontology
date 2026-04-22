@@ -1,341 +1,374 @@
 ---
 name: dev-flow
 description: |
-  **统一开发工作流 — Issue 驱动或 Plan 驱动的开发任务必须使用此技能。**
-  
-  提供 4-state 状态机强制的完整开发流程：planning → executing → verifying → done
-  
-  **必须使用本技能的场景**：
-  - 任何涉及 GitHub Issue 的开发任务（#N、"这个 issue"、"那个任务"）
-  - 用户说"做/开发/处理/搞定/完成"某个功能或 bug
-  - 用户要求"开始开发"、"继续开发"、"执行计划"、"归档计划"
-  - 用户要求创建、修改、管理 Plan 文件
-  - 用户说"写个方案"、"出个计划"、"怎么实现"
-  - 从 PRD 分解任务、创建 Issue
-  - **无 Issue 快速开发**：用户直接说"做个 plan"
-  
-  **协议依赖**: git-worktrees 技能（可选，用于隔离开发）
+  Issue / Plan 驱动的开发工作流。⚠️ 只有当任务以 GitHub Issue 或 Plan 作为执行载体时才使用本技能。
+
+  必须使用本技能的场景：
+  - 开发、修复、重构某个 GitHub Issue（如 "#14"、"这个 issue"、"处理 issue 120"）
+  - 创建、修改、推进、验证、归档 Plan
+  - 用户要求“写个方案 / 出个计划 / 开始开发 / 继续开发 / 执行计划”，且任务会通过 Plan 落地执行
+  - 从 PRD 拆分 Issue
+
+  不使用本技能的场景：
+  - spec 驱动流程（Spec / OpenSpec / spec-first / spec-kit）
+  - 单纯研究、讨论、解释、评审
+  - 不需要 Issue 或 Plan 承载的临时小改动
+
+  🔴 判断标准：任务是否要进入 “Issue / Plan → 实施 → 验证 → 归档” 这条开发链路。只有是，才使用本技能。
+
+  依赖：git-worktrees 技能（可选，用于隔离开发环境）
 compatibility:
   - bash 3.x+
-  - gh CLI (GitHub CLI)
+  - gh CLI
   - jq
 ---
 
-# dev-flow
+# dev-flow — Issue / Plan 驱动开发流程
 
-## 状态机 (4-State Model)
+统一状态机：
 
-```
+```text
 planning → executing → verifying → done
-     ↑          ↑           ↑         ↑
- 创建 Plan   审批通过    用户验证通过   归档收尾
 ```
 
-| 状态 | 含义 | Issue Label |
-|------|------|-------------|
-| `planning` | 规划编写（含调查） | `status/planning` |
-| `executing` | 执行实施中 | `status/in-progress` |
-| `verifying` | 实施完成，等待用户验证 | `status/verifying` |
-| `done` | 已完成，等待归档 | Issue 未关闭 |
+统一命令链：
 
-**关键设计**：
-- Plan Status 与 Issue 主状态标签 1:1 对应
-- `complete` 触发 `executing -> verifying` 状态跃迁
-- `verify --confirm` 是用户验证门（PR / 无 PR 两条路径统一）
-- `archive` 仅做归档收尾，不承担用户确认职责
+```text
+plan → approve → approve --confirm → complete → verify --confirm → archive
+```
+
+## 核心原则
+
+1. 先进入 Plan 生命周期，再开始实施。
+2. `approve --confirm` 和 `verify --confirm` 都是人类授权门。
+3. `complete` 只表示“实施完成，进入用户验证阶段”，不代表“用户已验证通过”。
+4. `archive` 只做归档收尾，不承担验证职责。
+
+## 最容易遗漏的两步
+
+1. **Plan 写完后：`--check` → 必要时 `sync <issue> --body-only` → `approve` → 等用户审批。**
+2. **实施完成后：勾选已完成步骤 → 完成 Agent Verification → `complete` → 再等用户验证。**
+
+## 状态机与命令映射
+
+| 命令 | 前置状态 | 后置状态 | 作用 |
+|------|---------|---------|------|
+| `plan` | 无 / 初始 | `planning` | 创建或定位 Plan |
+| `approve` | `planning` | `planning` | 校验 Plan，提交方案评审 |
+| `approve --confirm` | `planning` | `executing` | 用户审批通过后开始实施 |
+| `complete` | `executing` | `verifying` | 实施完成，进入用户验证阶段 |
+| `verify --confirm` | `verifying` | `done` | 用户验证通过后进入 done |
+| `archive` | `done` | 归档 | 归档 Plan，关闭 Issue |
+
+命令顺序不合法时，回到正确状态顺序执行，不要强行推进。
 
 ## 人类授权门
 
-Agent **必须等待用户明确授权后才执行**：
+| 命令 | 用户信号 |
+|------|---------|
+| `approve --confirm` | “审批通过”、“approved”、“可以开始” |
+| `verify --confirm` | “验证通过”、“没问题”、“validation passed” |
+| `reset` | “重置”、“reset” |
 
-| 命令 | 授权时机 | 用户表达 |
-|------|----------|----------|
-| `flow.sh approve <plan> --confirm` | 审批通过 | "审批通过"、"approved" |
-| `flow.sh verify <plan> --confirm` | 用户验证通过（无 PR） | "验证通过"、"validation passed" |
-| `flow.sh reset <plan>` | 重置（破坏性） | "重置"、"reset" |
+禁止：
+- 未经授权执行任何 `--confirm`
+- 跳过 `approve` 直接 `approve --confirm`
+- 让用户自己执行这些脚本
 
-**禁止行为**：
-- 未经授权执行带 `--confirm` 的命令
-- 告诉用户"你自己执行这个脚本"
-- 跳过验证门直接推进状态
+## 标准流程
 
-## 命令流
+### A. 进入 planning
 
-```bash
-# Issue 驱动模式
-flow.sh sync <issue> [--body-only|--labels-only]          # 手动同步 Plan 到 Issue（不推进状态）
-flow.sh plan <issue> [--project <name>] [--check]       # 创建 Plan
-flow.sh approve <issue> --confirm [--worktree]          # 审批 → executing
-flow.sh complete <issue> [--pr]                         # 完成 → verifying
-flow.sh verify <issue> --confirm                        # 用户验证 → done（无 PR）
-flow.sh archive <issue>                                 # 归档
-
-# 无 Issue 快速开发模式
-flow.sh plan --title "<title>" --project <name> --type <type>
-flow.sh approve <plan-name> --confirm [--worktree]
-flow.sh complete <plan-name> [--pr]
-flow.sh verify <plan-name> --confirm                    # 无 PR 路径用户验证门
-flow.sh archive <plan-name>
-```
-
-### 参数说明
-
-| 参数 | 含义 |
-|------|------|
-| `--body-only` | `sync` 时仅同步 Issue body，不改 labels |
-| `--labels-only` | `sync` 时仅同步 Issue labels，不改 body |
-| `--check` | 验证 Plan 合规性（不创建） |
-| `--worktree` | 创建隔离开发环境（前置检查优先） |
-| `--pr` | 完成时创建 PR |
-| `--confirm` | **用户授权确认**（Agent 收到授权后执行） |
-
-## 验证路径
-
-```
-executing
-    │
-    ├── complete --pr ──→ verifying + pr/opened
-    │       │
-    │       └── PR merged + 用户确认 ──→ verify --confirm ──→ done
-    │
-    └── complete ──→ verifying
-            │
-            └── verify --confirm ──→ done
-                    │
-                    └── archive ──→ 归档收尾
-```
-
-| 场景 | 用户验证门 | 归档条件 |
-|------|------------|----------|
-| **有 PR** | `verify --confirm`（前提：PR merged） | PR merged + 用户确认 → `archive` |
-| **无 PR** | `verify --confirm` | 用户验证通过 → `archive` |
-
-## Issue 命令面
+**Issue 驱动：**
 
 ```bash
-flow.sh issue create --title "perf(dev-flow): reduce label sync calls" --project ontology
-flow.sh issue update 120 --goal "更新后的目标"
+flow.sh plan <issue>
 ```
 
-- 创建 / 更新 issue 前先读目标项目 `AGENTS.md`，由项目规范决定合法 scope
-- `issue create` 是唯一受支持的创建入口，不再使用 `new-issue`
-- `--type` 可省略；若 title 前缀与显式 `--type` 冲突，命令必须报错
+**Plan 驱动（无 Issue）：**
 
-## Label 体系
-
-| 类别 | Labels | 用途 |
-|------|--------|------|
-| **status** | `status/planning` → `status/in-progress` → `status/verifying` | 主状态（单一互斥） |
-| **type** | `type/feature`, `type/bug`, `type/perf`, `type/refactor`, `type/docs`, `type/test`, `type/chore` | 任务类型 |
-| **project** | `project/ontology`, `project/wopal-cli`, `project/space` | 目标项目 |
-| **pr** | `pr/opened` | PR 子状态（叠加） |
-
-
-
-## 状态映射表
-
-| 命令 | Plan 状态 | Issue Label |
-|------|----------|-------------|
-| `plan` | `planning` | `status/planning` |
-| `approve --confirm` | `executing` | `status/in-progress` |
-| `complete` | `verifying` | `status/verifying` |
-| `complete --pr` | `verifying` | `status/verifying` + `pr/opened` |
-| `verify --confirm`（无 PR） | `done` | 保持（等待 archive） |
-| `verify --confirm`（PR merged） | `done` | 保持（等待 archive） |
-| `archive` | 归档文件 | Issue closed |
-
-## 安全检查
-
-### approve 前置检查
-
-`approve --confirm` 在状态推进前执行：
-1. **目标项目 git 脏工作区检查** — 有未提交变更则阻断并提示风险
-2. **worktree 创建**（若 `--worktree`）— 失败则保持 `planning` 状态
-
-**顺序保证**：所有前置检查成功后才推进状态，防止失败污染状态。
-
-### approve 评审 commit
-
-评审通过后自动提交 Plan 变更，保证评审对象稳定：
-- 仅提交 Plan 文件变更
-- 提交信息：`review: approve plan <plan-name>`
-- 回显 commit hash 便于追溯
-
-## Acceptance Criteria 分层
-
+```bash
+flow.sh plan --title "<type>(<scope>): <description>" --project <name> --type <type> [--scope <scope>]
 ```
-## Acceptance Criteria
+
+### B. Plan 写完后，进入方案评审
+
+不要直接开工。按这个顺序推进：
+
+1. 完成 Plan 编写；结构以 `templates/plan.md` 为准。
+2. 显式运行校验：
+   ```bash
+   flow.sh plan <issue> --check
+   ```
+   无 Issue 模式则用原始 plan 参数重新定位并校验。
+3. **仅 Issue 驱动**：如果 Plan 调整会影响 Issue body 展示内容，执行：
+   ```bash
+   flow.sh sync <issue> --body-only
+   ```
+   说明：
+   - 它不会检测“哪些章节变了”
+   - 它会根据当前 Plan 重新生成并整体覆盖 Issue body
+   - 保守策略：只要你认为 Issue body 应更新，就重新同步一次
+4. 然后必须执行：
+   ```bash
+   flow.sh approve <issue>
+   ```
+5. 停止推进，等待用户审批。收到明确授权后，才能执行：
+   ```bash
+   flow.sh approve <issue> --confirm [--worktree]
+   ```
+
+不要这样做：
+- Plan 刚写完就直接开始实施
+- 忘记执行 `approve`
+- Plan 已调整但 Issue 仍停留在旧内容
+
+### C. 进入 executing 后实施
+
+实施过程中，每完成一个步骤就立即勾选对应 checkbox，不要积压到最后统一补勾。
+
+至少及时更新：
+- `Implementation` 里的 `Changes`
+- `Verification` 里的步骤
+- 已实际完成的测试步骤
+
+### D. 实施完成后，进入用户验证阶段
+
+不要直接让用户验证。先完成这几步：
+
+1. 回看 Plan，确认已完成步骤都已勾选。
+2. 完成并勾选 `### Agent Verification`。
+3. 然后必须执行：
+   ```bash
+   flow.sh complete <issue>
+   ```
+
+`complete` 后，任务正式进入 `verifying`。
+
+只有在仓库策略明确要求 Pull Request 时，才改用：
+
+```bash
+flow.sh complete <issue> --pr
+```
+
+不要这样做：
+- 步骤做完了但不勾选 checkbox
+- `Agent Verification` 未完成就推进
+- 忘记执行 `complete`
+
+### E. 用户验证通过后进入 done
+
+用户完成验证并明确确认后，执行：
+
+```bash
+flow.sh verify <issue> --confirm
+```
+
+这一步的硬前提：
+- Plan 当前状态是 `verifying`
+- User Validation 最终 checkbox 已由用户勾选
+
+### F. 最后归档
+
+```bash
+flow.sh archive <issue>
+```
+
+归档前提：Plan 状态已经是 `done`。
+
+## 主流路径
+
+| 场景 | 命令路径 |
+|------|----------|
+| Issue 驱动 | `plan → --check → sync(issue, 如需) → approve → approve --confirm → complete → verify --confirm → archive` |
+| Plan 驱动 | `plan → approve → approve --confirm → complete → verify --confirm → archive` |
+
+补充：
+- 无 Issue 模式下，没有 `sync` 这一步
+- 无 Issue 模式下，后续统一用 `plan-name`
+
+## worktree 场景
+
+把 `--worktree` 视为隔离执行策略，而不是工作区不干净时的补救按钮。
+
+优先在这些情况下使用 `--worktree`：
+- 用户明确要求使用 worktree
+- 希望把当前任务与其他工作隔离
+- 多任务并行开发，避免上下文与改动互相污染
+- 任务周期较长、改动面较大，或准备委派给 fae 持续执行
+
+用法：
+
+```bash
+flow.sh approve <issue> --confirm --worktree
+```
+
+要点：
+- 用户已明确说明使用 worktree 时，必须带 `--worktree`
+- `--worktree` 只在真正进入 `executing` 时使用
+- 目标项目工作区不干净，不是选择 worktree 的理由本身，而是禁止继续在当前工作区执行的信号
+- 不带 `--worktree` 且目标项目工作区不干净时，命令会阻断；此时应先清理/提交当前变更，或改用 `--worktree`
+- worktree 创建失败时，状态应保持在 `planning`
+
+## PR（高级可选）
+
+默认主流程不走 PR。
+
+只在这些情况下使用 `--pr`：
+- 目标仓库要求通过 PR 合并代码
+- 你明确需要 GitHub Review / CI / branch protection 这条流程
+
+最小记忆即可：
+
+```text
+complete --pr → PR opened → PR merged → verify --confirm → archive
+```
+
+如果不确定，就不要走 PR 路径。
+
+## Plan 质量门
+
+进入 `approve` 前，Plan 必须达到可执行质量，而不是空提纲。
+
+SKILL.md 不重复模板章节内容，只规定流程要求：
+- Plan 写完后先做质量校验
+- 校验通过后再进入 `approve`
+- 实施过程中及时勾选步骤
+- 实施完成后补齐 `Agent Verification`，再执行 `complete`
+
+如果 `approve` 被 check-doc 阻断，先修 Plan，再重试。
+
+## Acceptance Criteria 的使用方式
 
 ### Agent Verification
-- [x] 代码构建通过  ← Agent 完成，complete 前校验
-- [x] 单元测试通过
+
+由 agent 在 `complete` 前完成并勾选，用于机器可验证项，如构建、单测、CLI 自测。
 
 ### User Validation
 
-#### Scenario 1: 本次变更影响的可感知行为
-- Goal: 确认什么行为差异
-- Precondition: 验证前的前置状态
-- User Actions:
-  1. 用户操作步骤
-  2. 观察结果
-- Expected Result: 用户可观察到的预期结果
+由用户在真实验证后确认，用于人工感知项，如 UI / UX、业务流程、集成行为。
 
-- [ ] 用户已完成上述功能验证并确认结果符合预期
-```
+关键约束：
+- Agent 不得代勾选 User Validation 最终 checkbox
+- `verify --confirm` 会严格检查这道门
 
-| 子章节 | 校验时机 | 执行者 | 格式要求 |
-|--------|----------|--------|----------|
-| `### Agent Verification` | `complete` | Agent 打勾 | checkbox 列表 |
-| `### User Validation` | `verify --confirm` | 用户确认 | 场景骨架 + 最终确认 checkbox |
+## 命令面速查
 
-**User Validation 设计原则**：
-- 优先挑选 1-3 个本次变更直接影响的可感知行为，不写内部实现细节
-- 每个场景必须包含 Goal / Precondition / User Actions / Expected Result
-- 最终确认 checkbox 是 `verify --confirm` 的硬 gate，只有用户才能勾选
-- Agent 禁止代为勾选最终确认 checkbox
-- **排除自动化验证项**：Agent Verification 可验证的项（编译通过、单测通过、CLI 功能自测）不写入 User Validation，User Validation 只含人工感知验证（UI/UX、业务流程、跨系统集成）
+### `flow.sh issue create`
 
-<CRITICAL_RULE>
-
-**User Validation 禁止代勾选铁律**：User Validation 最终确认 checkbox (`- [ ] 用户已完成...`) 只有用户本人才能勾选。Agent 任何时候都禁止代为勾选此 checkbox，即使 Agent 认为验证已通过。违反此规则 = 严重失职。
-
-</CRITICAL_RULE>
-
-**Test Plan 设计原则**：
-- 每个保留的测试用例必须包含 Goal / Fixture / Execution / Expected Evidence
-- Execution 使用 `- [ ] Step N:` 格式（与 Task Changes 一致）
-- 某类测试无必要时写 `N/A — 理由`，禁止空洞 bullet 凑数
-- 类别标题必须英文：`#### Unit Tests` / `#### Integration Tests` / `#### E2E Tests` / `#### Regression Tests`（不写类别标题也可以，直接写 Case）
-
-## 标准工作流
-
-**Issue 驱动（正式任务）**：
-```
-1. plan <issue>           → AI 创建 Plan + 调查 (status: planning)
-   sync <issue>           → AI 手动刷新 Issue 展示（可选，不改状态）
-2. approve <issue>        → AI 提交审批，暂停
-   用户授权后 → approve <issue> --confirm [--worktree]
-3. complete <issue>       → AI 完成 → verifying
-4. verify <issue>         → AI 提示用户验证
-   用户验证后 → verify <issue> --confirm
-5. archive <issue>        → AI 归档
-```
-
-**PR 路径**：
-```
-complete <issue> --pr → verifying + pr/opened
-等待 PR merge + 用户确认
-verify <issue> --confirm → done
-archive <issue> → 归档
-```
-
-## 创建 Issue
+创建规范化 Issue。开发任务建 Issue 时只用这个入口。
 
 ```bash
-flow.sh issue create \
-  --title "feat(cli): add skills remove" \
-  --project wopal-cli \
-  --goal "一句话目标" \
-  --scope "范围项 1, 范围项 2"
+flow.sh issue create --title "<type>(<scope>): <description>" --project <name> [options]
 ```
 
-**必须使用 `flow.sh issue create`**，禁止直接用 `gh issue create`。
+常用参数：
+- `--goal`
+- `--background`
+- `--scope`
+- `--out-of-scope`
+- `--reference`
+- `--body`
 
-## Issue 标题规范
+类型专属参数按需使用：
+- perf：`--baseline` / `--target`
+- refactor：`--affected-components` / `--refactor-strategy`
+- docs：`--target-documents` / `--audience`
+- test：`--test-scope` / `--test-strategy`
+- fix：`--confirmed-bugs` / `--cleanup-scope` / `--key-findings`
 
-**格式**: `<type>(<scope>): <description>`
+### `flow.sh issue update`
 
-| 元素 | 规则 | 示例 |
-|------|------|------|
-| `type` | 必选，见下方类型表 | `feat`, `fix` |
-| `scope` | **必选**，括号包裹，对应项目名或模块名 | `(cli)`, `(dev-flow)` |
-| `description` | 必选，英文祈使句，≤50 chars | `add skills remove` |
+```bash
+flow.sh issue update <issue> [options]
+```
 
-**合法类型**:
+适合补充 Goal、Background、Scope、Acceptance Criteria 及各类型特定字段。
 
-| type | 用途 | Issue label |
-|------|------|-------------|
-| `feat` | 新功能 | `type/feature` |
-| `fix` | Bug 修复 | `type/bug` |
-| `perf` | 性能优化 | `type/perf` |
-| `refactor` | 重构（不改变功能） | `type/refactor` |
-| `docs` | 文档更新 | `type/docs` |
-| `test` | 测试相关 | `type/test` |
-| `chore` | 构建/工具 | `type/chore` |
-| `enhance` | 功能增强 | `type/feature` |
+### `flow.sh sync`
 
-**长度限制**:
-- `description`: ≤ 50 characters
-- 整体标题: ≤ 72 characters
+手动把 Plan 同步回 Issue，不推进状态。
 
-**示例**:
-- ✅ `feat(cli): add skills remove command`
-- ✅ `fix(dev-flow): handle expired tokens gracefully`
-- ❌ `refactor: unify plan status management`（缺少 scope）
-- ❌ `添加 skills remove 功能`（中文、无 type、无 scope）
-- ❌ `feat: This is a very long description exceeding fifty characters limit`（过长、缺少 scope）
+```bash
+flow.sh sync <issue>
+flow.sh sync <issue> --body-only
+flow.sh sync <issue> --labels-only
+```
 
-**Plan 名称提取**:
-从 `<description>` 部分提取 slug（去掉 type/scope），转 kebab-case。
-格式：Issue 模式 `<issue_number>-<type>-<scope>-<slug>`，无 Issue 模式 `<type>-<scope>-<slug>`。
-例如: `feat(cli): add skills remove` → Plan 名称: `110-feat-cli-add-skills-remove`（Issue 模式）或 `feat-cli-add-skills-remove`（无 Issue）
+### `flow.sh status`
 
-## Plan 调查阶段
+```bash
+flow.sh status <issue>
+```
 
-`plan` 命令包含调查子阶段：
-1. 识别组件、阅读源文件
-2. 映射当前架构、识别代码路径
-3. 评估复杂度、识别风险
-4. 检查现有模式、查看测试
-5. 确定 Issue 类型
+显示：Issue 标题 / 状态 / labels、对应 Plan、Plan 状态、worktree 信息（若存在）。
 
-`approve` 时 `check-doc` 验证调查充分性：
-- Technical Context 非空
-- Affected Files 至少一行
-- Complexity/Confidence 已填写
+### `flow.sh list`
 
-## 委派策略强制要求
+```bash
+flow.sh list
+```
 
-<CRITICAL_RULE>
+### `flow.sh decompose-prd`
 
-**委派策略填写规范**：
-- Plan 有 2+ Task 或 Complexity = High 时，必须填写 `## Delegation Strategy` 章节
-- Delegation Strategy 必须引用 `fae-collab` 技能规范（委派流程、监控、验证边界）
-- 单一 Task + Complexity ≠ High 时可写 `N/A — 单一任务，无需并行委派`
+```bash
+flow.sh decompose-prd <prd-path> [--dry-run] [--project <name>]
+```
 
-违反此规则 = Plan 评审不通过，必须补充后才能 approve。
+建议先：
 
-</CRITICAL_RULE>
+```bash
+flow.sh decompose-prd <prd-path> --dry-run
+```
+
+### `flow.sh reset`
+
+Issue 驱动：
+
+```bash
+flow.sh reset <issue>
+```
+
+Plan 驱动：
+
+```bash
+flow.sh reset <plan-name>
+```
+
+这是破坏性操作，只在用户明确要求时执行。
+
+## 边缘场景
+
+1. **已有 Plan 再次执行 `plan`**：不重复创建，继续基于现有 Plan 推进。
+2. **`complete` 时 AC 未完成**：先补齐 `Agent Verification`，不要强行进入 `verifying`。
+3. **`verify --confirm` 时 PR 未 merged**：先等 PR merge。
+4. **`verify --confirm` 时用户未勾选最终 checkbox**：先让用户完成 User Validation。
+5. **目标项目工作区不干净**：这表示当前工作区不适合继续执行；先清理/提交当前变更，或改用 `--worktree`。
+6. **参数选择规则**：Issue 驱动一律传 issue number；无 Issue 的 Plan 驱动一律传 plan-name。
 
 ## 错误处理
 
-| 错误 | 解决 |
+| 错误 | 处理 |
 |------|------|
-| `Invalid transition` | 按状态顺序执行 |
+| `Invalid transition` | 回到正确状态顺序执行 |
 | `Plan not found` | 先运行 `plan` |
-| `check-doc failed` | 修复 Plan 后 `plan --check` |
-| `dirty workspace` | 先提交或用 `--worktree` |
+| `check-doc failed` | 修好 Plan 再 `approve` |
+| `dirty workspace` | 当前工作区不适合继续执行；先清理/提交，或改用 `--worktree` |
+| `PR not merged yet` | 等 merge 后再 `verify --confirm` |
+| `User Validation gate failed` | 让用户完成验证并勾选最终 checkbox |
 
-## 示例
+## 参考
 
-```
-用户: 帮我开发 Issue #14
+按需读取：
 
-AI:
-  flow.sh plan 14
-  [调查 + 编写...]
-  flow.sh approve 14
-  ⚠️ 等待审批
-
-用户: 审批通过
-
-AI: flow.sh approve 14 --confirm --worktree
-    [执行实施...]
-    flow.sh complete 14
-    ⚠️ 等待用户验证
-
-用户: 验证通过
-
-AI: flow.sh verify 14 --confirm
-    flow.sh archive 14
-```
+| 文件 | 用途 |
+|------|------|
+| `templates/plan.md` | Plan 骨架模板 |
+| `templates/issue.md` | 通用 / feature / enhance / chore 类型 Issue 模板 |
+| `templates/issue-fix.md` | fix 类型 Issue 模板 |
+| `templates/issue-perf.md` | perf 类型 Issue 模板 |
+| `templates/issue-refactor.md` | refactor 类型 Issue 模板 |
+| `templates/issue-docs.md` | docs 类型 Issue 模板 |
+| `templates/issue-test.md` | test 类型 Issue 模板 |
+| `references/plan-validation.md` | Plan 校验规则（含 Test Plan / AC 写法） |
+| `references/issue-format.md` | Issue 标题与 Plan 命名规范 |
