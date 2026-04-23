@@ -249,7 +249,7 @@ def _extract_acceptance_criteria(plan_file: str) -> str:
                 in_section = True
                 continue
             
-            if in_section and line.startswith("##") and not line.startswith("## Acceptance Criteria"):
+            if in_section and line.startswith("## ") and not line.startswith("## Acceptance Criteria"):
                 break
             
             if in_section:
@@ -269,7 +269,7 @@ def _extract_technical_context_top(plan_file: str) -> str:
                 in_section = True
                 continue
             
-            if in_section and line.startswith("##") and not line.startswith("## Technical Context"):
+            if in_section and line.startswith("## ") and not line.startswith("## Technical Context"):
                 break
             
             if in_section and line.startswith("###"):

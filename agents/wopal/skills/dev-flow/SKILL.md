@@ -315,16 +315,18 @@ flow.sh sync <issue> --labels-only
 ### `flow.sh status`
 
 ```bash
-flow.sh status <issue>
+flow.sh status <issue-or-plan-name>
 ```
 
-显示：Issue 标题 / 状态 / labels、对应 Plan、Plan 状态、worktree 信息（若存在）。
+显示：Issue 标题 / 状态 / labels、对应 Plan、Plan 状态、worktree 信息（若存在）。支持传入 Issue number 或 Plan 文件名（无 Issue 的 Plan 也能查到）。
 
 ### `flow.sh list`
 
 ```bash
 flow.sh list
 ```
+
+同时扫描 GitHub Issues（带 status/* label 的 open issue）和本地 Plan 文件（`docs/products/*/plans/*.md`，排除 done/），合并展示。无 Issue 关联的 Plan 显示为 `[status] <plan-name> (no issue)`。
 
 ### `flow.sh decompose-prd`
 

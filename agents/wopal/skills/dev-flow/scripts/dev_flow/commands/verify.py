@@ -356,6 +356,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         log_error("Please complete the user validation scenarios and check the final confirmation checkbox:")
         log_error("  1. Perform the scenarios described in ### User Validation section")
         log_error("  2. Check the final checkbox: - [x] 用户已完成上述功能验证并确认结果符合预期")
+        log_error("  ⚠️ Agent 禁止代为勾选，必须由用户本人执行")
         log_error(f"  3. Re-run: flow.sh verify {input_ref} --confirm")
         return 1
 

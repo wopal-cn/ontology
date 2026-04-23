@@ -17,7 +17,7 @@ import os
 import re
 from pathlib import Path
 
-from dev_flow.domain.plan.find import find_plan_by_issue, _find_workspace_root
+from dev_flow.domain.plan.find import find_plan, find_plan_by_issue, _find_workspace_root
 
 
 # ============================================
@@ -153,40 +153,19 @@ def extract_slug(plan_name: str) -> str:
 
 def cmd_query_status(args: argparse.Namespace) -> int:
     """Show Issue and Plan status."""
-    issue_number = args.issue
+    input_ref = args.target
     
-    if not issue_number:
-        log_error("Issue number required")
-        print("Usage: flow.sh query status <issue>")
+    if not input_ref:
+        log_error("Issue number or Plan name required")
+        print("Usage: flow.sh status <issue-or-plan>")
         return 1
     
-    repo = get_space_repo()
-    
-    log_step(f"Fetching Issue #{issue_number} info...")
-    
+    # Smart lookup: find plan by issue number or plan name
     try:
-        issue_info = get_issue_info(issue_number, repo)
-    except RuntimeError:
-        log_error(f"Issue #{issue_number} not found")
+        plan_file = find_plan(input_ref)
+    except (FileNotFoundError, ValueError):
+        log_error(f"No plan found for: {input_ref}")
         return 1
-    
-    title = issue_info.get('title', '')
-    state = issue_info.get('state', '')
-    labels = [l['name'] for l in issue_info.get('labels', [])]
-    
-    print("")
-    print(f"Issue #{issue_number}")
-    print(f"  Title: {title}")
-    print(f"  State: {state}")
-    print(f"  Labels: {' '.join(labels)}")
-    print("")
-    
-    # Try to find linked Plan
-    try:
-        plan_file = find_plan_by_issue(int(issue_number))
-    except FileNotFoundError:
-        log_warn("No plan linked to this Issue")
-        return 0
     
     plan_name = get_plan_name(plan_file)
     metadata = get_plan_metadata(plan_file)
@@ -195,37 +174,68 @@ def cmd_query_status(args: argparse.Namespace) -> int:
     prd = metadata.get('prd', '')
     project = metadata.get('project', '')
     created = metadata.get('created', '')
+    plan_issue_str = metadata.get('issue', '')
     
+    # Extract issue number from plan metadata (e.g., "#129" -> 129)
+    plan_issue_num = None
+    if plan_issue_str:
+        m = re.search(r'#(\d+)', plan_issue_str)
+        if m:
+            plan_issue_num = int(m.group(1))
+    
+    print("")
+    
+    # If plan has an issue, fetch and display issue info
+    if plan_issue_num:
+        try:
+            repo = get_space_repo()
+            log_step(f"Fetching Issue #{plan_issue_num} info...")
+            issue_info = get_issue_info(str(plan_issue_num), repo)
+            
+            title = issue_info.get('title', '')
+            state = issue_info.get('state', '')
+            labels = [l['name'] for l in issue_info.get('labels', [])]
+            
+            print(f"Issue #{plan_issue_num}")
+            print(f"  Title: {title}")
+            print(f"  State: {state}")
+            print(f"  Labels: {' '.join(labels)}")
+            print("")
+        except RuntimeError:
+            log_warn(f"Issue #{plan_issue_num} info not available via gh CLI")
+            print("")
+    
+    # Always show plan info
     print(f"Plan: {plan_name}")
     print(f"  File: {plan_file}")
     print(f"  Status: {status}")
     print(f"  PRD: {prd or '<none>'}")
     print(f"  Created: {created}")
     
-    # Check worktree status
-    slug = extract_slug(plan_name)
-    branch = f"issue-{issue_number}-{slug}"
-    worktree_path = ""
-    
-    if project:
-        workspace_root = _find_workspace_root()
-        worktree_path = str(Path(workspace_root) / ".worktrees" / f"{project}-{branch}")
-    
-    if worktree_path and os.path.isdir(worktree_path):
-        print("")
-        print(f"Worktree: {worktree_path}")
-        # Get branch in worktree
-        try:
-            result = subprocess.run(
-                ["git", "branch", "--show-current"],
-                cwd=worktree_path,
-                capture_output=True,
-                text=True,
-            )
-            wt_branch = result.stdout.strip() or "detached"
-            print(f"  Branch: {wt_branch}")
-        except Exception:
-            print("  Branch: (unknown)")
+    # Check worktree status (only for plans with issue)
+    if plan_issue_num:
+        slug = extract_slug(plan_name)
+        branch = f"issue-{plan_issue_num}-{slug}"
+        worktree_path = ""
+        
+        if project:
+            workspace_root = _find_workspace_root()
+            worktree_path = str(Path(workspace_root) / ".worktrees" / f"{project}-{branch}")
+        
+        if worktree_path and os.path.isdir(worktree_path):
+            print("")
+            print(f"Worktree: {worktree_path}")
+            try:
+                result = subprocess.run(
+                    ["git", "branch", "--show-current"],
+                    cwd=worktree_path,
+                    capture_output=True,
+                    text=True,
+                )
+                wt_branch = result.stdout.strip() or "detached"
+                print(f"  Branch: {wt_branch}")
+            except Exception:
+                print("  Branch: (unknown)")
     
     print("")
     print("State Machine (4-state): planning -> executing -> verifying -> done")
@@ -238,90 +248,144 @@ def cmd_query_status(args: argparse.Namespace) -> int:
 # cmd_list: List active Plans
 # ============================================
 
+def _scan_local_plans(workspace_root: str) -> list[dict]:
+    """
+    Scan local Plan files (excluding done/ directories).
+    
+    Returns list of dicts: {name, project, status, has_issue, issue_number}
+    """
+    results = []
+    products_dir = Path(workspace_root) / "docs" / "products"
+    
+    if not products_dir.exists():
+        return results
+    
+    # Scan: docs/products/plans/*.md and docs/products/*/plans/*.md
+    search_dirs = []
+    
+    # Global plans
+    global_plans = products_dir / "plans"
+    if global_plans.exists():
+        search_dirs.append(("plans", global_plans))
+    
+    # Project plans
+    for project_dir in sorted(products_dir.iterdir()):
+        if project_dir.is_dir() and project_dir.name != "plans":
+            plans_dir = project_dir / "plans"
+            if plans_dir.exists():
+                search_dirs.append((project_dir.name, plans_dir))
+    
+    for project_name, plans_dir in search_dirs:
+        for f in sorted(plans_dir.glob("*.md")):
+            # Skip done/ subdirectory
+            if "done" in str(f.parent) and f.parent.name == "done":
+                continue
+            
+            plan_name = f.stem
+            metadata = get_plan_metadata(str(f))
+            status = metadata.get('status', 'draft')
+            issue_str = metadata.get('issue', '')
+            
+            # Extract issue number
+            issue_number = None
+            has_issue = False
+            if issue_str:
+                m = re.search(r'#(\d+)', issue_str)
+                if m:
+                    issue_number = int(m.group(1))
+                    has_issue = True
+            
+            results.append({
+                'name': plan_name,
+                'project': project_name,
+                'status': status,
+                'has_issue': has_issue,
+                'issue_number': issue_number,
+            })
+    
+    return results
+
+
 def cmd_query_list(args: argparse.Namespace) -> int:
-    """List all active Plans from GitHub Issues."""
-    print("Active Plans (from GitHub Issues)")
-    print("==================================")
+    """List all active Plans from GitHub Issues and local Plan files."""
+    print("Active Plans")
+    print("============")
     print("")
+    
+    workspace_root = _find_workspace_root()
+    
+    # 1. Scan local Plan files
+    local_plans = _scan_local_plans(workspace_root)
+    
+    # 2. Fetch active Issues from GitHub
+    issue_numbers = set()
+    issues_by_number = {}
     
     try:
         repo = get_space_repo()
+        result = subprocess.run(
+            ["gh", "issue", "list", "--repo", repo, "--state", "open",
+             "--search", "label:status/planning OR label:status/in-progress OR label:status/verifying",
+             "--json", "number,title,labels",
+             "--jq", r'.[] | "\(.number)|\(.title)|\(.labels | map(.name) | join(","))"'],
+            capture_output=True,
+            text=True,
+        )
+        
+        issues_output = result.stdout.strip()
+        if issues_output:
+            for line in issues_output.split('\n'):
+                if not line:
+                    continue
+                parts = line.split('|')
+                if len(parts) < 3:
+                    continue
+                number, title, labels_str = parts[0], parts[1], parts[2]
+                labels = labels_str.split(',') if labels_str else []
+                
+                status_label = "unknown"
+                for label in labels:
+                    label = label.strip()
+                    if label == "status/planning":
+                        status_label = "planning"
+                    elif label == "status/in-progress":
+                        status_label = "executing"
+                    elif label == "status/verifying":
+                        status_label = "verifying"
+                
+                issue_numbers.add(int(number))
+                issues_by_number[int(number)] = {
+                    'title': title,
+                    'status': status_label,
+                }
     except RuntimeError:
-        log_error("Cannot get repo info")
-        return 1
+        pass
     
-    # Search for active issues with status labels
-    # Use gh search API to find issues with status labels
-    result = subprocess.run(
-        ["gh", "issue", "list", "--repo", repo, "--state", "open",
-         "--search", "label:status/planning OR label:status/in-progress OR label:status/verifying",
-         "--json", "number,title,labels",
-         "--jq", r'.[] | "\(.number)|\(.title)|\(.labels | map(.name) | join(","))"'],
-        capture_output=True,
-        text=True,
-    )
-    
-    issues = result.stdout.strip()
-    
-    if not issues:
-        print("No active issues found.")
-        return 0
-    
+    # 3. Merge and display
+    # Track which plans have been displayed via Issue lookup
+    displayed_plan_names = set()
     count = 0
-    for line in issues.split('\n'):
-        if not line:
-            continue
-        
-        parts = line.split('|')
-        if len(parts) < 3:
-            continue
-        
-        number, title, labels_str = parts[0], parts[1], parts[2]
-        labels = labels_str.split(',') if labels_str else []
-        
-        # Determine status label
-        status_label = "unknown"
-        for label in labels:
-            label = label.strip()
-            if label == "status/planning":
-                status_label = "planning"
-            elif label == "status/in-progress":
-                status_label = "executing"
-            elif label == "status/verifying":
-                status_label = "verifying"
-        
+    
+    # First, display Issue-linked plans from GitHub
+    for issue_num, info in sorted(issues_by_number.items()):
+        print(f"[{info['status']}] #{issue_num}: {info['title']}")
         count += 1
-        print(f"[{status_label}] #{number}: {title}")
+        
+        # Find matching local plan to avoid duplicate display
+        for lp in local_plans:
+            if lp['has_issue'] and lp['issue_number'] == issue_num:
+                displayed_plan_names.add(lp['name'])
+                break
+    
+    # Then, display local plans without Issue (not already displayed)
+    for lp in local_plans:
+        if lp['name'] in displayed_plan_names:
+            continue
+        if lp['status'] in ('planning', 'executing', 'verifying'):
+            print(f"[{lp['status']}] {lp['name']} (no issue)")
+            count += 1
     
     print("")
-    print(f"Total: {count} active issue(s)")
+    print(f"Total: {count} active item(s)")
     
     return 0
-
-
-# ============================================
-# argparse registration
-# ============================================
-
-def register_query_parser(subparsers: argparse._SubParsersAction) -> None:
-    """Register query subcommand and its subcommands."""
-    query_parser = subparsers.add_parser("query", help="Query plans and issues")
-    query_subparsers = query_parser.add_subparsers(dest="query_cmd")
-    
-    # query status
-    status_parser = query_subparsers.add_parser("status", help="Show Issue/Plan status")
-    status_parser.add_argument("issue", nargs="?", help="Issue number")
-    
-    # query list
-    list_parser = query_subparsers.add_parser("list", help="List all active Plans")
-
-
-def cmd_query(args: argparse.Namespace) -> int:
-    """Dispatch query subcommand."""
-    if args.query_cmd == "status":
-        return cmd_query_status(args)
-    elif args.query_cmd == "list":
-        return cmd_query_list(args)
-    else:
-        log_error(f"Unknown query subcommand: {args.query_cmd}")
-        return 1

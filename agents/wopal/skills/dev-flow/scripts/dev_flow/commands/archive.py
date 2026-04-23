@@ -433,13 +433,14 @@ def cmd_archive(args: argparse.Namespace) -> int:
     # Get plan_type for commit message
     plan_type = get_plan_type(plan_path) or "chore"
     
-    # 5. Update Issue Plan link
-    update_issue_plan_link(
-        issue_number=plan_issue,
-        plan_file=archived_file,
-        repo=repo,
-        workspace_root=str(workspace_root),
-    )
+    # 5. Update Issue Plan link (only if Issue exists)
+    if plan_issue:
+        update_issue_plan_link(
+            issue_number=plan_issue,
+            plan_file=archived_file,
+            repo=repo,
+            workspace_root=str(workspace_root),
+        )
     
     # 6. Stage all changes (rename + sync content updates)
     archived_rel = Path(archived_file).relative_to(workspace_root)

@@ -11,7 +11,7 @@ import sys
 
 from dev_flow import __version__
 from dev_flow.commands.issue import register_issue_parser, cmd_issue
-from dev_flow.commands.query import register_query_parser, cmd_query, cmd_query_status, cmd_query_list
+from dev_flow.commands.query import cmd_query_status, cmd_query_list
 from dev_flow.commands.sync import register_sync_parser, cmd_sync
 from dev_flow.commands.archive import register_archive_parser, cmd_archive
 from dev_flow.commands.approve import register_approve_parser, cmd_approve
@@ -40,9 +40,6 @@ def build_parser() -> argparse.ArgumentParser:
     # Register issue subcommand
     register_issue_parser(subparsers)
 
-    # Register query subcommand
-    register_query_parser(subparsers)
-
     # Register sync subcommand
     register_sync_parser(subparsers)
 
@@ -67,11 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
     # Register reset subcommand
     register_reset_parser(subparsers)
 
-    # Register status as top-level alias (dispatches to query status)
+    # Register status as top-level command
     status_parser = subparsers.add_parser("status", help="Show Issue/Plan status")
-    status_parser.add_argument("issue", nargs="?", help="Issue number")
+    status_parser.add_argument("target", nargs="?", help="Issue number or Plan name")
 
-    # Register list as top-level alias (dispatches to query list)
+    # Register list as top-level command
     list_parser = subparsers.add_parser("list", help="List active Plans")
 
     return parser
@@ -88,22 +85,20 @@ def main(argv: list[str] | None = None) -> int:
         print("Available subcommands:")
         print("  issue create    Create a new GitHub Issue")
         print("  issue update    Update an existing GitHub Issue")
-        print("  query status    Show Issue/Plan status")
-        print("  query list      List active Plans")
+        print("  status          Show Issue/Plan status")
+        print("  list            List active Plans")
         print("  sync            Sync Plan to Issue (body + labels)")
         print("  sync --body-only    Sync only Issue body")
         print("  sync --labels-only  Sync only Issue labels")
-        print()
+        print("")
         print("Workflow commands:")
         print("  plan            Create or locate a Plan")
         print("  approve         Review and approve a Plan")
         print("  complete        Mark implementation complete")
         print("  verify          Verify and confirm completion")
         print("  archive         Archive a completed Plan")
-        print()
+        print("")
         print("Utility commands:")
-        print("  status          Alias for 'query status'")
-        print("  list            Alias for 'query list'")
         print("  decompose-prd   Create Issues from PRD phases")
         print("  reset           Reset Plan to planning status")
         return 0
@@ -111,10 +106,6 @@ def main(argv: list[str] | None = None) -> int:
     # Dispatch issue subcommand
     if args.command == "issue":
         return cmd_issue(args)
-
-    # Dispatch query subcommand
-    if args.command == "query":
-        return cmd_query(args)
 
     # Dispatch sync subcommand
     if args.command == "sync":
@@ -148,11 +139,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "reset":
         return cmd_reset(args)
 
-    # Dispatch status as alias for query status
+    # Dispatch status as top-level command
     if args.command == "status":
         return cmd_query_status(args)
 
-    # Dispatch list as alias for query list
+    # Dispatch list as top-level command
     if args.command == "list":
         return cmd_query_list(args)
 
