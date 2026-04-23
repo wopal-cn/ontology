@@ -14,8 +14,7 @@
 #   4. Generate plan name (make_plan_name)
 #   5. Create plan file from template
 #   6. Fill metadata (Issue, Type, Target Project, Created)
-#   7. Update Issue Plan link
-#   8. Output Plan file path
+#   7. Output Plan file path
 #
 # Flow (no-issue mode):
 #   1. Validate --title, --project, --type required
@@ -154,80 +153,6 @@ def _resolve_plan_dir(project: str, workspace_root: Path) -> Path:
         return workspace_root / "docs" / "products" / project / "plans"
     else:
         return workspace_root / "docs" / "products" / "plans"
-
-
-def _build_repo_blob_url(repo: str, path: str) -> str:
-    """Build GitHub blob URL for a file path."""
-    # Get default branch
-    result = subprocess.run(
-        ["gh", "repo", "view", "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"],
-        capture_output=True,
-        text=True,
-    )
-    branch = result.stdout.strip() if result.returncode == 0 else "main"
-    
-    # Parse owner/repo
-    parts = repo.split("/")
-    if len(parts) == 2:
-        owner, repo_name = parts
-    else:
-        owner = repo
-        repo_name = repo
-    
-    return f"https://github.com/{owner}/{repo_name}/blob/{branch}/{path}"
-
-
-def _update_issue_plan_link(issue_number: int, plan_name: str, repo: str) -> None:
-    """Update Issue body with Plan link in Related Resources section."""
-    # Build plan URL
-    plan_rel_path = f"docs/products/plans/{plan_name}.md"
-    plan_url = _build_repo_blob_url(repo, plan_rel_path)
-    
-    # Get current issue body
-    issue_info = _get_issue_info(issue_number, repo)
-    current_body = issue_info.get("body", "")
-    
-    # Find and update Related Resources section
-    lines = current_body.split("\n")
-    result_lines = []
-    in_resources = False
-    updated = False
-    
-    for line in lines:
-        if line == "## Related Resources":
-            in_resources = True
-            result_lines.append(line)
-            continue
-        
-        if in_resources and line.startswith("##") and not line.startswith("## Related Resources"):
-            in_resources = False
-            result_lines.append(line)
-            continue
-        
-        if in_resources and "| Plan |" in line:
-            result_lines.append(f"| Plan | [{plan_name}]({plan_url}) |")
-            updated = True
-            continue
-        
-        result_lines.append(line)
-    
-    # If section not found, append it
-    if not updated:
-        result_lines.append("")
-        result_lines.append("## Related Resources")
-        result_lines.append("")
-        result_lines.append("| Resource | Link |")
-        result_lines.append("|----------|------|")
-        result_lines.append(f"| Plan | [{plan_name}]({plan_url}) |")
-    
-    updated_body = "\n".join(result_lines)
-    
-    # Update issue
-    subprocess.run(
-        ["gh", "issue", "edit", str(issue_number), "--repo", repo, "--body", updated_body],
-        capture_output=True,
-        text=True,
-    )
 
 
 def _ensure_issue_labels(issue_number: int, plan_file: str, repo: str) -> None:
@@ -619,10 +544,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
         log_error(str(e))
         return 1
     
-    # Issue mode: Update Issue Plan link and labels
+    # Issue mode: Update Issue labels
     if issue_number:
-        _update_issue_plan_link(issue_number, plan_name, repo)
-        log_success(f"Issue #{issue_number} Plan link updated")
         _ensure_issue_labels(issue_number, str(plan_file), repo)
         
         # Output summary
