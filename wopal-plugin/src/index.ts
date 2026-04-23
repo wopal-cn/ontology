@@ -2,7 +2,7 @@
  * OpenCode Rules Plugin
  *
  * Discovers markdown rule files and injects them into the system prompt.
- * Also provides non-blocking task delegation tools (wopal_task, wopal_task_output, wopal_task_interrupt, wopal_task_reply, wopal_task_diff).
+ * Also provides non-blocking task delegation tools (wopal_task, wopal_task_output, wopal_task_reply, wopal_task_diff).
  * Task is a perpetual dialog channel - no terminal states, only running/waiting/error.
  */
 
@@ -88,7 +88,7 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
 
   const ruleFiles = await discoverRuleFiles(pluginInput.directory);
   debugLog(`Discovered ${ruleFiles.length} rule file(s)`);
-    debugLog(`Tools registered: wopal_task, wopal_task_output, wopal_task_interrupt, wopal_task_reply, wopal_task_diff, memory_manage, context_manage`);
+    debugLog(`Tools registered: wopal_task, wopal_task_output, wopal_task_reply, wopal_task_diff, memory_manage, context_manage`);
 
   // Extract the internal fetch from v1 client (which uses Server.Default().fetch
   // to route requests to the in-process Hono server, bypassing real HTTP).

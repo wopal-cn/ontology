@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest"
-import { createWopalInterruptTool } from "./wopal-task-interrupt.js"
 import { createWopalOutputTool } from "./wopal-task-output.js"
 import { createWopalTaskTool } from "./wopal-task.js"
 
@@ -168,55 +167,6 @@ describe("wopal tools", () => {
         execute({ task_id: "task-1" }, {}),
       ).resolves.toBe("Current session ID is unavailable; cannot read task status.")
       expect(manager.getTaskForParent).not.toHaveBeenCalled()
-    })
-  })
-
-  describe("wopal_task_interrupt", () => {
-    it("enforces ownership via current session", async () => {
-      const manager = {
-        interrupt: vi.fn().mockResolvedValue("not_found"),
-      }
-
-      const execute = getExecute(createWopalInterruptTool(manager as never))
-      await expect(
-        execute({ task_id: "task-1" }, { sessionID: "parent-2" }),
-      ).resolves.toBe("Task not found for current session: task-1")
-      expect(manager.interrupt).toHaveBeenCalledWith("task-1", "parent-2")
-    })
-
-    it("reports successful interrupt", async () => {
-      const manager = {
-        interrupt: vi.fn().mockResolvedValue("interrupted"),
-      }
-
-      const execute = getExecute(createWopalInterruptTool(manager as never))
-      const result = await execute({ task_id: "task-1" }, { sessionID: "parent-1" })
-
-      expect(result).toContain("task-1 interrupted")
-      expect(result).toContain("wopal_task_reply to resume")
-    })
-
-    it("reports not_running", async () => {
-      const manager = {
-        interrupt: vi.fn().mockResolvedValue("not_running"),
-      }
-
-      const execute = getExecute(createWopalInterruptTool(manager as never))
-      const result = await execute({ task_id: "task-1" }, { sessionID: "parent-1" })
-
-      expect(result).toBe("Failed to interrupt task-1: task is not running.")
-    })
-
-    it("fails when context session id is missing", async () => {
-      const manager = {
-        interrupt: vi.fn(),
-      }
-
-      const execute = getExecute(createWopalInterruptTool(manager as never))
-      await expect(
-        execute({ task_id: "task-1" }, {}),
-      ).resolves.toBe("Current session ID is unavailable; cannot interrupt task.")
-      expect(manager.interrupt).not.toHaveBeenCalled()
     })
   })
 })

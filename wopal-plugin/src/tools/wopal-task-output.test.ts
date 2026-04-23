@@ -61,8 +61,7 @@ describe("wopal_task_output", () => {
     )
 
     expect(result).toContain("**Idle:** awaiting your judgment")
-    expect(result).toContain("wopal_task_reply to redirect")
-    expect(result).toContain("wopal_task_interrupt to abort")
+    expect(result).toContain("wopal_task_reply with interrupt=true")
   })
 
   it("does not show idle status when idleNotified is false or undefined", async () => {

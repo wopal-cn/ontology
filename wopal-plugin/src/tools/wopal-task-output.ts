@@ -56,7 +56,7 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
       // idle task: awaiting Wopal judgment
       if (task.idleNotified) {
         result += `\n\n**Idle:** awaiting your judgment`
-        result += `\nUse wopal_task_reply to redirect, or wopal_task_interrupt to abort current execution.`
+        result += `\nUse wopal_task_reply with interrupt=true to abort and redirect.`
       }
 
       if (task.status === 'error') {

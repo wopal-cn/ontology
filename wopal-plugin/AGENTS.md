@@ -38,7 +38,6 @@
 │  ├── matcher.ts                 │  ├── wopal-task-output.ts │
 │  ├── formatter.ts               │  ├── output-helpers.ts    │
 │  └── path-extractor.ts          │  ├── wopal-task-reply.ts  │
-│                                 │  ├── wopal-task-interrupt │
 │                                 │  ├── wopal-task-diff.ts   │
 │                                 │  ├── memory-manage/       │
 │                                 │  │   ├── index.ts         │
@@ -85,7 +84,7 @@
 
 | 类型 | 作用 | 位置 |
 |------|------|------|
-| **工具** | OpenCode 工具定义（7 个） | `src/tools/` |
+| **工具** | OpenCode 工具定义（6 个） | `src/tools/` |
 | **规则子系统** | 规则发现、匹配、格式化、路径提取 | `src/rules/` |
 | **任务域** | 任务管理、并发控制、诊断、检测 | `src/tasks/` |
 | **运行时** | 事件钩子、规则注入、消息转换 | `src/hooks/` |
@@ -166,7 +165,6 @@ src/                              # 源码目录
     ├── wopal-task-output.ts      # 查询状态/输出
     ├── output-helpers.ts         # 输出辅助函数
     ├── wopal-task-reply.ts       # 恢复/中断子会话
-    ├── wopal-task-interrupt.ts   # 强制中断任务
     ├── wopal-task-diff.ts        # 查看任务文件变更
     ├── memory-manage/            # 记忆管理工具
     │   ├── index.ts              # 工具入口
@@ -204,12 +202,11 @@ scripts/                          # 工具脚本
 | `wopal_task` | 启动子会话任务 | `description`, `prompt`, `agent` |
 | `wopal_task_output` | 查询状态/输出/完成 | `task_id`, `section`, `last_n`, `action` |
 | `wopal_task_reply` | 恢复或中断等待中的子会话 | `task_id`, `message`, `interrupt` |
-| `wopal_task_interrupt` | 强制中断运行中的任务 | `task_id` |
 | `wopal_task_diff` | 查看任务产生的文件变更 | `task_id` |
 | `memory_manage` | 记忆 CRUD + 蒸馏 | `command`, `query`, `text`, `category`, `tags`, `id` |
 | `context_manage` | 会话摘要/状态查询 | `action` (summary/status) |
 
-> **命名约定**：任务相关工具统一 `wopal_task_*` 前缀；`wopal_task_interrupt` 是旧 `wopal_cancel` 的重命名。
+> **命名约定**：任务相关工具统一 `wopal_task_*` 前缀。
 
 ---
 
@@ -288,7 +285,6 @@ running → [session.idle] → IDLE 通知 → Wopal 判断
 Wopal → wopal_task_output(action="complete") 完成任务
      → wopal_task_reply(message="...") 恢复任务
      → wopal_task_reply(message="...", interrupt=true) 中断并纠偏
-     → wopal_task_interrupt(task_id) 强制中断
 ```
 
 ### 通知格式
