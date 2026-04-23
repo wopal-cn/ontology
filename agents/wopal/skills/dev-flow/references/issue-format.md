@@ -10,7 +10,7 @@
 - `type` 必须合法
 - `scope` 必填
 - `description` 使用英文祈使句
-- `description` ≤ 50 chars
+- `description` ≤ 55 chars
 - 整体标题 ≤ 72 chars
 
 ## 合法 type
