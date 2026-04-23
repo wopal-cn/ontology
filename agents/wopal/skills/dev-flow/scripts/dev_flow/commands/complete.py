@@ -22,7 +22,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from dev_flow.domain.plan.find import find_plan_by_issue
+from dev_flow.domain.plan.find import find_plan, find_plan_by_issue
 from dev_flow.domain.plan.metadata import (
     get_plan_field,
     get_plan_issue,
@@ -246,26 +246,29 @@ def _get_plan_name(plan_path: str) -> str:
 
 def cmd_complete(args: argparse.Namespace) -> int:
     """Mark implementation complete and transition to verifying."""
-    issue_number = args.issue
+    input_ref = args.target
     create_pr = getattr(args, 'pr', False)
 
-    if not issue_number:
-        log_error("Missing issue number")
-        log_error("Usage: flow.sh complete <issue> [--pr]")
+    if not input_ref:
+        log_error("Missing issue number or plan name")
+        log_error("Usage: flow.sh complete <issue-or-plan> [--pr]")
         return 1
 
     workspace_root = _find_workspace_root()
 
-    # 1. Find Plan file
+    # 1. Find Plan file (smart lookup: Issue number or plan name)
     try:
-        plan_path = find_plan_by_issue(issue_number, str(workspace_root))
+        plan_path = find_plan(input_ref, str(workspace_root))
     except FileNotFoundError:
-        log_error(f"No plan found for issue #{issue_number}")
+        log_error(f"No plan found for: {input_ref}")
         return 1
 
     log_info(f"Found plan: {plan_path}")
 
     plan_name = _get_plan_name(plan_path)
+
+    # Extract Issue number from Plan metadata
+    plan_issue = get_plan_issue(plan_path)
 
     # 2. Check current Plan status
     current_status = parse_plan_status(plan_path)
@@ -280,9 +283,9 @@ def cmd_complete(args: argparse.Namespace) -> int:
         log_error("")
 
         suggestion_map = {
-            "planning": "Run: flow.sh approve <issue> --confirm",
-            "verifying": "Run: flow.sh verify <issue> --confirm",
-            "done": "Plan already completed. Run: flow.sh archive <issue>",
+            "planning": f"Run: flow.sh approve {input_ref} --confirm",
+            "verifying": f"Run: flow.sh verify {input_ref} --confirm",
+            "done": f"Run: flow.sh archive {input_ref}",
         }
 
         suggestion = suggestion_map.get(current_status, "Check plan status")
@@ -300,7 +303,7 @@ def cmd_complete(args: argparse.Namespace) -> int:
         log_error("Please check the completed steps and update the Plan file:")
         log_error(f"  {plan_path}")
         log_error("")
-        log_error(f"After completing, run: flow.sh complete {issue_number}")
+        log_error(f"After completing, run: flow.sh complete {input_ref}")
         return 1
 
     # 5. Check Agent Verification Acceptance Criteria (hard gate)
@@ -313,14 +316,11 @@ def cmd_complete(args: argparse.Namespace) -> int:
         log_error(f"Please complete the remaining items and update the Plan file:")
         log_error(f"  {plan_path}")
         log_error("")
-        log_error(f"After completing, run: flow.sh complete {issue_number}")
+        log_error(f"After completing, run: flow.sh complete {input_ref}")
         return 1
 
     # 6. Resolve repo for Issue sync
     repo = _resolve_repo()
-
-    # Extract Issue number from Plan metadata
-    plan_issue = get_plan_issue(plan_path)
 
     # Extract Target Project from Plan
     project = get_plan_project(plan_path)
@@ -339,7 +339,7 @@ def cmd_complete(args: argparse.Namespace) -> int:
             return 1
 
         pr_url = ""
-        effective_issue = plan_issue or issue_number
+        effective_issue = plan_issue
 
         if effective_issue:
             # With Issue: create PR referencing Issue
@@ -385,7 +385,7 @@ def cmd_complete(args: argparse.Namespace) -> int:
             # Persist PR URL in Plan metadata
             set_plan_field(plan_path, "PR", pr_url)
 
-        effective_issue = plan_issue or issue_number
+        effective_issue = plan_issue
 
         if effective_issue:
             next_ref = str(effective_issue)
@@ -406,7 +406,7 @@ def cmd_complete(args: argparse.Namespace) -> int:
             log_error("Failed to update Plan status")
             return 1
 
-        effective_issue = plan_issue or issue_number
+        effective_issue = plan_issue
 
         # Sync Issue if exists
         if effective_issue and repo:
@@ -423,8 +423,8 @@ def cmd_complete(args: argparse.Namespace) -> int:
         print("Implementation complete. Waiting for user verification.")
         print("")
         print("After user confirms, run:")
-        display_issue = plan_issue or issue_number
-        print(f"  flow.sh verify {display_issue} --confirm")
+        next_ref = plan_issue or plan_name
+        print(f"  flow.sh verify {next_ref} --confirm")
         if effective_issue:
             print("")
             print(f"Issue: #{effective_issue}")
@@ -443,10 +443,9 @@ def register_complete_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Mark implementation complete, transition to verifying"
     )
     complete_parser.add_argument(
-        "issue",
-        type=int,
+        "target",
         nargs="?",
-        help="Issue number"
+        help="Issue number or Plan name"
     )
     complete_parser.add_argument(
         "--pr",

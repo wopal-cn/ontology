@@ -24,7 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from dev_flow.domain.plan.find import find_plan_by_issue
+from dev_flow.domain.plan.find import find_plan, find_plan_by_issue
 from dev_flow.domain.plan.metadata import (
     get_plan_field,
     get_plan_issue,
@@ -231,21 +231,21 @@ def _get_plan_name(plan_path: str) -> str:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     """Verify and confirm completion, transition to done."""
-    issue_number = args.issue
+    input_ref = args.target
     confirm = getattr(args, 'confirm', False)
 
-    if not issue_number:
-        log_error("Missing issue number")
-        log_error("Usage: flow.sh verify <issue> [--confirm]")
+    if not input_ref:
+        log_error("Missing issue number or plan name")
+        log_error("Usage: flow.sh verify <issue-or-plan> [--confirm]")
         return 1
 
     workspace_root = _find_workspace_root()
 
-    # 1. Find Plan file
+    # 1. Find Plan file (smart lookup: Issue number or plan name)
     try:
-        plan_path = find_plan_by_issue(issue_number, str(workspace_root))
+        plan_path = find_plan(input_ref, str(workspace_root))
     except FileNotFoundError:
-        log_error(f"No plan found for issue #{issue_number}")
+        log_error(f"No plan found for: {input_ref}")
         return 1
 
     log_info(f"Found plan: {plan_path}")
@@ -265,9 +265,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
         log_error("")
 
         suggestion_map = {
-            "planning": "Run: flow.sh approve <issue> --confirm",
-            "executing": "Run: flow.sh complete <issue>",
-            "done": "Plan already verified. Run: flow.sh archive <issue>",
+            "planning": f"Run: flow.sh approve {input_ref} --confirm",
+            "executing": f"Run: flow.sh complete {input_ref}",
+            "done": f"Run: flow.sh archive {input_ref}",
         }
 
         suggestion = suggestion_map.get(current_status, "Check plan status")
@@ -280,7 +280,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     # Extract Issue number from Plan metadata
     plan_issue = get_plan_issue(plan_path)
-    effective_issue = plan_issue or issue_number
+    effective_issue = plan_issue
 
     # 5. Check PR merge status (PR path detection)
     is_pr_path = False
@@ -340,8 +340,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
             print(f"  {plan_path}")
         print("")
         print("After user verifies, run:")
-        display_issue = plan_issue or issue_number
-        print(f"  flow.sh verify {display_issue} --confirm")
+        next_ref = plan_issue or plan_name
+        print(f"  flow.sh verify {next_ref} --confirm")
         return 0
 
     # --confirm received: user authorization gate passed
@@ -356,7 +356,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         log_error("Please complete the user validation scenarios and check the final confirmation checkbox:")
         log_error("  1. Perform the scenarios described in ### User Validation section")
         log_error("  2. Check the final checkbox: - [x] 用户已完成上述功能验证并确认结果符合预期")
-        log_error(f"  3. Re-run: flow.sh verify {issue_number} --confirm")
+        log_error(f"  3. Re-run: flow.sh verify {input_ref} --confirm")
         return 1
 
     log_success("User validation passed")
@@ -401,10 +401,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
     else:
         print("Reason: user validation confirmed")
     print("")
-    print(f"Next: flow.sh archive {issue_number}")
+    print(f"Next: flow.sh archive {plan_issue or plan_name}")
     print("")
     print("Ready to archive. Run:")
-    print(f"  flow.sh archive {issue_number}")
+    print(f"  flow.sh archive {plan_issue or plan_name}")
 
     return 0
 
@@ -420,10 +420,9 @@ def register_verify_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Verify and confirm completion, transition to done"
     )
     verify_parser.add_argument(
-        "issue",
-        type=int,
+        "target",
         nargs="?",
-        help="Issue number"
+        help="Issue number or Plan name"
     )
     verify_parser.add_argument(
         "--confirm",

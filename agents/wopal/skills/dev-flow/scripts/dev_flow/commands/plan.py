@@ -40,7 +40,7 @@ import re
 from pathlib import Path
 from datetime import date
 
-from dev_flow.domain.plan.find import find_plan_by_issue
+from dev_flow.domain.plan.find import find_plan, find_plan_by_issue, find_plan_by_name
 from dev_flow.domain.plan.naming import make_plan_name, validate_plan_name, ValidationError
 from dev_flow.domain.plan.metadata import get_plan_status
 from dev_flow.domain.issue.title import extract_scope, extract_type
@@ -384,7 +384,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
     Returns:
         0 on success, 1 on error
     """
-    issue_number = args.issue
+    issue_number = None
+    input_ref = args.target
     title = args.title
     project = args.project
     plan_type_arg = args.type
@@ -396,10 +397,14 @@ def cmd_plan(args: argparse.Namespace) -> int:
     workspace_root = _find_workspace_root()
     repo = _get_space_repo()
     
+    # Resolve input_ref: digits → issue_number, string → plan name for check mode
+    if input_ref and re.match(r'^\d+$', input_ref):
+        issue_number = int(input_ref)
+    
     # Validate: either Issue number OR title required
-    if not issue_number and not title:
-        log_error("Either Issue number or --title required")
-        log_error("Usage: flow.sh plan <issue> [--project <name>] [--prd <path>] [--deep] [--check]")
+    if not input_ref and not title:
+        log_error("Either Issue number, plan name, or --title required")
+        log_error("Usage: flow.sh plan <issue-or-plan> [--project <name>] [--prd <path>] [--deep] [--check]")
         log_error("   or: flow.sh plan --title \"<title>\" --project <name> --type <type> [--scope <scope>] [--deep] [--check]")
         return 1
     
@@ -439,6 +444,12 @@ def cmd_plan(args: argparse.Namespace) -> int:
                 plan_file = find_plan_by_issue(issue_number, str(workspace_root))
             except FileNotFoundError:
                 pass
+        elif input_ref:
+            # Find by plan name
+            try:
+                plan_file = find_plan_by_name(input_ref, str(workspace_root))
+            except FileNotFoundError:
+                pass
         else:
             # No-issue: reconstruct plan name
             if not scope:
@@ -455,6 +466,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
             log_error("No plan found")
             if issue_number:
                 log_error(f"Create plan first: flow.sh plan {issue_number}")
+            elif input_ref:
+                log_error(f"Create plan first: flow.sh plan {input_ref}")
             else:
                 log_error(f"Create plan first: flow.sh plan --title \"{title}\" --project {project} --type {plan_type} --scope {scope}")
             return 1
@@ -465,6 +478,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
             log_success("Plan passes validation")
             if issue_number:
                 print(f"Next: flow.sh approve {issue_number}")
+            elif input_ref:
+                print(f"Next: flow.sh approve {input_ref}")
             else:
                 # For no-issue, reconstruct plan name for hint
                 slug = _title_to_slug(title)
@@ -484,6 +499,19 @@ def cmd_plan(args: argparse.Namespace) -> int:
         try:
             plan_file = find_plan_by_issue(issue_number, str(workspace_root))
             _print_existing_plan_info(plan_file, str(issue_number))
+            return 0
+        except FileNotFoundError:
+            # No existing plan, proceed to create
+            pass
+    
+    # ========================================
+    # No-issue mode: check existing plan by plan-name
+    # ========================================
+    if input_ref and not issue_number:
+        # Plan-name lookup
+        try:
+            plan_file = find_plan_by_name(input_ref, str(workspace_root))
+            _print_existing_plan_info(str(plan_file), input_ref)
             return 0
         except FileNotFoundError:
             # No existing plan, proceed to create
@@ -626,10 +654,9 @@ def register_plan_parser(subparsers: argparse._SubParsersAction) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     plan_parser.add_argument(
-        "issue",
-        type=int,
+        "target",
         nargs="?",
-        help="Issue number (optional in no-issue mode)"
+        help="Issue number or Plan name (optional in no-issue mode)"
     )
     plan_parser.add_argument(
         "--title",

@@ -25,7 +25,7 @@ import re
 from pathlib import Path
 from datetime import date
 
-from dev_flow.domain.plan.find import find_plan_by_issue
+from dev_flow.domain.plan.find import find_plan, find_plan_by_issue
 from dev_flow.domain.plan.metadata import (
     get_plan_project,
     get_plan_type,
@@ -345,20 +345,20 @@ def commit_archived_plan(
 
 def cmd_archive(args: argparse.Namespace) -> int:
     """Archive a completed Plan."""
-    issue_number = args.issue
+    input_ref = args.target
     
-    if not issue_number:
-        log_error("Missing issue number")
-        log_error("Usage: flow.sh archive <issue>")
+    if not input_ref:
+        log_error("Missing issue number or plan name")
+        log_error("Usage: flow.sh archive <issue-or-plan>")
         return 1
     
     workspace_root = _find_workspace_root()
     
-    # 1. Find Plan file
+    # 1. Find Plan file (smart lookup: Issue number or plan name)
     try:
-        plan_path = find_plan_by_issue(issue_number, str(workspace_root))
+        plan_path = find_plan(input_ref, str(workspace_root))
     except FileNotFoundError:
-        log_error(f"No plan found for issue #{issue_number}")
+        log_error(f"No plan found for: {input_ref}")
         return 1
     
     log_info(f"Found plan: {plan_path}")
@@ -376,9 +376,9 @@ def cmd_archive(args: argparse.Namespace) -> int:
         
         # Suggest next action based on current status
         suggestion_map = {
-            "planning": "Run: flow.sh approve <issue> --confirm",
-            "executing": "Run: flow.sh complete <issue>",
-            "verifying": "Run: flow.sh verify <issue> --confirm",
+            "planning": f"Run: flow.sh approve {input_ref} --confirm",
+            "executing": f"Run: flow.sh complete {input_ref}",
+            "verifying": f"Run: flow.sh verify {input_ref} --confirm",
         }
         
         suggestion = suggestion_map.get(current_status, "Check plan status")
@@ -388,7 +388,7 @@ def cmd_archive(args: argparse.Namespace) -> int:
     
     # 2.5. Sync Plan to Issue before archiving (if Issue exists)
     repo = _get_space_repo()
-    plan_issue = get_plan_issue(plan_path) or issue_number
+    plan_issue = get_plan_issue(plan_path)
     
     if plan_issue:
         log_info(f"Syncing Plan #{plan_issue} to Issue...")
@@ -480,8 +480,7 @@ def register_archive_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Archive a completed Plan"
     )
     archive_parser.add_argument(
-        "issue",
-        type=int,
+        "target",
         nargs="?",
-        help="Issue number"
+        help="Issue number or Plan name"
     )
