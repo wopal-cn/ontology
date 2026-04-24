@@ -191,6 +191,40 @@ flow.sh archive <issue>
 
 归档前提：Plan 状态已经是 `done`。
 
+**项目仓库未提交变更处理**：
+
+Plan 归档总是完成，即使项目仓库有未提交变更。归档完成后若项目仓库有未提交变更，命令输出后续操作指引：
+
+```text
+============================================================
+POST-ARCHIVE: Project has uncommitted changes
+============================================================
+Project: <project-name>
+Path: <project-path>
+
+Agent should:
+  1. Run: git status && git diff <project_path>
+  2. Generate commit message based on changes
+  3. Ask user: 'Commit these changes?'
+
+Suggested commit message format:
+  <type>: <description> (#<issue>)
+  
+After user confirms:
+  cd <project_path>
+  git add <files>
+  git commit -m "<generated message>"
+  git push
+============================================================
+```
+
+**Agent 责任**：
+1. 检查上述输出是否存在
+2. 若存在，执行 `git status && git diff` 获取变更详情
+3. 根据变更内容生成完整 commit message（参考 Issue 标题规范）
+4. 向用户展示变更列表和 commit message
+5. 用户确认后执行 commit + push
+
 ## 主流路径
 
 | 场景 | 命令路径 |

@@ -10,7 +10,7 @@
 #   1. Find Plan file (by issue number)
 #   2. Check Plan status is "done"
 #   2.5. Sync Plan to Issue (body + labels)
-#   3. Gate: Check Target Project repo is clean (WARNING + prompt on dirty)
+#   3. Check Target Project repo state (non-blocking, report uncommitted changes)
 #   4. Move Plan file to plans/done/YYYYMMDD-<plan-name>.md
 #   5. Update Issue Plan link
 #   6. Close GitHub Issue
@@ -22,6 +22,7 @@ import subprocess
 import sys
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import date
 
@@ -116,73 +117,120 @@ def _find_project_path(project: str, workspace_root: Path) -> Path | None:
 
 
 # ============================================
-# Gate: Target Project Repo Clean Check (WARNING)
+# Gate: Target Project Repo Clean Check
 # ============================================
 
-def check_project_repo_gate(plan_path: str, workspace_root: Path) -> bool:
-    """
-    Gate: Check if Target Project repo has uncommitted changes.
+from dataclasses import dataclass
+
+
+@dataclass
+class ProjectRepoCheckResult:
+    """Result of checking project repo state during archive."""
     
-    WARNING behavior: Displays warning and prompts for confirmation.
-    User can choose to proceed or abort.
+    project: str | None          # Project name (from Plan metadata)
+    project_path: Path | None    # Project directory path
+    needs_commit: bool           # True if project has uncommitted changes
+    suggest_type: str            # Suggested commit type (from Plan)
+    suggest_issue: int | None    # Suggested Issue reference (from Plan)
+
+
+def check_project_repo_state(plan_path: str, workspace_root: Path) -> ProjectRepoCheckResult:
+    """
+    Check if Target Project repo has uncommitted changes.
+    
+    NON-BLOCKING behavior: Always returns a result, allowing Plan archive to proceed.
+    Agent should check result.needs_commit and generate commit proposal for user confirmation.
     
     Args:
         plan_path: Path to Plan file
         workspace_root: Workspace root path
         
     Returns:
-        True if repo is clean or user confirms to proceed, False if user aborts
+        ProjectRepoCheckResult with project info and needs_commit flag
     """
     project = get_plan_project(plan_path)
+    plan_issue = get_plan_issue(plan_path)
+    plan_type = get_plan_type(plan_path) or "chore"
     
-    # No Target Project specified → skip gate
+    # No Target Project specified → return empty result
     if not project:
-        log_info("No Target Project specified in Plan metadata, skipping repo gate")
-        return True
+        return ProjectRepoCheckResult(
+            project=None,
+            project_path=None,
+            needs_commit=False,
+            suggest_type=plan_type,
+            suggest_issue=plan_issue,
+        )
     
     project_path = _find_project_path(project, workspace_root)
     
     if not project_path:
-        log_warn(f"Target Project '{project}' directory not found at projects/{project}")
-        # Not found → treat as clean (can't check)
-        return True
+        return ProjectRepoCheckResult(
+            project=project,
+            project_path=None,
+            needs_commit=False,
+            suggest_type=plan_type,
+            suggest_issue=plan_issue,
+        )
     
     # Check if project path is a git repo
     if not (project_path / '.git').exists():
-        log_info(f"Target Project '{project}' is not a git repo, skipping repo gate")
-        return True
+        return ProjectRepoCheckResult(
+            project=project,
+            project_path=project_path,
+            needs_commit=False,
+            suggest_type=plan_type,
+            suggest_issue=plan_issue,
+        )
     
-    # Check dirty state
-    if is_repo_dirty(str(project_path)):
-        log_warn(f"Target Project '{project}' has uncommitted changes!")
-        log_warn(f"Project path: {project_path}")
-        log_warn("")
-        
-        plan_issue = get_plan_issue(plan_path)
-        plan_type = get_plan_type(plan_path) or "chore"
-        
-        log_warn("Uncommitted changes will not be archived. You can commit and push manually:")
-        log_warn(f"  cd {project_path}")
-        if plan_issue:
-            log_warn(f"  git add <files> && git commit -m \"{plan_type}: #{plan_issue} <description>\" && git push")
-        else:
-            log_warn(f"  git add <files> && git commit -m \"{plan_type}: <description>\" && git push")
-        log_warn("")
-        
-        # Prompt for confirmation (WARNING, not blocking)
-        try:
-            response = input("Continue archiving anyway? [y/N] ").strip().lower()
-        except EOFError:
-            response = "n"
-        
-        if response not in ("y", "yes"):
-            log_info("Archive aborted by user")
-            return False
-        
-        log_info("Continuing archive despite uncommitted changes...")
-        return True
+    # Check dirty state (non-blocking)
+    needs_commit = is_repo_dirty(str(project_path))
     
-    return True
+    return ProjectRepoCheckResult(
+        project=project,
+        project_path=project_path,
+        needs_commit=needs_commit,
+        suggest_type=plan_type,
+        suggest_issue=plan_issue,
+    )
+
+
+def print_post_archive_commit_guide(result: ProjectRepoCheckResult) -> None:
+    """
+    Print guidance for committing project changes after Plan archive.
+    
+    Clear, actionable instructions for Agent to generate commit proposal.
+    
+    Args:
+        result: ProjectRepoCheckResult from check_project_repo_state
+    """
+    if not result.needs_commit:
+        return
+    
+    log_warn("")
+    log_warn("=" * 60)
+    log_warn("POST-ARCHIVE: Project has uncommitted changes")
+    log_warn("=" * 60)
+    log_warn(f"Project: {result.project}")
+    log_warn(f"Path: {result.project_path}")
+    log_warn("")
+    log_warn("Agent should:")
+    log_warn("  1. Run: git status && git diff <project_path>")
+    log_warn("  2. Generate commit message based on changes")
+    log_warn("  3. Ask user: 'Commit these changes?'")
+    log_warn("")
+    log_warn("Suggested commit message format:")
+    if result.suggest_issue:
+        log_warn(f"  {result.suggest_type}: <description> (#{result.suggest_issue})")
+    else:
+        log_warn(f"  {result.suggest_type}: <description>")
+    log_warn("")
+    log_warn("After user confirms:")
+    log_warn(f"  cd {result.project_path}")
+    log_warn("  git add <files>")
+    log_warn("  git commit -m \"<generated message>\"")
+    log_warn("  git push")
+    log_warn("=" * 60)
 
 
 # ============================================
@@ -417,10 +465,9 @@ def cmd_archive(args: argparse.Namespace) -> int:
         
         log_success(f"Plan synced to Issue #{plan_issue}")
     
-    # 3. Gate: Check Target Project repo is clean (WARNING, prompt for confirmation)
-    if not check_project_repo_gate(plan_path, workspace_root):
-        # User aborted
-        return 1
+    # 3. Check Target Project repo state (NON-BLOCKING)
+    #    Plan archive proceeds regardless; Agent handles commit separately
+    repo_check = check_project_repo_state(plan_path, workspace_root)
     
     # 4. Archive Plan file
     try:
@@ -462,10 +509,14 @@ def cmd_archive(args: argparse.Namespace) -> int:
             log_warn(f"Failed to close Issue #{plan_issue}")
     
     # Output summary
-    print("Status: archived")
+    print("")
+    log_success("Archive completed")
     print(f"File: {archived_file}")
     if plan_issue:
         print(f"Issue: #{plan_issue} (closed)")
+    
+    # Post-archive: guide Agent to handle project repo commit
+    print_post_archive_commit_guide(repo_check)
     
     return 0
 
