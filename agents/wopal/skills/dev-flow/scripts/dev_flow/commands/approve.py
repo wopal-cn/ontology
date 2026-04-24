@@ -33,7 +33,7 @@ import re
 from pathlib import Path
 
 from dev_flow.domain.plan.find import find_plan, find_plan_by_issue, find_plan_by_name
-from dev_flow.domain.plan.metadata import get_plan_project, get_plan_issue, get_plan_status
+from dev_flow.domain.plan.metadata import get_plan_project, get_plan_issue, get_plan_status, set_plan_worktree
 from dev_flow.domain.plan.naming import validate_plan_name
 from dev_flow.domain.workflow import parse_plan_status, is_valid_transition
 from dev_flow.domain.validation.check_doc import check_doc_plan, ValidationError
@@ -497,7 +497,14 @@ def cmd_approve(args: argparse.Namespace) -> int:
         # Create worktree
         if _create_worktree(project, branch, workspace_root):
             worktree_created = True
-            
+
+            # Write Worktree field to Plan metadata
+            worktree_path = f"{workspace_root}/.worktrees/{project}-{branch}"
+            if set_plan_worktree(plan_path, branch, worktree_path):
+                log_success(f"Plan Worktree field set: {branch} | {worktree_path}")
+            else:
+                log_warn("Failed to write Worktree field to Plan")
+
             # Restore stashed changes to main workspace
             if stashed:
                 if _pop_stash(project_path):

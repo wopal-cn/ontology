@@ -204,3 +204,145 @@ def get_relative_path(file_path: str, base_path: str) -> str:
     except ValueError:
         # file_path is not relative to base_path
         return str(file)
+
+
+def merge_branch(
+    repo_path: str,
+    branch: str,
+    target: str = 'main',
+    no_ff: bool = True,
+) -> tuple[bool, list[str]]:
+    """Merge branch into target branch.
+
+    Args:
+        repo_path: Path to git repository root
+        branch: Source branch to merge
+        target: Target branch to merge into (default: main)
+        no_ff: Use --no-ff for merge commit (default: True)
+
+    Returns:
+        Tuple of (success, conflict_files).
+        success: True if merge succeeded without conflicts.
+        conflict_files: List of files with conflicts (empty if success).
+    """
+    # Ensure we are on target branch
+    subprocess.run(
+        ["git", "checkout", target],
+        cwd=repo_path,
+        capture_output=True,
+    )
+
+    # Build merge command
+    cmd = ["git", "merge"]
+    if no_ff:
+        cmd.append("--no-ff")
+    cmd.append(branch)
+
+    result = subprocess.run(
+        cmd,
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode == 0:
+        return (True, [])
+
+    # Merge failed — check for conflicts
+    diff_result = subprocess.run(
+        ["git", "diff", "--name-only", "--diff-filter=U"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
+    conflict_files = [
+        f for f in diff_result.stdout.strip().split('\n') if f
+    ]
+
+    if conflict_files:
+        # Abort the merge to leave repo in clean state
+        subprocess.run(
+            ["git", "merge", "--abort"],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        return (False, conflict_files)
+
+    # Non-conflict failure
+    subprocess.run(
+        ["git", "merge", "--abort"],
+        cwd=repo_path,
+        capture_output=True,
+    )
+    return (False, [])
+
+
+def branch_exists(repo_path: str, branch: str) -> bool:
+    """Check if a local branch exists.
+
+    Args:
+        repo_path: Path to git repository root
+        branch: Branch name to check
+
+    Returns:
+        True if branch exists locally
+    """
+    result = subprocess.run(
+        ["git", "branch", "--list", branch],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
+    return bool(result.stdout.strip())
+
+
+def delete_branch(repo_path: str, branch: str, force: bool = False) -> bool:
+    """Delete a local branch.
+
+    Args:
+        repo_path: Path to git repository root
+        branch: Branch name to delete
+        force: Use -D instead of -d
+
+    Returns:
+        True if deletion succeeded
+    """
+    flag = "-D" if force else "-d"
+    result = subprocess.run(
+        ["git", "branch", flag, branch],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def push_branch(repo_path: str, branch: str = 'main') -> bool:
+    """Push specified branch to origin.
+
+    Args:
+        repo_path: Path to git repository root
+        branch: Branch name to push (default: main)
+
+    Returns:
+        True if push succeeded
+    """
+    result = subprocess.run(
+        ["git", "push", "origin", branch],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def has_uncommitted_changes(repo_path: str) -> bool:
+    """Check if repo has uncommitted changes. Alias for is_repo_dirty.
+
+    Args:
+        repo_path: Path to git repository root
+
+    Returns:
+        True if repo has uncommitted changes
+    """
+    return is_repo_dirty(repo_path)

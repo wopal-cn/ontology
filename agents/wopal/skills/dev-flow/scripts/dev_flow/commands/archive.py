@@ -10,10 +10,11 @@
 #   1. Find Plan file (by issue number)
 #   2. Check Plan status is "done"
 #   2.5. Sync Plan to Issue (body + labels)
-#   3. Check Target Project repo state (non-blocking, report uncommitted changes)
-#   4. Move Plan file to plans/done/YYYYMMDD-<plan-name>.md
+#   3. Detect worktree / project changes and auto-handle
+#   4. Archive Plan file (move to done/)
 #   5. Update Issue Plan link
-#   6. Close GitHub Issue
+#   6. Commit archived plan in space repo
+#   7. Close GitHub Issue
 
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ import subprocess
 import sys
 import os
 import re
-from dataclasses import dataclass
+import glob as glob_mod
 from pathlib import Path
 from datetime import date
 
@@ -32,6 +33,7 @@ from dev_flow.domain.plan.metadata import (
     get_plan_type,
     get_plan_issue,
     get_plan_status,
+    get_plan_worktree,
 )
 from dev_flow.domain.workflow import parse_plan_status
 from dev_flow.domain.plan.link import update_issue_plan_link
@@ -40,7 +42,15 @@ from dev_flow.domain.issue.sync import (
     sync_status_label,
     ensure_issue_labels,
 )
-from dev_flow.infra.git import is_repo_dirty
+from dev_flow.infra.git import (
+    is_repo_dirty,
+    merge_branch,
+    branch_exists,
+    delete_branch,
+    push_branch,
+    has_uncommitted_changes,
+    commit_all,
+)
 
 
 # ============================================
@@ -63,6 +73,10 @@ def log_warn(msg: str) -> None:
     print(f"\033[0;33m[WARN]\033[0m {msg}")
 
 
+def log_step(msg: str) -> None:
+    print(f"\033[0;36m[STEP]\033[0m {msg}")
+
+
 # ============================================
 # Helpers
 # ============================================
@@ -70,14 +84,14 @@ def log_warn(msg: str) -> None:
 def _find_workspace_root() -> Path:
     """Find workspace root by searching for .wopal or .git directory."""
     current = Path.cwd()
-    
+
     while current != current.parent:
         if (current / '.wopal').exists():
             return current
         if (current / '.git').exists():
             return current
         current = current.parent
-    
+
     return Path.cwd()
 
 
@@ -95,142 +109,248 @@ def _get_space_repo() -> str:
 
 
 def _find_project_path(project: str, workspace_root: Path) -> Path | None:
-    """
-    Find project directory path.
-    
-    Standard mapping: projects/<project_name>
-    
+    """Find project directory path.
+
     Args:
         project: Project name from Plan metadata
         workspace_root: Workspace root path
-        
+
     Returns:
         Project directory path, or None if not found
     """
-    # Standard path: projects/<project_name>
     project_path = workspace_root / "projects" / project
-    
+
     if project_path.exists():
         return project_path
-    
+
     return None
 
 
 # ============================================
-# Gate: Target Project Repo Clean Check
+# Worktree / Project Change Detection
 # ============================================
 
-from dataclasses import dataclass
+def _detect_worktree(
+    plan_path: str,
+    project: str,
+    workspace_root: Path,
+) -> dict | None:
+    """Detect worktree info from Plan metadata or filesystem.
 
+    Priority:
+    1. Plan Worktree field (set by approve --confirm --worktree)
+    2. Fallback: glob match .worktrees/<project>-issue-<N>-*
 
-@dataclass
-class ProjectRepoCheckResult:
-    """Result of checking project repo state during archive."""
-    
-    project: str | None          # Project name (from Plan metadata)
-    project_path: Path | None    # Project directory path
-    needs_commit: bool           # True if project has uncommitted changes
-    suggest_type: str            # Suggested commit type (from Plan)
-    suggest_issue: int | None    # Suggested Issue reference (from Plan)
-
-
-def check_project_repo_state(plan_path: str, workspace_root: Path) -> ProjectRepoCheckResult:
-    """
-    Check if Target Project repo has uncommitted changes.
-    
-    NON-BLOCKING behavior: Always returns a result, allowing Plan archive to proceed.
-    Agent should check result.needs_commit and generate commit proposal for user confirmation.
-    
     Args:
         plan_path: Path to Plan file
+        project: Project name
         workspace_root: Workspace root path
-        
+
     Returns:
-        ProjectRepoCheckResult with project info and needs_commit flag
+        Dict with 'branch' and 'path' keys, or None
     """
-    project = get_plan_project(plan_path)
+    # Try Plan metadata first
+    wt = get_plan_worktree(plan_path)
+    if wt:
+        # Verify the path actually exists
+        if Path(wt['path']).exists():
+            return wt
+        # Path gone — metadata stale
+        return None
+
+    # Fallback: glob match
     plan_issue = get_plan_issue(plan_path)
-    plan_type = get_plan_type(plan_path) or "chore"
-    
-    # No Target Project specified → return empty result
-    if not project:
-        return ProjectRepoCheckResult(
-            project=None,
-            project_path=None,
-            needs_commit=False,
-            suggest_type=plan_type,
-            suggest_issue=plan_issue,
-        )
-    
-    project_path = _find_project_path(project, workspace_root)
-    
-    if not project_path:
-        return ProjectRepoCheckResult(
-            project=project,
-            project_path=None,
-            needs_commit=False,
-            suggest_type=plan_type,
-            suggest_issue=plan_issue,
-        )
-    
-    # Check if project path is a git repo
-    if not (project_path / '.git').exists():
-        return ProjectRepoCheckResult(
-            project=project,
-            project_path=project_path,
-            needs_commit=False,
-            suggest_type=plan_type,
-            suggest_issue=plan_issue,
-        )
-    
-    # Check dirty state (non-blocking)
-    needs_commit = is_repo_dirty(str(project_path))
-    
-    return ProjectRepoCheckResult(
-        project=project,
-        project_path=project_path,
-        needs_commit=needs_commit,
-        suggest_type=plan_type,
-        suggest_issue=plan_issue,
+    if not plan_issue:
+        return None
+
+    pattern = str(workspace_root / ".worktrees" / f"{project}-issue-{plan_issue}-*")
+    matches = glob_mod.glob(pattern)
+
+    if not matches:
+        return None
+
+    wt_path = matches[0]
+    # Extract branch from directory name: <project>-issue-<N>-<slug> → issue-<N>-<slug>
+    dir_name = Path(wt_path).name
+    # Remove project prefix: "ontology-issue-115-slug" → "issue-115-slug"
+    parts = dir_name.split('-', 1)
+    branch = parts[1] if len(parts) > 1 else dir_name
+
+    return {'branch': branch, 'path': wt_path}
+
+
+def _is_pr_path(plan_path: str, issue_number: int, repo: str) -> bool:
+    """Check if Issue has a PR opened (pr/opened label).
+
+    Args:
+        plan_path: Path to Plan file
+        issue_number: Issue number
+        repo: Repository in owner/repo format
+
+    Returns:
+        True if Issue has pr/opened label
+    """
+    result = subprocess.run(
+        [
+            "gh", "issue", "view", str(issue_number),
+            "--repo", repo,
+            "--json", "labels",
+            "-q", '.labels[].name',
+        ],
+        capture_output=True,
+        text=True,
     )
 
+    if result.returncode != 0:
+        return False
 
-def print_post_archive_commit_guide(result: ProjectRepoCheckResult) -> None:
-    """
-    Print guidance for committing project changes after Plan archive.
-    
-    Clear, actionable instructions for Agent to generate commit proposal.
-    
+    labels = result.stdout.strip().split('\n')
+    return "pr/opened" in labels
+
+
+def _commit_project_changes(
+    project_path: str,
+    plan_type: str,
+    issue_number: int | None,
+) -> bool:
+    """Auto-commit and push project repo changes.
+
     Args:
-        result: ProjectRepoCheckResult from check_project_repo_state
+        project_path: Path to project directory
+        plan_type: Plan type for commit message
+        issue_number: Issue number for commit message
+
+    Returns:
+        True if commit and push succeeded
     """
-    if not result.needs_commit:
-        return
-    
-    log_warn("")
-    log_warn("=" * 60)
-    log_warn("POST-ARCHIVE: Project has uncommitted changes")
-    log_warn("=" * 60)
-    log_warn(f"Project: {result.project}")
-    log_warn(f"Path: {result.project_path}")
-    log_warn("")
-    log_warn("Agent should:")
-    log_warn("  1. Run: git status && git diff <project_path>")
-    log_warn("  2. Generate commit message based on changes")
-    log_warn("  3. Ask user: 'Commit these changes?'")
-    log_warn("")
-    log_warn("Suggested commit message format:")
-    if result.suggest_issue:
-        log_warn(f"  {result.suggest_type}: <description> (#{result.suggest_issue})")
+    # Build commit message
+    if issue_number:
+        commit_msg = f"{plan_type}: implement plan changes (#{issue_number})"
     else:
-        log_warn(f"  {result.suggest_type}: <description>")
-    log_warn("")
-    log_warn("After user confirms:")
-    log_warn(f"  cd {result.project_path}")
-    log_warn("  git add <files>")
-    log_warn("  git commit -m \"<generated message>\"")
-    log_warn("  git push")
-    log_warn("=" * 60)
+        commit_msg = f"{plan_type}: implement plan changes"
+
+    # Stage all
+    subprocess.run(
+        ["git", "add", "-A"],
+        cwd=project_path,
+        capture_output=True,
+    )
+
+    # Commit
+    result = subprocess.run(
+        ["git", "commit", "-m", commit_msg],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        if "nothing to commit" in result.stdout:
+            log_info("No changes to commit in project repo")
+            return True
+        log_error(f"Project commit failed: {result.stderr.strip()}")
+        return False
+
+    log_success(f"Project committed: {commit_msg}")
+
+    # Push
+    if not push_branch(project_path, 'main'):
+        log_error("Project push failed")
+        return False
+
+    log_success("Project pushed to origin/main")
+    return True
+
+
+def _merge_worktree_branch(
+    project_path: str,
+    branch: str,
+    worktree_path: str,
+) -> tuple[bool, list[str]]:
+    """Merge worktree branch into main with --no-ff.
+
+    Args:
+        project_path: Path to project directory (cwd for git operations)
+        branch: Branch name to merge
+        worktree_path: Path to worktree (for reference)
+
+    Returns:
+        Tuple of (success, conflict_files)
+    """
+    log_step(f"Merging branch '{branch}' into main...")
+
+    success, conflicts = merge_branch(project_path, branch, target='main', no_ff=True)
+
+    if success:
+        log_success(f"Branch '{branch}' merged into main")
+        return (True, [])
+
+    if conflicts:
+        log_error(f"Merge conflicts detected in {len(conflicts)} file(s):")
+        for f in conflicts:
+            log_error(f"  {f}")
+        log_error("Resolve conflicts manually, then:")
+        log_error(f"  cd {project_path}")
+        log_error("  git add . && git commit")
+    else:
+        log_error(f"Merge failed for branch '{branch}' (non-conflict error)")
+
+    return (False, conflicts)
+
+
+def _cleanup_worktree(
+    project_path: str,
+    branch: str,
+    worktree_path: str,
+    workspace_root: Path,
+) -> bool:
+    """Remove worktree and delete branch.
+
+    Args:
+        project_path: Path to project directory (cwd for git operations)
+        branch: Branch name to delete
+        worktree_path: Path to worktree directory
+        workspace_root: Workspace root path
+
+    Returns:
+        True if cleanup succeeded
+    """
+    ok = True
+
+    # Remove worktree
+    log_step(f"Removing worktree: {worktree_path}")
+    result = subprocess.run(
+        ["git", "worktree", "remove", worktree_path],
+        cwd=str(project_path),
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        # Try force remove
+        result = subprocess.run(
+            ["git", "worktree", "remove", "--force", worktree_path],
+            cwd=str(project_path),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            log_warn(f"Failed to remove worktree: {worktree_path}")
+            ok = False
+        else:
+            log_success("Worktree removed (forced)")
+    else:
+        log_success("Worktree removed")
+
+    # Delete branch
+    if branch_exists(str(project_path), branch):
+        if delete_branch(str(project_path), branch, force=True):
+            log_success(f"Branch '{branch}' deleted")
+        else:
+            log_warn(f"Failed to delete branch '{branch}'")
+            ok = False
+
+    return ok
 
 
 # ============================================
@@ -238,43 +358,42 @@ def print_post_archive_commit_guide(result: ProjectRepoCheckResult) -> None:
 # ============================================
 
 def archive_plan_file(plan_path: str, workspace_root: Path) -> str:
-    """
-    Move Plan file to done/ directory with date prefix.
-    
+    """Move Plan file to done/ directory with date prefix.
+
     Uses git mv if plan is tracked, otherwise uses regular mv.
-    
+
     Args:
         plan_path: Path to Plan file
         workspace_root: Workspace root path
-        
+
     Returns:
         Path to archived file
     """
     plan_file = Path(plan_path)
-    
+
     if not plan_file.exists():
         log_error(f"Plan file not found: {plan_path}")
         raise FileNotFoundError(f"Plan file not found: {plan_path}")
-    
+
     # Determine destination
     plan_dir = plan_file.parent
     done_dir = plan_dir / "done"
     done_dir.mkdir(parents=True, exist_ok=True)
-    
+
     archive_date = date.today().strftime("%Y%m%d")
     archived_name = f"{archive_date}-{plan_file.name}"
     archived_file = done_dir / archived_name
-    
+
     # Check if plan is tracked in git
     plan_rel = plan_file.relative_to(workspace_root)
     archived_rel = archived_file.relative_to(workspace_root)
-    
+
     is_tracked = subprocess.run(
         ["git", "ls-files", "--error-unmatch", str(plan_rel)],
         cwd=str(workspace_root),
         capture_output=True,
     ).returncode == 0
-    
+
     if is_tracked:
         # Use git mv
         subprocess.run(
@@ -286,7 +405,7 @@ def archive_plan_file(plan_path: str, workspace_root: Path) -> str:
     else:
         # Use regular mv
         plan_file.rename(archived_file)
-    
+
     return str(archived_file)
 
 
@@ -295,14 +414,13 @@ def archive_plan_file(plan_path: str, workspace_root: Path) -> str:
 # ============================================
 
 def close_issue(issue_number: int, repo: str, comment: str) -> bool:
-    """
-    Close GitHub Issue with comment.
-    
+    """Close GitHub Issue with comment.
+
     Args:
         issue_number: Issue number
         repo: Repository in owner/repo format
         comment: Comment to add when closing
-        
+
     Returns:
         True if closed successfully
     """
@@ -312,7 +430,7 @@ def close_issue(issue_number: int, repo: str, comment: str) -> bool:
         capture_output=True,
         text=True,
     )
-    
+
     return result.returncode == 0
 
 
@@ -325,14 +443,13 @@ def commit_archived_plan(
     issue_number: int | None,
     workspace_root: Path
 ) -> bool:
-    """
-    Commit and push archived plan in space repo.
-    
+    """Commit and push archived plan in space repo.
+
     Args:
         archived_file: Path to archived plan file
         issue_number: Issue number (optional)
         workspace_root: Workspace root path
-        
+
     Returns:
         True if committed successfully
     """
@@ -342,24 +459,24 @@ def commit_archived_plan(
         cwd=str(workspace_root),
         capture_output=True,
     )
-    
+
     # returncode 0 = no staged changes
     # returncode 1 = has staged changes
     if result.returncode == 0:
         log_warn("No staged changes for archived plan")
         return True
-    
+
     if result.returncode != 1:
         log_warn("Failed to inspect staged changes")
         return False
-    
+
     # Build commit message
     if issue_number:
         commit_msg = f"chore: archive plan #{issue_number}"
     else:
         plan_name = Path(archived_file).stem
         commit_msg = f"chore: archive plan {plan_name}"
-    
+
     # Commit
     result = subprocess.run(
         ["git", "commit", "-m", commit_msg],
@@ -367,11 +484,11 @@ def commit_archived_plan(
         capture_output=True,
         text=True,
     )
-    
+
     if result.returncode != 0:
         log_warn("Failed to commit archived plan")
         return False
-    
+
     # Push
     result = subprocess.run(
         ["git", "push"],
@@ -379,11 +496,11 @@ def commit_archived_plan(
         capture_output=True,
         text=True,
     )
-    
+
     if result.returncode != 0:
         log_warn("Failed to push archived plan")
         return False
-    
+
     return True
 
 
@@ -392,83 +509,146 @@ def commit_archived_plan(
 # ============================================
 
 def cmd_archive(args: argparse.Namespace) -> int:
-    """Archive a completed Plan."""
+    """Archive a completed Plan.
+
+    Steps:
+    1. Find Plan file
+    2. Check status is "done"
+    2.5. Sync Plan to Issue
+    3. Detect worktree and handle project changes:
+       - Has worktree + PR path → cleanup worktree only
+       - Has worktree + no PR → merge branch to main → push → cleanup
+       - No worktree → auto-commit project changes if any
+    4. Archive Plan file
+    5. Update Issue Plan link
+    6. Commit + push space repo
+    7. Close Issue
+    """
     input_ref = args.target
-    
+
     if not input_ref:
         log_error("Missing issue number or plan name")
         log_error("Usage: flow.sh archive <issue-or-plan>")
         return 1
-    
+
     workspace_root = _find_workspace_root()
-    
+
     # 1. Find Plan file (smart lookup: Issue number or plan name)
     try:
         plan_path = find_plan(input_ref, str(workspace_root))
     except FileNotFoundError:
         log_error(f"No plan found for: {input_ref}")
         return 1
-    
+
     log_info(f"Found plan: {plan_path}")
-    
+
     # 2. Check Plan status is "done"
     current_status = parse_plan_status(plan_path)
-    
+
     if not current_status:
-        # Fallback to metadata status
         current_status = get_plan_status(plan_path)
-    
+
     if current_status != "done":
         log_error(f"Plan must be in done state to archive (current: {current_status})")
         log_error("")
-        
-        # Suggest next action based on current status
+
         suggestion_map = {
             "planning": f"Run: flow.sh approve {input_ref} --confirm",
             "executing": f"Run: flow.sh complete {input_ref}",
             "verifying": f"Run: flow.sh verify {input_ref} --confirm",
         }
-        
+
         suggestion = suggestion_map.get(current_status, "Check plan status")
         log_error(suggestion)
-        
+
         return 1
-    
-    # 2.5. Sync Plan to Issue before archiving (if Issue exists)
-    repo = _get_space_repo()
+
+    # Extract Plan metadata
+    project = get_plan_project(plan_path)
+    plan_type = get_plan_type(plan_path) or "chore"
     plan_issue = get_plan_issue(plan_path)
-    
+    repo = _get_space_repo()
+
+    # 2.5. Sync Plan to Issue before archiving (if Issue exists)
     if plan_issue:
         log_info(f"Syncing Plan #{plan_issue} to Issue...")
-        
-        # Sync body: update Issue body with plan content
+
         sync_plan_to_issue_body(
             issue_number=plan_issue,
             plan_file=plan_path,
             repo=repo,
             workspace_root=str(workspace_root),
         )
-        
-        # Sync status label: ensure "status/done" label is set
+
         sync_status_label(
             issue_number=plan_issue,
             status="done",
             repo=repo,
         )
-        
-        # Sync labels: ensure type and project labels are correct
+
         ensure_issue_labels(
             issue_number=plan_issue,
             plan_file=plan_path,
             repo=repo,
         )
-        
+
         log_success(f"Plan synced to Issue #{plan_issue}")
-    
-    # 3. Check Target Project repo state (NON-BLOCKING)
-    #    Plan archive proceeds regardless; Agent handles commit separately
-    repo_check = check_project_repo_state(plan_path, workspace_root)
-    
+
+    # 3. Detect worktree and handle project changes
+    worktree_handled = False
+    project_committed = False
+
+    if project:
+        project_path = _find_project_path(project, workspace_root)
+
+        if project_path and (project_path / '.git').exists():
+            wt = _detect_worktree(plan_path, project, workspace_root)
+
+            if wt:
+                branch = wt['branch']
+                wt_path = wt['path']
+
+                if plan_issue and _is_pr_path(plan_path, plan_issue, repo):
+                    # Has worktree + PR path → just cleanup worktree
+                    log_info("PR path detected — skipping merge, cleaning up worktree")
+                    _cleanup_worktree(str(project_path), branch, wt_path, workspace_root)
+                    worktree_handled = True
+                else:
+                    # Has worktree + no PR → merge branch to main
+                    # Check worktree for uncommitted changes first
+                    if has_uncommitted_changes(wt_path):
+                        log_error(f"Worktree has uncommitted changes: {wt_path}")
+                        log_error("Commit changes in worktree first, then re-run archive")
+                        return 1
+
+                    success, conflicts = _merge_worktree_branch(
+                        str(project_path), branch, wt_path,
+                    )
+
+                    if not success:
+                        if conflicts:
+                            log_error("Resolve merge conflicts before archiving")
+                        return 1
+
+                    # Push merged main
+                    if push_branch(str(project_path), 'main'):
+                        log_success("Merged main pushed to origin")
+                    else:
+                        log_warn("Failed to push merged main")
+
+                    # Cleanup worktree
+                    _cleanup_worktree(str(project_path), branch, wt_path, workspace_root)
+                    worktree_handled = True
+            else:
+                # No worktree → check project repo for uncommitted changes
+                if has_uncommitted_changes(str(project_path)):
+                    log_step(f"Auto-committing project changes in {project}...")
+                    if _commit_project_changes(str(project_path), plan_type, plan_issue):
+                        project_committed = True
+                    else:
+                        log_error("Failed to commit project changes")
+                        return 1
+
     # 4. Archive Plan file
     try:
         archived_file = archive_plan_file(plan_path, workspace_root)
@@ -476,10 +656,7 @@ def cmd_archive(args: argparse.Namespace) -> int:
     except Exception as e:
         log_error(f"Failed to archive plan: {e}")
         return 1
-    
-    # Get plan_type for commit message
-    plan_type = get_plan_type(plan_path) or "chore"
-    
+
     # 5. Update Issue Plan link (only if Issue exists)
     if plan_issue:
         update_issue_plan_link(
@@ -488,7 +665,7 @@ def cmd_archive(args: argparse.Namespace) -> int:
             repo=repo,
             workspace_root=str(workspace_root),
         )
-    
+
     # 6. Stage all changes (rename + sync content updates)
     archived_rel = Path(archived_file).relative_to(workspace_root)
     subprocess.run(
@@ -500,24 +677,25 @@ def cmd_archive(args: argparse.Namespace) -> int:
 
     # 7. Commit archived plan
     commit_archived_plan(archived_file, plan_issue, workspace_root)
-    
-    # 7. Close Issue
+
+    # 8. Close Issue
     if plan_issue:
         if close_issue(plan_issue, repo, "Plan archived. Closing issue."):
             log_success(f"Issue #{plan_issue} closed")
         else:
             log_warn(f"Failed to close Issue #{plan_issue}")
-    
+
     # Output summary
     print("")
     log_success("Archive completed")
-    print(f"File: {archived_file}")
+    print(f"  File: {archived_file}")
     if plan_issue:
-        print(f"Issue: #{plan_issue} (closed)")
-    
-    # Post-archive: guide Agent to handle project repo commit
-    print_post_archive_commit_guide(repo_check)
-    
+        print(f"  Issue: #{plan_issue} (closed)")
+    if worktree_handled:
+        print(f"  Worktree: cleaned up")
+    if project_committed:
+        print(f"  Project: changes committed and pushed")
+
     return 0
 
 

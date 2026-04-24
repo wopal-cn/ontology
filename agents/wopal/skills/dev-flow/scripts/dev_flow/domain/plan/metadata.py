@@ -144,3 +144,47 @@ def set_plan_field(plan_path: str, field_name: str, field_value: str) -> bool:
     
     path.write_text(new_content)
     return True
+
+
+def get_plan_worktree(plan_path: str) -> dict | None:
+    """Extract Worktree field from Plan metadata.
+
+    Worktree format: "- **Worktree**: <branch> | <path>"
+
+    Args:
+        plan_path: Path to Plan markdown file
+
+    Returns:
+        Dict with 'branch' and 'path' keys, or None if not found
+    """
+    raw = get_plan_field(plan_path, "Worktree")
+    if not raw:
+        return None
+
+    # Parse "branch | path" format
+    parts = raw.split('|', 1)
+    if len(parts) != 2:
+        return None
+
+    branch = parts[0].strip()
+    path = parts[1].strip()
+
+    if not branch or not path:
+        return None
+
+    return {'branch': branch, 'path': path}
+
+
+def set_plan_worktree(plan_path: str, branch: str, path: str) -> bool:
+    """Set Worktree field in Plan metadata.
+
+    Args:
+        plan_path: Path to Plan markdown file
+        branch: Branch name
+        path: Absolute path to worktree directory
+
+    Returns:
+        True if updated successfully
+    """
+    value = f"{branch} | {path}"
+    return set_plan_field(plan_path, "Worktree", value)
