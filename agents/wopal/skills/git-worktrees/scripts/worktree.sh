@@ -51,30 +51,73 @@ find_workspace_root() {
     return 1
 }
 
-# 从 .workspace.md 提取可用项目列表
+# 扫描 projects/ 下的 git 仓库目录
+scan_project_repo_dirs() {
+    local workspace_root="$1"
+    local projects_root="$workspace_root/projects"
+
+    if [ ! -d "$projects_root" ]; then
+        return 0
+    fi
+
+    find "$projects_root" \( -type d -name .git -o -type f -name .git \) -print | \
+        while IFS= read -r git_meta; do
+            local repo_dir
+            local parent_dir
+            local nested=false
+
+            repo_dir=$(dirname "$git_meta")
+            parent_dir=$(dirname "$repo_dir")
+
+            while [ "$parent_dir" != "$projects_root" ] && [ "$parent_dir" != "/" ]; do
+                if [ -d "$parent_dir/.git" ] || [ -f "$parent_dir/.git" ]; then
+                    nested=true
+                    break
+                fi
+                parent_dir=$(dirname "$parent_dir")
+            done
+
+            if [ "$nested" = false ]; then
+                echo "$repo_dir"
+            fi
+        done | sort -u
+}
+
+# 从文件系统提取可用项目列表
 get_available_projects() {
     local workspace_root="$1"
-    local workspace_md="$workspace_root/.workspace.md"
-    
-    if [ ! -f "$workspace_md" ]; then
-        error "未找到 .workspace.md 文件"
-    fi
-    
-    # 提取 | `projects/<name>/` | 中的 <name>
-    grep -E '^\| `projects/[^/]+/`' "$workspace_md" | \
-        sed -E 's/.*`projects\/([^/]+)\/`.*/\1/' | \
-        tr '\n' ' '
+
+    scan_project_repo_dirs "$workspace_root" | \
+        while IFS= read -r repo_dir; do
+            [ -n "$repo_dir" ] && basename "$repo_dir"
+        done | sort -u | tr '\n' ' ' | sed 's/ $//'
+}
+
+# 解析项目目录
+resolve_project_dir() {
+    local project="$1"
+    local workspace_root="$2"
+
+    while IFS= read -r repo_dir; do
+        [ -z "$repo_dir" ] && continue
+
+        if [ "$(basename "$repo_dir")" = "$project" ]; then
+            echo "$repo_dir"
+            return 0
+        fi
+    done < <(scan_project_repo_dirs "$workspace_root")
+
+    return 1
 }
 
 # 验证项目名是否在可用项目列表中
 validate_project() {
     local project="$1"
     local workspace_root="$2"
-    
-    local available_projects
-    available_projects=$(get_available_projects "$workspace_root")
-    
-    if ! echo " $available_projects " | grep -q " $project "; then
+
+    if ! resolve_project_dir "$project" "$workspace_root" >/dev/null; then
+        local available_projects
+        available_projects=$(get_available_projects "$workspace_root")
         error "无效项目名: $project\n\n可用项目: $available_projects"
     fi
 }
@@ -207,10 +250,9 @@ cmd_create() {
     validate_project "$project" "$workspace_root"
     
     # 切换到子项目目录
-    local project_dir="$workspace_root/projects/$project"
-    if [ ! -d "$project_dir" ]; then
-        error "项目目录不存在: $project_dir"
-    fi
+    local project_dir
+    project_dir=$(resolve_project_dir "$project" "$workspace_root") || \
+        error "项目目录不存在: $project"
     cd "$project_dir"
 
     # 检查工作区状态
@@ -229,9 +271,6 @@ cmd_create() {
             exit 0
         fi
     fi
-
-    local root
-    root="$(git_root)"
 
     # 检查 worktree 目录是否被忽略（工作空间级）
     local worktree_base="$workspace_root/.worktrees"
@@ -349,15 +388,15 @@ cmd_list() {
     # 显示详细的 git worktree 信息
     if [ "$show_all" = true ]; then
         info "Git worktree 详细信息："
-        for project_dir in "$workspace_root/projects"/*; do
-            if [ -d "$project_dir" ] && [ -d "$project_dir/.git" ]; then
-                local project_name=$(basename "$project_dir")
-                echo ""
-                echo "项目: $project_name"
-                cd "$project_dir"
-                git worktree list 2>/dev/null | sed 's/^/  /'
-            fi
-        done
+        while IFS= read -r project_dir; do
+            [ -z "$project_dir" ] && continue
+
+            local project_name=$(basename "$project_dir")
+            echo ""
+            echo "项目: $project_name"
+            cd "$project_dir"
+            git worktree list 2>/dev/null | sed 's/^/  /'
+        done < <(scan_project_repo_dirs "$workspace_root")
     fi
 }
 
@@ -392,14 +431,10 @@ cmd_remove() {
     validate_project "$project" "$workspace_root"
 
     # 切换到子项目目录
-    local project_dir="$workspace_root/projects/$project"
-    if [ ! -d "$project_dir" ]; then
-        error "项目目录不存在: $project_dir"
-    fi
+    local project_dir
+    project_dir=$(resolve_project_dir "$project" "$workspace_root") || \
+        error "项目目录不存在: $project"
     cd "$project_dir"
-
-    local root
-    root="$(git_root)"
 
     # 转换分支名中的 / 为 -
     local branch_path=$(echo "$branch" | sed 's/\//-/g')
@@ -446,10 +481,9 @@ cmd_prune() {
     validate_project "$project" "$workspace_root"
     
     # 切换到子项目目录
-    local project_dir="$workspace_root/projects/$project"
-    if [ ! -d "$project_dir" ]; then
-        error "项目目录不存在: $project_dir"
-    fi
+    local project_dir
+    project_dir=$(resolve_project_dir "$project" "$workspace_root") || \
+        error "项目目录不存在: $project"
     cd "$project_dir"
     
     info "清理项目 '$project' 的 worktree..."
@@ -471,7 +505,7 @@ Git Worktree 管理工具 - 工作空间级管理
 
 命令：
   create <project> <branch>    创建新的 worktree
-                                <project>: 项目名（从 .workspace.md 读取）
+                                <project>: 项目名（从 projects/ 下 git 仓库自动扫描）
                                 <branch>: 分支名（分支中的 / 会转换为 -）
   
   list [project|--all]          列出 worktree
@@ -518,7 +552,7 @@ Git Worktree 管理工具 - 工作空间级管理
   $0 prune ontology
 
 注意事项：
-  - 项目名必须从 .workspace.md 中的项目列表选择
+  - 项目名必须来自工作空间 projects/ 下的 git 仓库目录
   - worktree 创建后会自动安装依赖并运行测试（可跳过）
   - 完成后务必使用 remove 清理，避免僵尸目录
   - worktree 内的提交直接写入子项目 Git 历史

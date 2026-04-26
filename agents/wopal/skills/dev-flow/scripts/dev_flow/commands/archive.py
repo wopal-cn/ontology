@@ -50,6 +50,7 @@ from dev_flow.infra.git import (
     push_branch,
     has_uncommitted_changes,
     commit_all,
+    find_worktree_script,
 )
 
 
@@ -316,6 +317,30 @@ def _cleanup_worktree(
         True if cleanup succeeded
     """
     ok = True
+    project_name = Path(project_path).name
+
+    worktree_script = find_worktree_script(workspace_root)
+    if worktree_script is not None:
+        log_step(f"Cleaning up via worktree.sh: {project_name} {branch}")
+        result = subprocess.run(
+            [
+                "bash",
+                str(worktree_script),
+                "remove",
+                project_name,
+                branch,
+                "--force",
+            ],
+            cwd=str(workspace_root),
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode == 0:
+            log_success("Worktree cleanup completed via worktree.sh")
+            return True
+
+        log_warn("worktree.sh cleanup failed, falling back to direct git cleanup")
 
     # Remove worktree
     log_step(f"Removing worktree: {worktree_path}")
