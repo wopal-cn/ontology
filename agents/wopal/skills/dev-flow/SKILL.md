@@ -112,8 +112,8 @@ flow.sh plan --title "<type>(<scope>): <description>" --project <name> --type <t
    flow.sh sync <issue> --body-only
    ```
    说明：
-   - 它不会检测“哪些章节变了”
-   - 它会根据当前 Plan 重新生成并整体覆盖 Issue body
+   - 会根据当前 Plan 重新生成 Goal、Scope、AC 等章节并覆盖 Issue body
+   - **Plan 链接仅在审批通过后（executing+）才写入真实 URL，planning 状态显示 `_待关联_`**
    - 保守策略：只要你认为 Issue body 应更新，就重新同步一次
 4. 然后必须执行：
    ```bash

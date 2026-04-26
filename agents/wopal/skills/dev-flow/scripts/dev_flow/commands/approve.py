@@ -448,13 +448,9 @@ def cmd_approve(args: argparse.Namespace) -> int:
     issue_number = get_plan_issue(plan_path)
     
     # ============================================
-    # Non --confirm mode: snapshot commit/push + await approval
+    # Non --confirm mode: validate + await approval (no auto-commit)
     # ============================================
     if not confirm:
-        # Commit and push plan file for review
-        if not _commit_and_push_plan(plan_path, issue_number, workspace_root):
-            return 1
-        
         print("Status: awaiting approval")
         print(f"Plan validated. Next: flow.sh approve {input_ref} --confirm")
         print("")

@@ -338,18 +338,21 @@ def build_issue_body_from_plan(plan_file: str, plan_name: str, repo: str) -> str
     # Extract Acceptance Criteria
     acceptance_criteria = _extract_acceptance_criteria(plan_file)
     
-    # Get project
+    # Get project and status
     metadata = get_plan_metadata(plan_file)
     project = metadata.get('project', '')
+    plan_status = metadata.get('status', 'draft')
     
-    # Build Plan link
-    if project:
-        plan_path = f"docs/products/{project}/plans/{plan_name}.md"
+    # Build Plan link — only use real link when Plan is approved (executing+)
+    if plan_status in ('planning', 'draft'):
+        plan_link = "_待关联_"
     else:
-        plan_path = f"docs/products/plans/{plan_name}.md"
-    
-    github_url = build_repo_blob_url(repo, plan_path)
-    plan_link = f"[{plan_name}]({github_url})"
+        if project:
+            plan_path = f"docs/products/{project}/plans/{plan_name}.md"
+        else:
+            plan_path = f"docs/products/plans/{plan_name}.md"
+        github_url = build_repo_blob_url(repo, plan_path)
+        plan_link = f"[{plan_name}]({github_url})"
     
     # Build sections
     sections = ""
