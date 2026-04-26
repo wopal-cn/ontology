@@ -42,7 +42,12 @@ from dev_flow.domain.issue.sync import (
     sync_plan_to_issue_body,
     ensure_issue_labels,
 )
-from dev_flow.infra.git import is_repo_dirty, is_commit_in_remote, get_relative_path
+from dev_flow.infra.git import (
+    is_repo_dirty,
+    is_commit_in_remote,
+    get_relative_path,
+    find_worktree_script,
+)
 
 
 # ============================================
@@ -190,6 +195,12 @@ def _commit_and_push_plan(plan_path: str, issue_number: int | None, workspace_ro
         else:
             plan_filename = Path(plan_path).stem
             commit_msg = f"docs(plan): approve plan {plan_filename}"
+            # Enforce commit-msg hook limits: description ≤ 60, total ≤ 72
+            max_total = 72
+            if len(commit_msg) > max_total:
+                prefix = "docs(plan): approve plan "
+                max_name = max_total - len(prefix)
+                commit_msg = prefix + plan_filename[:max_name]
 
         # git add
         add_result = subprocess.run(
@@ -211,6 +222,10 @@ def _commit_and_push_plan(plan_path: str, issue_number: int | None, workspace_ro
         )
         if commit_result.returncode != 0:
             log_error("Auto-commit failed. Please commit manually")
+            if commit_result.stdout:
+                print(commit_result.stdout, file=sys.stderr)
+            if commit_result.stderr:
+                print(commit_result.stderr, file=sys.stderr)
             return False
 
         log_success(f"Plan file committed: {commit_msg}")
@@ -296,16 +311,9 @@ def _create_worktree(project: str, branch: str, workspace_root: Path) -> bool:
     Returns:
         True if worktree creation succeeded
     """
-    # Find git-worktrees skill script
-    skill_dir = workspace_root / ".agents" / "skills" / "git-worktrees"
-    worktree_script = skill_dir / "scripts" / "worktree.sh"
-    
-    # Try alternate path
-    if not worktree_script.exists():
-        skill_dir = workspace_root / "agents" / "wopal" / "skills" / "git-worktrees"
-        worktree_script = skill_dir / "scripts" / "worktree.sh"
-    
-    if not worktree_script.exists():
+    worktree_script = find_worktree_script(workspace_root)
+
+    if worktree_script is None:
         log_warn("git-worktrees skill not found, skipping worktree creation")
         return False
     

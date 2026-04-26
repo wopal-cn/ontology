@@ -11,7 +11,7 @@ description: Workspace-level Git worktree management for parallel development ac
 
 **核心特性**：
 - 工作空间级统一管理（`.worktrees/` 目录）
-- 动态项目验证（从 `.workspace.md` 读取）
+- 动态项目验证（自动扫描 `projects/` 下包含 `.git` 的仓库）
 - 自动依赖安装和测试验证
 
 ## 快速开始
@@ -88,7 +88,7 @@ git merge hotfix/security-patch
 ```
 
 **参数**：
-- `<project>`: 项目名（从 `.workspace.md` 的项目列表中选择）
+- `<project>`: 项目名（从 `projects/` 下扫描到的 git 仓库中选择）
 - `<branch>`: 分支名（分支中的 `/` 会自动转换为 `-`）
 
 **选项**：
@@ -140,11 +140,11 @@ git merge hotfix/security-patch
 
 ## 项目列表
 
-可用项目名从工作空间根目录的 `.workspace.md` 文件动态读取。查看当前可用项目：
+可用项目名由脚本自动扫描工作空间根目录 `projects/` 下包含 `.git` 的仓库目录得到。
 
 ```bash
-# 查看 .workspace.md 中的项目列表
-grep -E '^\| `projects/[^/]+/`' .workspace.md
+# 查看脚本识别到的项目
+./scripts/worktree.sh list --all
 ```
 
 当前工作空间的项目（示例）：
@@ -156,7 +156,7 @@ grep -E '^\| `projects/[^/]+/`' .workspace.md
 
 创建 worktree 时自动执行：
 
-1. **项目验证**：检查项目名是否在 `.workspace.md` 中
+1. **项目验证**：检查项目名是否存在于 `projects/` 下的 git 仓库目录
 2. **路径构建**：构建工作空间级路径（`${workspace}/.worktrees/${project}-${branch}`）
 3. **依赖安装**：检测项目类型并安装依赖（可通过 `--no-install` 跳过）
    - Node.js: `pnpm install` 或 `npm install`
@@ -183,7 +183,7 @@ grep -E '^\| `projects/[^/]+/`' .workspace.md
 ### 常见问题
 
 **Q: 提示"无效项目名"？**
-A: 项目名必须从 `.workspace.md` 的项目列表中选择，查看可用项目：
+A: 项目名必须来自 `projects/` 下扫描到的 git 仓库目录，查看可用项目：
 ```bash
 ./scripts/worktree.sh help
 ```

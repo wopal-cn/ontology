@@ -206,6 +206,50 @@ def get_relative_path(file_path: str, base_path: str) -> str:
         return str(file)
 
 
+def find_worktree_script(workspace_root: str | Path | None = None) -> Path | None:
+    """Locate git-worktrees worktree.sh from runtime or source layouts.
+
+    Search order prefers runtime deployment paths under workspace root, then
+    falls back to source-layer paths relative to workspace root and this file.
+
+    Args:
+        workspace_root: Workspace root path if known
+
+    Returns:
+        Absolute path to worktree.sh, or None if not found
+    """
+    candidates: list[Path] = []
+
+    if workspace_root is not None:
+        root = Path(workspace_root).resolve()
+        candidates.extend([
+            root / ".agents" / "skills" / "git-worktrees" / "scripts" / "worktree.sh",
+            root / ".wopal" / "skills" / "git-worktrees" / "scripts" / "worktree.sh",
+            root / ".wopal" / "agents" / "wopal" / "skills" / "git-worktrees" / "scripts" / "worktree.sh",
+            root / "agents" / "wopal" / "skills" / "git-worktrees" / "scripts" / "worktree.sh",
+        ])
+
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        candidates.extend([
+            parent / "agents" / "wopal" / "skills" / "git-worktrees" / "scripts" / "worktree.sh",
+            parent / ".wopal" / "agents" / "wopal" / "skills" / "git-worktrees" / "scripts" / "worktree.sh",
+            parent / ".wopal" / "skills" / "git-worktrees" / "scripts" / "worktree.sh",
+            parent / ".agents" / "skills" / "git-worktrees" / "scripts" / "worktree.sh",
+        ])
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists() and resolved.is_file():
+            return resolved
+
+    return None
+
+
 def merge_branch(
     repo_path: str,
     branch: str,
