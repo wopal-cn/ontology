@@ -452,6 +452,16 @@ OpenCode 启动时自动扫描 `.opencode/plugins/*.{ts,js}`，无需在 `openco
 - `wopal-plugin/node_modules/` 包含插件的其他依赖（`@lancedb/lancedb`, `openai`, `yaml`）
 - Bun import 从 symlink 目标向上查找 `node_modules`，依赖可达
 
+### LanceDB 版本约束 ⚠️
+
+`@lancedb/lancedb-darwin-x64` 最新版本为 `0.22.3`（2025-11-07），之后 LanceDB 停止发布 macOS x64 原生绑定。`@lancedb/lancedb` 主包必须与原生绑定**版本精确一致**，否则 ABI 不兼容导致记忆系统初始化失败。
+
+- ✅ 正确：`"@lancedb/lancedb": "0.22.3"` + `"@lancedb/lancedb-darwin-x64": "0.22.3"`
+- ❌ 错误：`"@lancedb/lancedb": "^0.27.1"` + `"@lancedb/lancedb-darwin-x64": "^0.22.3"`
+- ❌ 错误：主包用 `^` 前缀（会解析到更高版本）
+
+**升级约束**：两个包必须同步升级。如需升级 LanceDB，先确认 `@lancedb/lancedb-darwin-x64` 有匹配的目标版本。
+
 ---
 
 ## 注意事项
