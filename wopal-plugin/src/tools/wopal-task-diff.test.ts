@@ -1,25 +1,12 @@
 import { describe, expect, it, vi } from "vitest"
-import { createWopalTaskDiffTool } from "./wopal-task-diff.js"
+// import { createWopalTaskDiffTool } from "./wopal-task-diff.js" // 暂时禁用 (Issue #133 backlog)
 import type { WopalTask } from "../types.js"
 
-function getExecute(toolDefinition: unknown) {
-  return (toolDefinition as { execute: (...args: unknown[]) => Promise<unknown> }).execute
-}
-
-function createMockTaskManager(
-  task?: WopalTask,
-  v2Client?: { session?: { diff?: ReturnType<typeof vi.fn>; messages?: ReturnType<typeof vi.fn> } },
-) {
-  return {
-    getTaskForParent: vi.fn((id: string, parentID: string) =>
-      task && task.id === id && task.parentSessionID === parentID ? task : undefined,
-    ),
-    getV2Client: vi.fn(() => v2Client),
-    getDirectory: vi.fn(() => "/test/dir"),
-  }
-}
-
-describe("wopal_task_diff", () => {
+// TODO: 恢复时取消 describe.skip 并恢复 import (Issue #133 backlog)
+describe.skip("wopal_task_diff", () => {
+  // Placeholder - tests disabled while tool is removed
+  const createWopalTaskDiffTool = (_manager: unknown) => ({ execute: async () => "disabled" })
+  
   const parentSessionID = "parent-session-123"
 
   function createTask(overrides?: Partial<WopalTask>): WopalTask {
