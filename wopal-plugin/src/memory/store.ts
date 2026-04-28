@@ -203,6 +203,19 @@ export class MemoryStore {
       if (typeof r.updated_at === "bigint") r.updated_at = Number(r.updated_at);
       if (typeof r.access_count === "bigint") r.access_count = Number(r.access_count);
 
+      // Handle vector: Arrow FloatVector → Float32Array
+      // LanceDB returns Arrow FloatVector objects which have a .length but are not typed arrays
+      if (r.vector && !(r.vector instanceof Float32Array)) {
+        // Arrow FloatVector has .toArray() method or can be converted via Float32Array.from
+        const arrowVector = r.vector as { length: number; toArray?: () => Float32Array };
+        if (arrowVector.toArray) {
+          r.vector = arrowVector.toArray();
+        } else if (typeof arrowVector.length === "number") {
+          // Fallback: construct Float32Array from iterable
+          r.vector = new Float32Array(arrowVector as ArrayLike<number>);
+        }
+      }
+
       return r as Memory;
     });
   }

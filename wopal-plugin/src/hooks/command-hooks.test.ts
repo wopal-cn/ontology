@@ -75,7 +75,7 @@ describe("command-hooks", () => {
     expect(output.parts[0].text).toContain("原始内容");
   });
 
-  it("hardens memory_manage tool definition", async () => {
+  it("does not harden memory_manage tool definition (happens in tool definition itself)", async () => {
     const { default: pluginDef } = await import("../index.js");
     const plugin = (pluginDef as { server: Function }).server.bind(pluginDef);
     const hooks = await plugin({
@@ -92,7 +92,7 @@ describe("command-hooks", () => {
 
     await hook({ toolID: "memory_manage" }, output);
 
-    expect(output.description).toContain("必须把 output 的完整文本逐字写入用户回复");
-    expect(output.description).toContain("严禁概括");
+    // onToolDefinition 不再 harden description，工具定义本身已包含展示义务区分
+    expect(output.description).toBe("old");
   });
 });
