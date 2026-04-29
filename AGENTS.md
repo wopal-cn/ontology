@@ -1,22 +1,7 @@
 # WopalSpace ontology — 本体能力锻造层
 
-> **定位**：WopalSpace 的 Agent 能力源码研发中心。所有修改在此，部署到 `.wopal/`，运行时加载自 `.agents/`。
+> **定位**：WopalSpace 的 Agent 能力源码研发中心。所有修改在此，部署到空间 `.wopal/` 目录。
 
----
-
-## 架构
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     WopalSpace 运行时                        │
-├─────────────────────────────────────────────────────────────┤
-│  .agents/  ←────  .wopal/  ←────  projects/ontology/    │
-│  (适配层)         (部署层)        (源码层 - 本项目)          │
-│  只读引用         只读副本         读写修改                   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**部署流**：源码层修改(非 skill) → `sync-to-wopal.py` → 部署层 → `.agents/` 引用
 
 ---
 
@@ -117,16 +102,38 @@ description: |
 
 ## 其他资源类型
 
-| 类型 | 作用 | 部署脚本 |
+| 类型 | 作用 | 部署方式 |
 |------|------|----------|
-| **命令** | 用户调用 `/xxx` | `../../scripts/sync-to-wopal.py` |
-| **规则** | 注入上下文约束 | `../../scripts/sync-to-wopal.py` |
-| **代理** | 子代理灵魂提示词 | `../../scripts/sync-to-wopal.py` |
-| **插件** | 运行时 TS 程序 | `.opencode/plugins/` (symlink 自动发现) |
+| **技能** | 可复用能力单元 | `wopal skills install` (copy → `.wopal/skills/`) |
+| **命令** | 用户调用 `/xxx` | `sync-to-wopal.py` (copy → `.wopal/commands/`) |
+| **规则** | 注入上下文约束 | `sync-to-wopal.py` (copy → `.wopal/rules/`) |
+| **代理** | 子代理灵魂提示词 | `sync-to-wopal.py` (copy → `.wopal/agents/`) |
+| **插件** | 运行时 TS 程序 | `.opencode/plugins/` symlink 自动发现 |
 
-> 脚本位于 `wopal-workspace/scripts/sync-to-wopal.py`（本项目外部）
->
-> 部署后可通过 `.wopal/<工具类型>/.versions.json` 溯源部署版本（如 `.wopal/commands/.versions.json`）
+> **技能溯源**：`.wopal/.skill-lock.json`
+> **其他资源溯源**：`.wopal/<类型>/.versions.json`
+
+---
+
+## 技能部署
+
+技能通过 `wopal skills install` 命令部署：
+
+```bash
+# 安装技能
+wopal skills install <绝对路径> --force
+
+# 卸载技能
+wopal skills remove <name> --force
+```
+
+**参数说明**：
+- `--force`：强制覆盖已存在的安装
+
+**禁止操作**：
+- 手动 `cp`/`ln -s` 技能目录
+- 直接编辑 `.wopal/skills/`
+- 手动删除技能目录（用 `wopal skills remove`）
 
 ---
 
@@ -149,29 +156,53 @@ description: |
 
 ## 资源层次与归属
 
-所有资源分为**通用层(Agent 共享)**和**Agent 专属层**：
+### 源码结构
 
-### 通用层（所有 Agent 共享）
+```
+projects/ontology/
+├── skills/              # 所有技能统一存放
+├── commands/
+│   ├── *.md             # 共享命令
+│   └── wopal/           # Wopal 专属命令
+├── rules/
+│   ├── *.md             # 共享规则  
+│   └── wopal/           # Wopal 专属规则
+├── agents/
+│   ├── wopal.md         # Wopal agent 定义
+│   ├── wopal-cn.md
+│   ├── fae.md           # Fae agent 定义
+│   └── fae-cn.md
+└── wopal-plugin/        # 插件
+```
 
-| 资源 | 源码位置 | 部署位置 |
-|------|----------|----------|
-| 命令 | `commands/` | `.wopal/commands/` |
-| 规则 | `rules/` | `.wopal/rules/` |
-| 技能 | `skills/` | `.wopal/skills/` |
+### 部署位置
 
-### Agent 专属层
+| 资源类型 | 源码位置 | 部署位置 | 部署方式 |
+|----------|----------|----------|----------|
+| 技能 | `skills/` | `.wopal/skills/` | `wopal skills install` (copy) |
+| 共享命令 | `commands/*.md` | `.wopal/commands/` | `sync-to-wopal.py` (copy) |
+| Wopal 命令 | `commands/wopal/*.md` | `.wopal/commands/wopal/` | `sync-to-wopal.py` (copy) |
+| 共享规则 | `rules/*.md` | `.wopal/rules/` | `sync-to-wopal.py` (copy) |
+| Wopal 规则 | `rules/wopal/*.md` | `.wopal/rules/wopal/` | `sync-to-wopal.py` (copy) |
+| Agent 定义 | `agents/*.md` | `.wopal/agents/` | `sync-to-wopal.py` (copy) |
+| 插件 | `wopal-plugin/` | `.opencode/plugins/` | symlink 自动发现 |
 
-| Agent | 资源 | 源码位置 | 部署位置 |
-|-------|------|----------|----------|
-| **Wopal** | 命令 | `agents/wopal/commands/` | `.wopal/agents/wopal/commands/` |
-| | 规则 | `agents/wopal/rules/` | `.wopal/agents/wopal/rules/` |
-| | 技能 | `agents/wopal/skills/` | `.wopal/agents/wopal/skills/` |
-| | 代理 | `agents/wopal/agents/` | `.wopal/agents/wopal/agents/` |
-| **Fae** | 命令 | `agents/fae/commands/` | `.wopal/agents/fae/commands/` |
-| | 规则 | `agents/fae/rules/` | `.wopal/agents/fae/rules/` |
-| | 技能 | `agents/fae/skills/` | `.wopal/agents/fae/skills/` |
-| **通用** | 插件 | `wopal-plugin/` | `.opencode/plugins/` (symlink 自动发现) |
+### Agent 技能权限
 
-**原则**：通用层优先，专用层补充(重名则覆盖通用层)。修改通用层影响所有 Agent。
+Agent 通过 `permission.skill` 配置控制技能可见性：
+
+```yaml
+# Fae 示例：仅允许特定技能
+permission:
+  skill:
+    "*": deny
+    project-worktrees: allow
+
+# Wopal 示例：允许所有技能
+permission:
+  "*": allow
+```
+
+**原则**：技能统一部署，通过 Permission 实现隔离。修改 `permission.skill` 即可调整 Agent 可用技能。
 
 

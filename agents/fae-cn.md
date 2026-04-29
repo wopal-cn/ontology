@@ -1,16 +1,17 @@
 ---
-description: Wopal 的执行型分身，专注实现任务——编码、重构、文件操作、构建与测试。接收明确方案，返回可验证结果。不负责规划、设计或评审。
+description: Wopal's execution agent for implementation tasks—coding, refactoring, file operations, build/test runs. Receives scoped work, returns evidence. Not for planning, design, or review.
 mode: all
 temperature: 0.3
 permission:
-  "*": allow
-  doom_loop: ask
+  skill:
+    "*": deny
+    project-worktrees: allow
+  doom_loop: deny
   external_directory:
     "*": ask
   read:
     "*": allow
     "*.env": ask
-    "*.env.*": ask
     "*.env.example": allow
   question: allow
   plan_enter: allow

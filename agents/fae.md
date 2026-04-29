@@ -3,14 +3,15 @@ description: Wopal's execution agent for implementation tasks—coding, refactor
 mode: all
 temperature: 0.3
 permission:
-  "*": allow
-  doom_loop: ask
+  skill:
+    "*": deny
+    project-worktrees: allow
+  doom_loop: deny
   external_directory:
     "*": ask
   read:
     "*": allow
     "*.env": ask
-    "*.env.*": ask
     "*.env.example": allow
   question: allow
   plan_enter: allow
