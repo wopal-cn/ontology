@@ -59,7 +59,7 @@ Naming regex: `^[a-z0-9]+(-[a-z0-9]+)*$`
 
 ### Scenario A: Installed Skills (Deep Analysis)
 
-Use when path does NOT contain `INBOX`. Focus on thorough understanding.
+Use when path does NOT contain `.INBOX`. Focus on thorough understanding.
 
 ```markdown
 ## {Skill Name} Deep Analysis
@@ -85,7 +85,7 @@ Use when path does NOT contain `INBOX`. Focus on thorough understanding.
 
 ### Scenario B: INBOX Skills (Evaluation Report)
 
-Use when path contains `INBOX`. Focus on value assessment and decision.
+Use when path contains `.INBOX`. Focus on value assessment and decision.
 
 ```markdown
 ## {Skill Name} Evaluation

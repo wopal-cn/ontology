@@ -197,7 +197,3 @@ git merge feature/new-skill --no-ff
 - worktree 内的提交直接写入当前项目 Git 历史
 - 使用 `--force` 选项可跳过交互确认，适合 Agent 自动化场景
 
-## 脚本位置
-
-- 源码：`projects/ontology/skills/my-skills/project-worktrees/scripts/worktree.sh`
-- 部署后：`.agents/skills/project-worktrees/scripts/worktree.sh`

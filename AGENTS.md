@@ -1,7 +1,6 @@
 # WopalSpace ontology — 本体能力锻造层
 
-> **定位**：WopalSpace 的 Agent 能力源码研发中心。所有修改在此，部署到空间 `.wopal/` 目录。
-
+> **定位**：WopalSpace 的 Agent 能力研发中心。
 
 ---
 
@@ -96,45 +95,6 @@ description: |
 
 大参考文件（>300 行）包含目录，便于定位。
 
-> 部署后可通过 `.wopal/.skill-lock.json` 溯源技能版本
-
----
-
-## 其他资源类型
-
-| 类型 | 作用 | 部署方式 |
-|------|------|----------|
-| **技能** | 可复用能力单元 | `wopal skills install` (copy → `.wopal/skills/`) |
-| **命令** | 用户调用 `/xxx` | `sync-to-wopal.py` (copy → `.wopal/commands/`) |
-| **规则** | 注入上下文约束 | `sync-to-wopal.py` (copy → `.wopal/rules/`) |
-| **代理** | 子代理灵魂提示词 | `sync-to-wopal.py` (copy → `.wopal/agents/`) |
-| **插件** | 运行时 TS 程序 | `.opencode/plugins/` symlink 自动发现 |
-
-> **技能溯源**：`.wopal/.skill-lock.json`
-> **其他资源溯源**：`.wopal/<类型>/.versions.json`
-
----
-
-## 技能部署
-
-技能通过 `wopal skills install` 命令部署：
-
-```bash
-# 安装技能
-wopal skills install <绝对路径> --force
-
-# 卸载技能
-wopal skills remove <name> --force
-```
-
-**参数说明**：
-- `--force`：强制覆盖已存在的安装
-
-**禁止操作**：
-- 手动 `cp`/`ln -s` 技能目录
-- 直接编辑 `.wopal/skills/`
-- 手动删除技能目录（用 `wopal skills remove`）
-
 ---
 
 ## 插件开发
@@ -149,8 +109,6 @@ wopal skills remove <name> --force
 | **任务委派** | 非阻塞子会话启动、状态监控、双向通信 |
 | **记忆系统** | LanceDB 存储、语义检索、蒸馏注入 |
 | **上下文管理** | 会话摘要、session title 管理 |
-
-**部署机制**：通过 `.opencode/plugins/` symlink 自动发现，无需 `sync-to-wopal.py`。详见插件模块文档。
 
 ---
 
@@ -174,18 +132,6 @@ projects/ontology/
 │   └── fae-cn.md
 └── wopal-plugin/        # 插件
 ```
-
-### 部署位置
-
-| 资源类型 | 源码位置 | 部署位置 | 部署方式 |
-|----------|----------|----------|----------|
-| 技能 | `skills/` | `.wopal/skills/` | `wopal skills install` (copy) |
-| 共享命令 | `commands/*.md` | `.wopal/commands/` | `sync-to-wopal.py` (copy) |
-| Wopal 命令 | `commands/wopal/*.md` | `.wopal/commands/wopal/` | `sync-to-wopal.py` (copy) |
-| 共享规则 | `rules/*.md` | `.wopal/rules/` | `sync-to-wopal.py` (copy) |
-| Wopal 规则 | `rules/wopal/*.md` | `.wopal/rules/wopal/` | `sync-to-wopal.py` (copy) |
-| Agent 定义 | `agents/*.md` | `.wopal/agents/` | `sync-to-wopal.py` (copy) |
-| 插件 | `wopal-plugin/` | `.opencode/plugins/` | symlink 自动发现 |
 
 ### Agent 技能权限
 
