@@ -554,17 +554,6 @@ zenobi-us/opencode-skillful
 ## Paths, filenames, globs, and URLs
 
 ```text
-./.opencode/themes/*.json
-./<project-slug>/storage/
-./config/#custom-directory
-./global/storage/
-.agents/skills/*/SKILL.md
-.agents/skills/<name>/SKILL.md
-.clang-format
-.claude
-.claude/skills
-.claude/skills/*/SKILL.md
-.claude/skills/<name>/SKILL.md
 .env
 .github/workflows/opencode.yml
 .gitignore
