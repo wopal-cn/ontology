@@ -51,6 +51,7 @@ package.json
 
 # tmp
 .INBOX
+wsf-file-manifest.json
 # ai
 .opencode
 
