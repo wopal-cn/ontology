@@ -193,7 +193,7 @@ export class SimpleTaskManager {
       return { ok: false, message: "Task not found or not owned by this session" }
     }
 
-    if (task.status === 'running') {
+    if (task.status === 'running' && !task.idleNotified) {
       return { ok: false, message: "Task is still running. Please verify completion before deleting (use wopal_task_output to check status)." }
     }
 
