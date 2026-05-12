@@ -465,13 +465,17 @@ def commit_archived_plan(
         return False
 
     # Build commit message
+    prefix = "chore: archive plan "
+    max_desc = 60  # hook limit
     if issue_number:
         commit_msg = f"chore: archive plan #{issue_number}"
     else:
         plan_name = Path(archived_file).stem
         # Strip YYYYMMDD- prefix for hook length limit (≤60 chars)
         plan_name = re.sub(r'^\d{8}-', '', plan_name)
-        commit_msg = f"chore: archive plan {plan_name}"
+        if len(prefix) + len(plan_name) > max_desc:
+            plan_name = plan_name[: max_desc - len(prefix) - 3] + "..."
+        commit_msg = f"{prefix}{plan_name}"
 
     # Commit
     result = subprocess.run(
