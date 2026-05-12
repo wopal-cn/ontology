@@ -1,4 +1,5 @@
-import type { SessionMessage } from "../types.js"
+// Merged from progress-tracker.ts + progress-analyzer.ts
+import type { SessionMessage, WopalTask } from "../types.js"
 import { createDebugLog } from "../debug.js"
 import {
   getMessageTime,
@@ -8,6 +9,31 @@ import {
 } from "./session-messages.js"
 
 const debugLog = createDebugLog("[wopal-task]", "task")
+
+// --- progress-tracker ---
+
+const MEANINGFUL_PART_TYPES = new Set(["tool", "text"])
+
+export function isMeaningfulActivity(partType: string | undefined): boolean {
+  return MEANINGFUL_PART_TYPES.has(partType ?? "")
+}
+
+export function trackActivity(task: WopalTask, partType: string | undefined): boolean {
+  if (!isMeaningfulActivity(partType)) return false
+  if (!task.progress) return false
+
+  const now = new Date()
+  task.progress.lastMeaningfulActivity = now
+  task.progress.lastUpdate = now
+
+  if (partType === "tool") {
+    task.progress.toolCalls++
+  }
+
+  return true
+}
+
+// --- progress-analyzer ---
 
 export interface ProgressInfo {
   totalMessages: number
@@ -20,7 +46,7 @@ export interface ProgressInfo {
 
 /**
  * Analyze progress information from session messages.
- * 
+ *
  * @param allMessages - All messages in the session
  * @param newMessages - Messages since last check
  * @returns Progress information including counts, tool calls, and activity

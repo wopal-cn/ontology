@@ -120,7 +120,7 @@ describe("handleQuestionAsked", () => {
     expect(notification).toContain("**Options:**")
   })
 
-  it("notifyParent 失败不崩溃：捕获异常，不传播", async () => {
+  it("notifyParent 失败不崩溃：sendNotification 内部捕获异常，事件仍视为已处理", async () => {
     const mockClient = createMockClient()
     const mockManager = createMockTaskManager(mockTask, mockClient)
     mockClient.session.promptAsync.mockRejectedValueOnce(new Error("Network error"))
@@ -133,10 +133,10 @@ describe("handleQuestionAsked", () => {
       },
     }
 
-    // Should not throw
+    // sendNotification catches errors internally (best-effort), so event is still handled
     const result = await handleQuestionAsked(event, mockManager)
 
-    expect(result).toBe(false) // Failed, returns false
+    expect(result).toBe(true)
   })
 
   it("无 requestID 时：pendingQuestionID 不设置", async () => {

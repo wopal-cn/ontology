@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { analyzeProgress } from "./progress-analyzer.js"
+import { analyzeProgress } from "./progress.js"
 import type { SessionMessage } from "../types.js"
 
 describe("analyzeProgress", () => {

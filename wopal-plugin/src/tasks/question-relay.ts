@@ -1,6 +1,7 @@
 import type { SimpleTaskManager } from "./simple-task-manager.js"
 import { createDebugLog, type DebugLog } from "../debug.js"
 import { toErrorMessage } from "./utils.js"
+import { sendNotification } from "./task-notifier.js"
 
 const defaultDebugLog = createDebugLog("[wopal-task]", "task")
 
@@ -101,22 +102,6 @@ This question requires your attention. The background task is waiting.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const client = taskManager.getClient() as any
 
-  if (typeof client?.session?.promptAsync !== "function") {
-    log(`[question] session.promptAsync unavailable for notification`)
-    return
-  }
-
-  try {
-    await client.session.promptAsync({
-      path: { id: task.parentSessionID },
-      body: {
-        noReply: true,
-        parts: [{ type: "text", text: notification, synthetic: true }],
-      },
-    })
-    log(`[question] notified parent for task ${taskId}`)
-  } catch (err) {
-    log(`[question] notify parent failed for task ${taskId}: ${toErrorMessage(err)}`)
-    throw err // Re-throw to be caught by caller
-  }
+  await sendNotification({ client, debugLog: log }, task.parentSessionID, notification, true)
+  log(`[question] notified parent for task ${taskId}`)
 }

@@ -1,6 +1,7 @@
 import type { SimpleTaskManager } from "./simple-task-manager.js"
 import { createDebugLog, createWarnLog, type DebugLog } from "../debug.js"
 import { toErrorMessage } from "./utils.js"
+import { sendNotification } from "./task-notifier.js"
 
 const defaultDebugLog = createDebugLog("[wopal-task]", "task")
 const defaultWarnLog = createWarnLog("[wopal-task]")
@@ -95,6 +96,12 @@ async function notifyParentPermission(
 ): Promise<void> {
   const log = debugLog ?? defaultDebugLog
 
+  const task = taskManager.getTask(taskId)
+  if (!task) {
+    log(`[permission] task not found for notification: ${taskId}`)
+    return
+  }
+
   const notification = `<system-reminder>
 [WOPAL TASK PERMISSION]
 **Task ID:** \`${taskId}\`
@@ -106,29 +113,7 @@ Permission was auto-approved for this background task.
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const client = taskManager.getClient() as any
-  const task = taskManager.getTask(taskId)
 
-  if (!task) {
-    log(`[permission] task not found for notification: ${taskId}`)
-    return
-  }
-
-  if (typeof client?.session?.promptAsync !== "function") {
-    log(`[permission] session.promptAsync unavailable for notification`)
-    return
-  }
-
-  try {
-    await client.session.promptAsync({
-      path: { id: task.parentSessionID },
-      body: {
-        noReply: true,
-        parts: [{ type: "text", text: notification, synthetic: true }],
-      },
-    })
-    log(`[permission] notified parent for task ${taskId}`)
-  } catch (err) {
-    // 捕获异常，不传播
-    log(`[permission] notify parent failed for task ${taskId}: ${toErrorMessage(err)}`)
-  }
+  await sendNotification({ client, debugLog: log }, task.parentSessionID, notification, true)
+  log(`[permission] notified parent for task ${taskId}`)
 }

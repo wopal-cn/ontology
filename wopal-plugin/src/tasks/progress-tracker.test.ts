@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { isMeaningfulActivity, trackActivity } from "./progress-tracker.js"
+import { isMeaningfulActivity, trackActivity } from "./progress.js"
 import type { WopalTask } from "../types.js"
 
 function createTask(overrides: Partial<WopalTask> = {}): WopalTask {
