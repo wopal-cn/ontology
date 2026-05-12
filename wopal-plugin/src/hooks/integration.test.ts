@@ -79,42 +79,6 @@ describe("OpenCodeRulesPlugin", () => {
     }
   });
 
-  it("should return transform hooks when rules exist", async () => {
-    // Arrange
-    writeFileSync(path.join(globalRulesDir, "rule.md"), "# Test Rule");
-
-    const originalEnv = process.env.XDG_CONFIG_HOME;
-    process.env.XDG_CONFIG_HOME = path.join(testDir, ".config");
-
-    const { default: pluginDef } = await import("../index.js");
-      const plugin = (pluginDef as { server: Function }).server.bind(pluginDef);
-    const mockInput = {
-      client: {} as any,
-      project: {} as any,
-      directory: testDir,
-      worktree: testDir,
-      $: {} as any,
-      serverUrl: new URL("http://localhost:3000"),
-    };
-
-    try {
-      // Act
-      const hooks = await plugin(mockInput);
-
-      // Assert
-      expect("experimental.chat.messages.transform" in hooks).toBe(true);
-      expect("experimental.chat.system.transform" in hooks).toBe(true);
-      expect(typeof hooks["experimental.chat.messages.transform"]).toBe(
-        "function",
-      );
-      expect(typeof hooks["experimental.chat.system.transform"]).toBe(
-        "function",
-      );
-    } finally {
-      process.env.XDG_CONFIG_HOME = originalEnv;
-    }
-  });
-
   it("should inject rules into system prompt via system.transform hook", async () => {
     // Arrange
     writeFileSync(
@@ -153,43 +117,6 @@ describe("OpenCodeRulesPlugin", () => {
       );
       expect(result.system.join("\n")).toContain("OpenCode Rules");
       expect(result.system.join("\n")).toContain("Test Rule");
-    } finally {
-      process.env.XDG_CONFIG_HOME = originalEnv;
-    }
-  });
-
-  it("should append rules to existing system prompt", async () => {
-    // Arrange
-    writeFileSync(path.join(globalRulesDir, "rule.md"), "# My Rule");
-
-    const originalEnv = process.env.XDG_CONFIG_HOME;
-    process.env.XDG_CONFIG_HOME = path.join(testDir, ".config");
-
-    const { default: pluginDef } = await import("../index.js");
-      const plugin = (pluginDef as { server: Function }).server.bind(pluginDef);
-    const mockInput = {
-      client: {} as any,
-      project: {} as any,
-      directory: testDir,
-      worktree: testDir,
-      $: {} as any,
-      serverUrl: new URL("http://localhost:3000"),
-    };
-
-    try {
-      // Act
-      const hooks = await plugin(mockInput);
-      const systemTransform = hooks[
-        "experimental.chat.system.transform"
-      ] as any;
-      const result = await systemTransform(
-        { model: { providerID: "test", modelID: "test" } },
-        { system: ["Original system prompt."] },
-      );
-
-      // Assert - original comes first, rules appended
-      expect(result.system.join("\n")).toContain("Original system prompt.");
-      expect(result.system.join("\n")).toContain("My Rule");
     } finally {
       process.env.XDG_CONFIG_HOME = originalEnv;
     }

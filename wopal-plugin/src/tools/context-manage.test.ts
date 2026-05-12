@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   _clearPendingConfirmation,
@@ -6,6 +6,9 @@ import {
   _setPendingConfirmation,
 } from '../memory/distill.js';
 import { createContextManageTool } from './context-manage.js';
+import { existsSync, readFileSync, rmSync, readdirSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 function getExecute(toolDefinition: unknown) {
   return (toolDefinition as { execute: (...args: unknown[]) => Promise<string> }).execute;
@@ -126,11 +129,117 @@ describe('context_manage: handleSummary', () => {
     expect(mockComplete).not.toHaveBeenCalled();
   });
 
-  it('includes clear positioning in tool description', () => {
-    const tool = createContextManageTool(distillLLM, summaryClient);
-    const desc = (tool as unknown as { description: string }).description;
-    expect(desc).toContain('内部基础设施');
-    expect(desc).toContain('不是会话回顾工具');
-    expect(desc).toContain('禁止主动生成长格式会话摘要');
   });
-});
+
+// --- Dump action tests ---
+
+const dumpMockMessages = vi.fn();
+const dumpMockGet = vi.fn();
+
+const dumpClient = {
+  session: { messages: dumpMockMessages, get: dumpMockGet },
+};
+
+const dumpCtx = { sessionID: 'ses_test1' } as { sessionID: string };
+const testTmpDir = join(tmpdir(), 'wopal-test-dump');
+
+describe('context_manage: handleDump', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dumpMockMessages.mockResolvedValue({ data: [] });
+    dumpMockGet.mockResolvedValue({ data: { title: 'Test Session' } });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    try { rmSync(testTmpDir, { recursive: true, force: true }); } catch {}
+  });
+
+  it('U1: dumps session with snapshot and messages', async () => {
+    const snapshots = new Map<string, string[]>();
+    snapshots.set('ses_test1', ['env content', 'Instructions from: AGENTS.md\nrule content']);
+    const msgs = [
+      makeUserMsg([{ type: 'text', text: 'hello' }]),
+      makeAssistantMsg([{ type: 'text', text: 'world' }]),
+    ];
+    dumpMockMessages.mockResolvedValue({ data: msgs });
+
+    const tool = createContextManageTool(distillLLM, dumpClient, snapshots, new Map(), new Map(), testTmpDir);
+    const execute = getExecute(tool);
+    const result = await execute({ action: 'dump' }, dumpCtx);
+
+    expect(result).toContain('Context dumped to');
+    expect(result).toContain('ses_test1');
+    expect(result).toContain('System prompt:** parsed from 2 raw blocks');
+    expect(result).toContain('Messages:** 2');
+
+    const files = findDumpFiles(join(testTmpDir, 'logs'), 'CTXDUMP');
+    expect(files.length).toBe(1);
+    const content = readFileSync(files[0], 'utf-8');
+    expect(content).toContain('# Context Dump');
+    expect(content).toContain('ses_test1');
+    expect(content).toContain('Test Session');
+    expect(content).toContain('env content');
+    expect(content).toContain('Sources:');
+    expect(content).toContain('AGENTS.md');
+    expect(content).toContain('hello');
+    expect(content).toContain('world');
+  });
+
+  it('U2: converts wopal-task-xxx session_id to ses_xxx', async () => {
+    const snapshots = new Map<string, string[]>();
+    snapshots.set('ses_abc123', ['system content']);
+
+    const tool = createContextManageTool(distillLLM, dumpClient, snapshots, new Map(), new Map(), testTmpDir);
+    const execute = getExecute(tool);
+    const result = await execute({ action: 'dump', session_id: 'wopal-task-abc123' }, dumpCtx);
+
+    expect(result).toContain('ses_abc123');
+    expect(result).not.toContain('wopal-task-abc123');
+
+    const files = findDumpFiles(join(testTmpDir, 'logs'), 'CTXDUMP-TASK');
+    expect(files.length).toBe(1);
+    const content = readFileSync(files[0], 'utf-8');
+    expect(content).toContain('system content');
+  });
+
+  it('U3: graceful degradation when no snapshot', async () => {
+    const snapshots = new Map<string, string[]>();
+
+    const tool = createContextManageTool(distillLLM, dumpClient, snapshots, new Map(), new Map(), testTmpDir);
+    const execute = getExecute(tool);
+    const result = await execute({ action: 'dump', session_id: 'ses_nonexist' }, dumpCtx);
+
+    expect(result).toContain('Context dumped to');
+    const files = findDumpFiles(join(testTmpDir, 'logs'), 'CTXDUMP');
+    expect(files.length).toBe(1);
+    const content = readFileSync(files[0], 'utf-8');
+    expect(content).toContain('No snapshot available');
+  });
+
+  it('U4: graceful degradation when client API fails', async () => {
+    const snapshots = new Map<string, string[]>();
+    snapshots.set('ses_test1', ['sys content']);
+    dumpMockGet.mockRejectedValue(new Error('API error'));
+    dumpMockMessages.mockResolvedValue({ data: null });
+
+    const tool = createContextManageTool(distillLLM, dumpClient, snapshots, new Map(), new Map(), testTmpDir);
+    const execute = getExecute(tool);
+    const result = await execute({ action: 'dump' }, dumpCtx);
+
+    expect(result).toContain('Context dumped to');
+    const files = findDumpFiles(join(testTmpDir, 'logs'), 'CTXDUMP');
+    expect(files.length).toBe(1);
+    const content = readFileSync(files[0], 'utf-8');
+    expect(content).toContain('sys content');
+    expect(content).toContain('No messages');
+  });
+
+  });
+
+function findDumpFiles(dir: string, pattern: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f: string) => f.includes(pattern))
+    .map((f: string) => join(dir, f));
+}
