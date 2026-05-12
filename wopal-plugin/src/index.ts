@@ -7,6 +7,7 @@
  */
 
 import type { PluginInput, Hooks } from "@opencode-ai/plugin";
+import type { SystemPromptMetadata } from "./types.js";
 import { createOpencodeClient as createV2OpencodeClient } from "@opencode-ai/sdk/v2";
 import { discoverRuleFiles } from "./rules/index.js";
 import { createHookContext, createAllHooks } from "./hooks/index.js";
@@ -110,6 +111,9 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
   );
 
   const memory = await ensureMemorySystem();
+  const systemSnapshots = new Map<string, string[]>();
+  const systemMetadataMap = new Map<string, SystemPromptMetadata>();
+  const systemInjectionsMap = new Map<string, string[]>();
 
   const ctx = createHookContext({
     client: pluginInput.client,
@@ -120,6 +124,9 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
     debugLog,
     taskManager,
     memoryInjector: memory?.injector,
+    systemSnapshots,
+    systemMetadataMap,
+    systemInjectionsMap,
   });
 
   const hooks = createAllHooks(ctx);
@@ -132,6 +139,10 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
     tools.context_manage = createContextManageTool(
       memory.llm,
       pluginInput.client,
+      systemSnapshots,
+      systemMetadataMap,
+      systemInjectionsMap,
+      pluginInput.directory,
     );
   }
 

@@ -116,3 +116,26 @@ export type InterruptResult =
 export type CancelResult = InterruptResult
 
 // SNAPSHOT-TEST [2026-04-14 17:20:08]
+
+// System prompt metadata types (pending @opencode-ai/plugin release)
+// These will be provided by ellamaka's hook input at runtime
+export type SystemPromptSectionKind =
+  | "agent-prompt"
+  | "provider-prompt"
+  | "environment"
+  | "instruction"
+  | "skill"
+  | "structured-output"
+  | "user-system"
+  | "custom"
+
+export interface SystemPromptSection {
+  kind: SystemPromptSectionKind
+  content: string
+  source?: string
+}
+
+export interface SystemPromptMetadata {
+  version: 1
+  sections: SystemPromptSection[]
+}

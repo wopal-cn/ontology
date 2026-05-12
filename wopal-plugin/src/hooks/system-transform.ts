@@ -8,7 +8,12 @@ import type { DiscoveredRule } from "../rules/index.js";
 import type { SessionStore } from "../session-store.js";
 import type { MemoryInjector } from "../memory/index.js";
 import type { DebugLog } from "../debug.js";
+import type { SystemPromptMetadata } from "../types.js";
+import { createDebugLog, isDebugEnabled } from "../debug.js";
 import type { Model } from "@opencode-ai/sdk";
+
+const ctxDebugLog = createDebugLog("[wopal-context]", "context");
+import { writeContextDump } from "../tools/dump-formatter.js";
 import {
   injectRules,
   queryAvailableToolIDs,
@@ -24,6 +29,7 @@ import {
 interface SystemTransformInput {
   sessionID?: string;
   model: Model;
+  systemMetadata?: SystemPromptMetadata;
 }
 
 export interface SystemTransformHookContext {
@@ -38,6 +44,9 @@ export interface SystemTransformHookContext {
   memoryInjector: MemoryInjector | undefined;
   childSessionCache: Map<string, boolean>;
   taskManager: { findBySession: (sessionID: string) => unknown } | undefined;
+  systemSnapshots?: Map<string, string[]>;
+  systemMetadataMap?: Map<string, SystemPromptMetadata>;
+  systemInjectionsMap?: Map<string, string[]>;
 }
 
 export function createSystemTransformHooks(ctx: SystemTransformHookContext) {
@@ -85,6 +94,9 @@ export function createSystemTransformHooks(ctx: SystemTransformHookContext) {
       output.system = [];
     }
 
+    // Record initial length before plugin injections
+    const initialSystemLength = output.system.length;
+
     const skillsToReload = sessionID
       ? ctx.sessionStore.consumeSkillReload(sessionID)
       : null;
@@ -114,6 +126,41 @@ export function createSystemTransformHooks(ctx: SystemTransformHookContext) {
     // Memory injection (after rules, into same system array)
     if (sessionID) {
       await injectMemoriesIntoSystem(memoryInjectorCtx, sessionID, output);
+    }
+
+    // Snapshot system prompt for context dump
+    if (sessionID && ctx.systemSnapshots) {
+      ctx.systemSnapshots.set(sessionID, [...output.system]);
+    }
+
+    // Store structured metadata if available
+    if (sessionID && hookInput.systemMetadata && ctx.systemMetadataMap) {
+      ctx.systemMetadataMap.set(sessionID, hookInput.systemMetadata);
+      ctx.debugLog(`Stored systemMetadata for session ${sessionID}: ${hookInput.systemMetadata.sections.length} sections`);
+    } else if (sessionID && ctx.systemMetadataMap) {
+      ctx.debugLog(`No systemMetadata in hook input for session ${sessionID} (keys in map: ${ctx.systemMetadataMap.size})`);
+    }
+
+    // Store plugin injections (content appended after OpenCode's original system blocks)
+    if (sessionID && ctx.systemInjectionsMap && output.system.length > initialSystemLength) {
+      ctx.systemInjectionsMap.set(sessionID, output.system.slice(initialSystemLength));
+    }
+
+    // Auto-dump: requires explicit "context" module (not triggered by "all" wildcard)
+    const debug = process.env.WOPAL_PLUGIN_DEBUG;
+    const explicitContext = debug && debug.toLowerCase().split(",").map(m => m.trim()).includes("context");
+    if (sessionID && explicitContext) {
+      ctxDebugLog(`[auto-dump] triggered for session ${sessionID}`);
+      void writeContextDump({
+        sessionID,
+        baseDir: ctx.directory,
+        filenamePrefix: "AUTO-CTXDUMP",
+        systemSnapshots: ctx.systemSnapshots ?? new Map(),
+        systemMetadataMap: ctx.systemMetadataMap ?? new Map(),
+        systemInjectionsMap: ctx.systemInjectionsMap,
+        client: ctx.client,
+        detail: false,
+      }).catch(err => ctx.debugLog(`[auto-dump] error: ${err}`));
     }
 
     return output;

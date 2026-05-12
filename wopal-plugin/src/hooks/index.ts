@@ -3,6 +3,7 @@ import type { SessionStore } from "../session-store.js";
 import type { SimpleTaskManager } from "../tasks/simple-task-manager.js";
 import type { MemoryInjector } from "../memory/index.js";
 import type { DiscoveredRule } from "../rules/index.js";
+import type { SystemPromptMetadata } from "../types.js";
 import { createCommandHooks } from "./command-hooks.js";
 import { createMessageHooks } from "./message-hooks.js";
 import { createSystemTransformHooks } from "./system-transform.js";
@@ -19,6 +20,9 @@ export interface HookContextOptions {
   now?: () => number;
   taskManager?: SimpleTaskManager;
   memoryInjector?: MemoryInjector | undefined;
+  systemSnapshots?: Map<string, string[]>;
+  systemMetadataMap?: Map<string, SystemPromptMetadata>;
+  systemInjectionsMap?: Map<string, string[]>;
 }
 
 export interface HookContext {
@@ -34,6 +38,9 @@ export interface HookContext {
   taskManager: SimpleTaskManager | undefined;
   memoryInjector: MemoryInjector | undefined;
   childSessionCache: Map<string, boolean>;
+  systemSnapshots: Map<string, string[]>;
+  systemMetadataMap: Map<string, SystemPromptMetadata>;
+  systemInjectionsMap: Map<string, string[]>;
 }
 
 export function createHookContext(opts: HookContextOptions): HookContext {
@@ -50,6 +57,9 @@ export function createHookContext(opts: HookContextOptions): HookContext {
     taskManager: opts.taskManager ?? undefined,
     memoryInjector: opts.memoryInjector,
     childSessionCache: new Map<string, boolean>(),
+    systemSnapshots: opts.systemSnapshots ?? new Map(),
+    systemMetadataMap: opts.systemMetadataMap ?? new Map(),
+    systemInjectionsMap: opts.systemInjectionsMap ?? new Map(),
   };
 }
 
@@ -78,6 +88,9 @@ export function createAllHooks(ctx: HookContext): Record<string, unknown> {
     memoryInjector: ctx.memoryInjector,
     childSessionCache: ctx.childSessionCache,
     taskManager: ctx.taskManager,
+    systemSnapshots: ctx.systemSnapshots,
+    systemMetadataMap: ctx.systemMetadataMap,
+    systemInjectionsMap: ctx.systemInjectionsMap,
   });
 
   const eventRouter = createEventRouter({

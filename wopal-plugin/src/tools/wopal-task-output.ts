@@ -94,8 +94,8 @@ export function createWopalOutputTool(manager: SimpleTaskManager): ToolDefinitio
             debugLog(`[progress] fetching session status for ${task.sessionID}`)
             const statusResult = await client.session.status()
             if (statusResult && typeof statusResult === "object") {
-              const statusData = statusResult as Record<string, { type?: string }>
-              sessionStatus = statusData[task.sessionID]?.type ?? "unknown"
+              const statusMap = (statusResult.data ?? statusResult) as Record<string, { type?: string }>
+              sessionStatus = statusMap[task.sessionID]?.type ?? "unknown"
             }
           }
         } catch {

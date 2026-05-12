@@ -11,7 +11,7 @@ export type DebugLog = LogFn;
  * - "rules" for [wopal-rules] prefix
  * - "task" for [wopal-task] prefix
  */
-export type DebugModule = "rules" | "task" | "memory";
+export type DebugModule = "rules" | "task" | "memory" | "context";
 
 function getLogFile(): string {
   const logPath = process.env.WOPAL_PLUGIN_LOG_FILE;
@@ -65,14 +65,14 @@ function formatCSTTimestamp(): string {
  * - "memory" → enable only memory module
  * - "task,rules,memory" → enable multiple modules (comma-separated)
  */
-function isDebugEnabled(module: DebugModule): boolean {
+export function isDebugEnabled(module: DebugModule): boolean {
   const debug = process.env.WOPAL_PLUGIN_DEBUG;
   if (!debug) {
     return false;
   }
 
   const normalized = debug.trim().toLowerCase();
-  
+
   // Enable all
   if (normalized === "1" || normalized === "*" || normalized === "all") {
     return true;
