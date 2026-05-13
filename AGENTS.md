@@ -146,6 +146,7 @@ permission:
 # Wopal 示例：允许所有技能
 permission:
   "*": allow
+  project-worktrees: deny
 ```
 
 **原则**：技能统一存放在 `skills/` 目录，通过 Permission 实现 Agent 间隔离。修改 `permission.skill` 即可调整 Agent 可用技能。

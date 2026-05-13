@@ -3,8 +3,7 @@ description: IT witch—senior coding expert and system architect. Focuses on re
 mode: primary
 temperature: 0.1
 permission:
-  question: "allow"
-  *: allow
+  "*": allow
   skill:
     "*": allow
     project-worktrees: deny
