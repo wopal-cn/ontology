@@ -23,8 +23,9 @@ import sys
 from pathlib import Path
 
 from dev_flow.core.logging import log_info, log_success, log_error, log_warn
-from dev_flow.core.workspace import find_workspace_root, detect_space_repo
+from dev_flow.core.workspace import find_workspace_root
 from dev_flow.core.status import update_plan_status
+from dev_flow.core.workflow import guard_status, resolve_space_repo
 from dev_flow.domain.plan.find import find_plan, find_plan_by_issue
 from dev_flow.domain.plan.metadata import (
     get_plan_field,
@@ -212,19 +213,7 @@ def cmd_complete(args: argparse.Namespace) -> int:
         return 1
 
     # 3. Validate state is "executing"
-    if current_status != "executing":
-        log_error(f"Plan must be in executing state to complete (current: {current_status})")
-        log_error("")
-
-        suggestion_map = {
-            "planning": f"Run: flow.sh approve {input_ref} --confirm",
-            "verifying": f"Run: flow.sh verify {input_ref} --confirm",
-            "done": f"Run: flow.sh archive {input_ref}",
-        }
-
-        suggestion = suggestion_map.get(current_status, "Check plan status")
-        log_error(suggestion)
-
+    if not guard_status(current_status, "executing", input_ref):
         return 1
 
     # 4. Check step checkboxes in Implementation and Test Plan (hard gate)
@@ -254,12 +243,7 @@ def cmd_complete(args: argparse.Namespace) -> int:
         return 1
 
     # 6. Resolve repo lazily for Issue sync
-    repo = ""
-    if plan_issue:
-        try:
-            repo = detect_space_repo(workspace_root)
-        except RuntimeError as e:
-            log_warn(f"Cannot determine space repo, skipping Issue sync: {e}")
+    repo = resolve_space_repo(plan_issue, workspace_root)
 
     # Extract Target Project from Plan
     project = get_plan_project(plan_path)

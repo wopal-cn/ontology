@@ -25,8 +25,9 @@ import sys
 from pathlib import Path
 
 from dev_flow.core.logging import log_info, log_success, log_error, log_warn
-from dev_flow.core.workspace import find_workspace_root, detect_space_repo
+from dev_flow.core.workspace import find_workspace_root
 from dev_flow.core.status import update_plan_status
+from dev_flow.core.workflow import guard_status, resolve_space_repo
 from dev_flow.domain.plan.find import find_plan, find_plan_by_issue
 from dev_flow.domain.plan.metadata import (
     get_plan_field,
@@ -193,19 +194,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         return 1
 
     # 3. Validate state is "verifying"
-    if current_status != "verifying":
-        log_error(f"Plan must be in verifying state to verify (current: {current_status})")
-        log_error("")
-
-        suggestion_map = {
-            "planning": f"Run: flow.sh approve {input_ref} --confirm",
-            "executing": f"Run: flow.sh complete {input_ref}",
-            "done": f"Run: flow.sh archive {input_ref}",
-        }
-
-        suggestion = suggestion_map.get(current_status, "Check plan status")
-        log_error(suggestion)
-
+    if not guard_status(current_status, "verifying", input_ref):
         return 1
 
     # 4. Extract Issue number from Plan metadata
@@ -213,12 +202,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     effective_issue = plan_issue
 
     # Resolve repo lazily for Issue sync / PR lookup
-    repo = ""
-    if effective_issue:
-        try:
-            repo = detect_space_repo(workspace_root)
-        except RuntimeError as e:
-            log_warn(f"Cannot determine space repo, skipping Issue sync/PR lookup: {e}")
+    repo = resolve_space_repo(effective_issue, workspace_root)
 
     # 5. Check PR merge status (PR path detection)
     is_pr_path = False

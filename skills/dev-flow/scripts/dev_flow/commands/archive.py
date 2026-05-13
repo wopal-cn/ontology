@@ -28,7 +28,8 @@ from pathlib import Path
 from datetime import date
 
 from dev_flow.core.logging import log_info, log_success, log_error, log_warn, log_step
-from dev_flow.core.workspace import find_workspace_root, detect_space_repo
+from dev_flow.core.workspace import find_workspace_root
+from dev_flow.core.workflow import guard_status, resolve_space_repo
 from dev_flow.domain.plan.find import find_plan, find_plan_by_issue
 from dev_flow.domain.plan.metadata import (
     get_plan_project,
@@ -533,26 +534,18 @@ def cmd_archive(args: argparse.Namespace) -> int:
     if not current_status:
         current_status = get_plan_status(plan_path)
 
-    if current_status != "done":
-        log_error(f"Plan must be in done state to archive (current: {current_status})")
-        log_error("")
-
-        suggestion_map = {
-            "planning": f"Run: flow.sh approve {input_ref} --confirm",
-            "executing": f"Run: flow.sh complete {input_ref}",
-            "verifying": f"Run: flow.sh verify {input_ref} --confirm",
-        }
-
-        suggestion = suggestion_map.get(current_status, "Check plan status")
-        log_error(suggestion)
-
+    if not guard_status(current_status, "done", input_ref):
         return 1
 
     # Extract Plan metadata
     project = get_plan_project(plan_path)
     plan_type = get_plan_type(plan_path) or "chore"
     plan_issue = get_plan_issue(plan_path)
-    repo = detect_space_repo(workspace_root)
+    repo = resolve_space_repo(plan_issue, workspace_root)
+
+    if plan_issue and not repo:
+        log_warn(f"Cannot resolve space repo for Issue #{plan_issue}; skipping Issue sync")
+        plan_issue = None
 
     # 2.5. Sync Plan to Issue before archiving (if Issue exists)
     if plan_issue:

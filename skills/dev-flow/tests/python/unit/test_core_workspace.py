@@ -13,9 +13,10 @@ import shutil
 from pathlib import Path
 from unittest.mock import patch
 
-# Add scripts directory to path for imports
-SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from support.bootstrap import ensure_scripts_path
+ensure_scripts_path()
 
 from dev_flow.core.workspace import find_workspace_root, detect_space_repo
 
