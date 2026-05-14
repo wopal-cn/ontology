@@ -37,8 +37,14 @@ from dev_flow.domain.plan.metadata import (
     get_plan_issue,
     get_plan_status,
     get_plan_worktree,
+    get_plan_field,
 )
-from dev_flow.domain.plan.project import resolve_project_path
+from dev_flow.domain.plan.project import (
+    resolve_project_path,
+    get_current_branch,
+    resolve_project_type,
+    ProjectType,
+)
 from dev_flow.domain.workflow import parse_plan_status
 from dev_flow.domain.plan.link import update_issue_plan_link
 from dev_flow.domain.issue.sync import (
@@ -142,6 +148,104 @@ def _is_pr_path(plan_path: str, issue_number: int, repo: str) -> bool:
 
     labels = result.stdout.strip().split('\n')
     return "pr/opened" in labels
+
+
+def _commit_ontology_worktree(
+    workspace_root: Path,
+    plan_type: str,
+    issue_number: int | None,
+) -> bool:
+    """Auto-commit and push ontology worktree changes.
+
+    Ontology worktree (.wopal/) is a special case:
+    - Located at workspace_root/.wopal
+    - Branch is space/main (not main)
+    - Pushes to fork (sampx/wopal-space-ontology)
+
+    Args:
+        workspace_root: Workspace root path
+        plan_type: Plan type for commit message
+        issue_number: Issue number for commit message
+
+    Returns:
+        True if commit and push succeeded
+    """
+    ontology_path = workspace_root / ".wopal"
+
+    if not ontology_path.exists():
+        log_error("Ontology worktree path not found: .wopal/")
+        return False
+
+    # Check for uncommitted changes
+    if not has_uncommitted_changes(str(ontology_path)):
+        log_info("No uncommitted changes in ontology worktree")
+        return True
+
+    # Get current branch (space/main)
+    branch = get_current_branch(ontology_path)
+    if not branch:
+        log_error("Cannot resolve ontology worktree branch")
+        return False
+
+    # Normalize plan type to valid git commit type
+    plan_type_to_commit = {
+        'feature': 'feat',
+        'enhance': 'enhance',
+        'fix': 'fix',
+        'refactor': 'refactor',
+        'docs': 'docs',
+        'test': 'test',
+        'chore': 'chore',
+        'perf': 'perf',
+    }
+    commit_type = plan_type_to_commit.get(plan_type, 'chore')
+
+    # Build commit message
+    if issue_number:
+        commit_msg = f"{commit_type}: implement plan changes (#{issue_number})"
+    else:
+        commit_msg = f"{commit_type}: implement plan changes"
+
+    log_step(f"Committing ontology changes to {branch}...")
+
+    # Stage all
+    subprocess.run(
+        ["git", "add", "-A"],
+        cwd=str(ontology_path),
+        capture_output=True,
+    )
+
+    # Commit
+    result = subprocess.run(
+        ["git", "commit", "-m", commit_msg],
+        cwd=str(ontology_path),
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        if "nothing to commit" in result.stdout:
+            log_info("No changes to commit in ontology worktree")
+            return True
+        log_error(f"Ontology commit failed: {result.stderr.strip()}")
+        return False
+
+    log_success(f"Ontology committed: {commit_msg}")
+
+    # Push to origin
+    result = subprocess.run(
+        ["git", "push", "origin", branch],
+        cwd=str(ontology_path),
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        log_error(f"Ontology push failed: {result.stderr.strip()}")
+        return False
+
+    log_success(f"Ontology pushed to origin/{branch}")
+    return True
 
 
 def _commit_project_changes(
@@ -573,10 +677,25 @@ def cmd_archive(args: argparse.Namespace) -> int:
         log_success(f"Plan synced to Issue #{plan_issue}")
 
     # 3. Detect worktree and handle project changes
+    #    Special handling for ontology-worktree projects (.wopal/)
+    #    Standard projects follow the existing worktree detection/merge/cleanup flow
     worktree_handled = False
     project_committed = False
+    ontology_committed = False
 
-    if project:
+    # Read Project Type from Plan metadata
+    project_type_str = get_plan_field(plan_path, "Project Type")
+    is_ontology_worktree = project_type_str == "ontology-worktree"
+
+    if is_ontology_worktree:
+        # Ontology worktree: commit .wopal/ changes directly, skip worktree merge
+        log_step("Ontology worktree project detected — committing .wopal/ changes")
+        if _commit_ontology_worktree(workspace_root, plan_type, plan_issue):
+            ontology_committed = True
+        elif has_uncommitted_changes(str(workspace_root / ".wopal")):
+            log_error("Failed to commit ontology worktree changes")
+            return 1
+    elif project:
         project_path = resolve_project_path(plan_path, project, workspace_root)
 
         if project_path:
@@ -673,6 +792,8 @@ def cmd_archive(args: argparse.Namespace) -> int:
         print(f"  Worktree: cleaned up")
     if project_committed:
         print(f"  Project: changes committed and pushed")
+    if ontology_committed:
+        print(f"  Ontology: .wopal/ changes committed and pushed")
 
     return 0
 

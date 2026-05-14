@@ -79,6 +79,31 @@ def _extract_project_from_labels(issue_info: dict) -> str:
     return ""
 
 
+def _extract_project_metadata_from_body(issue_info: dict) -> tuple[str | None, str | None]:
+    """Extract Project Type and Project Path from Issue body metadata section.
+    
+    Args:
+        issue_info: Issue info dict from GitHub
+        
+    Returns:
+        Tuple of (project_type, project_path) - both may be None if not present
+    """
+    body = issue_info.get("body", "")
+    
+    if not body:
+        return None, None
+    
+    # Look for metadata fields in Issue body
+    # Pattern: "- **Project Type**: <value>" or "- **Project Path**: <value>"
+    project_type_match = re.search(r'^-\s*\*\*Project Type\*\*:\s*(.+)$', body, re.MULTILINE)
+    project_path_match = re.search(r'^-\s*\*\*Project Path\*\*:\s*(.+)$', body, re.MULTILINE)
+    
+    project_type = project_type_match.group(1).strip() if project_type_match else None
+    project_path = project_path_match.group(1).strip() if project_path_match else None
+    
+    return project_type, project_path
+
+
 def _title_to_slug(title: str) -> str:
     """Convert Issue title to slug (lowercase, hyphen-separated)."""
     # Extract description part: type(scope): description
@@ -162,6 +187,8 @@ def create_plan_from_template(
     workspace_root: Path,
     prd_path: str | None = None,
     deep_mode: bool = False,
+    project_path: str | None = None,
+    project_type: str | None = None,
 ) -> Path:
     """Create Plan file from template.
     
@@ -174,6 +201,8 @@ def create_plan_from_template(
         workspace_root: Workspace root path
         prd_path: Optional PRD file path
         deep_mode: Whether to enable deep mode for plan structure
+        project_path: Optional project path (for ontology-worktree type)
+        project_type: Optional project type (e.g., "ontology-worktree")
         
     Returns:
         Path to created plan file
@@ -209,6 +238,18 @@ def create_plan_from_template(
     
     type_line = f"- **Type**: {plan_type}"
     project_line = f"- **Target Project**: {project}"
+    
+    # Project path and type lines (for ontology-worktree projects)
+    if project_path:
+        project_path_line = f"- **Project Path**: {project_path}"
+    else:
+        project_path_line = ""
+    
+    if project_type:
+        project_type_line = f"- **Project Type**: {project_type}"
+    else:
+        project_type_line = ""
+    
     created_date = date.today().strftime("%Y-%m-%d")
     
     # Replace placeholders
@@ -216,6 +257,8 @@ def create_plan_from_template(
     content = content.replace("{issue_line}", issue_line)
     content = content.replace("{type_line}", type_line)
     content = content.replace("{project_line}", project_line)
+    content = content.replace("{project_path_line}", project_path_line)
+    content = content.replace("{project_type_line}", project_type_line)
     content = content.replace("{date}", created_date)
     
     # Handle --deep and --prd placeholders if present in template
@@ -415,6 +458,9 @@ def cmd_plan(args: argparse.Namespace) -> int:
     # ========================================
     # Create new plan
     # ========================================
+    issue_project_type = None
+    issue_project_path = None
+    
     if issue_number:
         # Issue mode: fetch info from Issue
         log_info(f"Fetching Issue #{issue_number}")
@@ -463,6 +509,9 @@ def cmd_plan(args: argparse.Namespace) -> int:
         except ValidationError as e:
             log_error(str(e))
             return 1
+        
+        # Extract Project Type and Project Path from Issue body
+        issue_project_type, issue_project_path = _extract_project_metadata_from_body(issue_info)
     else:
         # No-issue mode: use provided title, project, type, scope
         if not scope:
@@ -494,6 +543,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
             workspace_root,
             prd_path=prd_path,
             deep_mode=deep_mode,
+            project_path=issue_project_path,
+            project_type=issue_project_type,
         )
         log_success(f"Plan created: {plan_file}")
     except (FileExistsError, FileNotFoundError) as e:

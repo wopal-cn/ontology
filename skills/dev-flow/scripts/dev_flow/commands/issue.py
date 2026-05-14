@@ -26,6 +26,11 @@ from dev_flow.domain.labels import (
     normalize_plan_type,
     plan_type_to_issue_label,
 )
+from dev_flow.domain.plan.project import (
+    resolve_project_type,
+    ProjectType,
+    PROJECT_TYPE_REGISTRY,
+)
 from dev_flow.core.logging import log_info, log_success, log_error
 from dev_flow.core.workspace import find_workspace_root, detect_space_repo
 
@@ -360,6 +365,18 @@ def cmd_issue_create(args: argparse.Namespace) -> int:
         body = args.body
     else:
         body = build_structured_issue_body(**body_kwargs)
+    
+    # Inject project type metadata for ontology-worktree projects
+    project_type = resolve_project_type(project)
+    if project_type == ProjectType.ONTOLOGY_WORKTREE:
+        registry_entry = PROJECT_TYPE_REGISTRY[project]
+        project_path = registry_entry["path"]
+        injection = (
+            f"- **Project Type**: {project_type.value}\n"
+            f"- **Project Path**: {project_path}\n"
+            "\n"
+        )
+        body = injection + body
     
     # Get repo and ensure labels
     repo = detect_space_repo(find_workspace_root())

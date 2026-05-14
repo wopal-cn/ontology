@@ -36,9 +36,9 @@ from dev_flow.core.logging import log_info, log_success, log_error, log_warn, lo
 from dev_flow.core.workspace import find_workspace_root, detect_space_repo
 from dev_flow.core.status import update_plan_status
 from dev_flow.domain.plan.find import find_plan, find_plan_by_issue, find_plan_by_name
-from dev_flow.domain.plan.metadata import get_plan_project, get_plan_issue, get_plan_status, set_plan_worktree
+from dev_flow.domain.plan.metadata import get_plan_project, get_plan_issue, get_plan_status, set_plan_worktree, get_plan_field
 from dev_flow.domain.plan.naming import validate_plan_name
-from dev_flow.domain.plan.project import resolve_project_path
+from dev_flow.domain.plan.project import resolve_project_path, get_ontology_main_repo, ProjectType
 from dev_flow.domain.workflow import parse_plan_status, is_valid_transition
 from dev_flow.domain.validation.check_doc import check_doc_plan, ValidationError
 from dev_flow.domain.issue.sync import (
@@ -375,6 +375,9 @@ def cmd_approve(args: argparse.Namespace) -> int:
             log_error("Cannot create worktree: no Target Project in plan")
             return 1
         
+        # Read Project Type from Plan metadata
+        project_type_str = get_plan_field(plan_path, "Project Type")
+        
         # Generate branch name
         slug = _extract_slug(plan_name)
         if issue_number:
@@ -382,44 +385,103 @@ def cmd_approve(args: argparse.Namespace) -> int:
         else:
             branch = slug
         
-        # Stash dirty workspace changes before worktree creation
-        if dirty_workspace:
-            log_warn(f"目标项目 {project} 有未提交的变更，自动 stash 以创建 worktree")
-            if not _stash_project_changes(project_path, issue_number):
-                log_error("Stash 失败，无法继续创建 worktree")
+        # --- Ontology-worktree branch ---
+        if project_type_str == ProjectType.ONTOLOGY_WORKTREE.value:
+            # Resolve ontology main repo path
+            main_repo = get_ontology_main_repo(workspace_root)
+            if main_repo is None:
+                log_error("无法解析 ontology 主仓库路径")
+                log_error("请检查 .wopal/.git 文件是否存在且格式正确（worktree 指针）")
                 return 1
-            stashed = True
-            log_success("已 stash 未提交变更")
-        
-        # Create worktree
-        if _create_worktree(project, branch, workspace_root):
+            
+            log_step("Creating ontology worktree...")
+            log_info(f"Main repo: {main_repo}")
+            log_info(f"Branch: {branch}")
+            
+            worktrees_dir = workspace_root / ".worktrees"
+            worktree_name = f"ontology-{branch}"
+            worktree_path = worktrees_dir / worktree_name
+            
+            # Create feature branch from space/main in the main repo
+            branch_result = subprocess.run(
+                ["git", "branch", branch, "space/main"],
+                cwd=str(main_repo),
+                capture_output=True,
+                text=True,
+            )
+            if branch_result.returncode != 0:
+                log_error(f"创建 feature 分支失败: {branch}")
+                print(branch_result.stderr)
+                return 1
+            log_info(f"Created branch: {branch} (from space/main)")
+            
+            # Create worktree from the new branch
+            wt_result = subprocess.run(
+                ["git", "worktree", "add", str(worktree_path), branch],
+                cwd=str(main_repo),
+                capture_output=True,
+                text=True,
+            )
+            if wt_result.returncode != 0:
+                log_error("Ontology worktree 创建失败")
+                print(wt_result.stderr)
+                # Cleanup: delete the branch we just created
+                subprocess.run(
+                    ["git", "branch", "-d", branch],
+                    cwd=str(main_repo),
+                    capture_output=True,
+                )
+                return 1
+            
+            log_success(f"Ontology worktree created: {worktree_path}")
             worktree_created = True
-
+            
             # Write Worktree field to Plan metadata
-            worktree_path = f"{workspace_root}/.worktrees/{project}-{branch}"
-            if set_plan_worktree(plan_path, branch, worktree_path):
+            if set_plan_worktree(plan_path, branch, str(worktree_path)):
                 log_success(f"Plan Worktree field set: {branch} | {worktree_path}")
             else:
                 log_warn("Failed to write Worktree field to Plan")
-
-            # Restore stashed changes to main workspace
-            if stashed:
-                if _pop_stash(project_path):
-                    log_success("已恢复之前 stash 的变更")
-                else:
-                    log_warn(f"Stash restore 失败，变更仍在 stash 中: cd {project_path} && git stash list")
+        
+        # --- Standard project branch ---
         else:
-            log_error("Worktree creation failed - aborting approve")
+            # Stash dirty workspace changes before worktree creation
+            if dirty_workspace:
+                log_warn(f"目标项目 {project} 有未提交的变更，自动 stash 以创建 worktree")
+                if not _stash_project_changes(project_path, issue_number):
+                    log_error("Stash 失败，无法继续创建 worktree")
+                    return 1
+                stashed = True
+                log_success("已 stash 未提交变更")
             
-            # Restore stashed changes on failure
-            if stashed:
-                _pop_stash(project_path)
-                log_warn("已恢复之前 stash 的变更")
-            
-            print("")
-            print("Plan 状态保持 planning，未进入 executing")
-            print("请检查 worktree 创建失败原因后重试")
-            return 1
+            # Create worktree
+            if _create_worktree(project, branch, workspace_root):
+                worktree_created = True
+
+                # Write Worktree field to Plan metadata
+                worktree_path = f"{workspace_root}/.worktrees/{project}-{branch}"
+                if set_plan_worktree(plan_path, branch, worktree_path):
+                    log_success(f"Plan Worktree field set: {branch} | {worktree_path}")
+                else:
+                    log_warn("Failed to write Worktree field to Plan")
+
+                # Restore stashed changes to main workspace
+                if stashed:
+                    if _pop_stash(project_path):
+                        log_success("已恢复之前 stash 的变更")
+                    else:
+                        log_warn(f"Stash restore 失败，变更仍在 stash 中: cd {project_path} && git stash list")
+            else:
+                log_error("Worktree creation failed - aborting approve")
+                
+                # Restore stashed changes on failure
+                if stashed:
+                    _pop_stash(project_path)
+                    log_warn("已恢复之前 stash 的变更")
+                
+                print("")
+                print("Plan 状态保持 planning，未进入 executing")
+                print("请检查 worktree 创建失败原因后重试")
+                return 1
     
     elif dirty_workspace:
         # No --worktree but dirty workspace: block and warn
@@ -483,7 +545,7 @@ def cmd_approve(args: argparse.Namespace) -> int:
     if issue_number:
         print(f"Issue: #{issue_number}")
     if worktree_created:
-        print(f"Worktree: {workspace_root}/.worktrees/{project}-{branch}")
+        print(f"Worktree: {worktree_path}")
     
     # Use issue_number for Issue-driven mode, plan_name for no-issue mode
     next_ref = str(issue_number) if issue_number else plan_name

@@ -63,10 +63,15 @@ def check_doc_plan(plan_file: str) -> None:
     if uv_issues:
         issues.extend(uv_issues)
     
-    # Check Target Project Path validity (if declared)
+    # Check Project Path validity (if declared)
     pp_issue = _check_project_path(content)
     if pp_issue:
         issues.append(pp_issue)
+
+    # Check Project Type validity (if declared)
+    pt_issue = _check_project_type(content)
+    if pt_issue:
+        issues.append(pt_issue)
     
     if issues:
         raise ValidationError("\n".join(issues))
@@ -241,15 +246,18 @@ def _check_user_validation_structure(content: str) -> list:
 
 
 def _check_project_path(content: str) -> str | None:
-    """Validate Target Project Path if declared in plan metadata.
+    """Validate Project Path if declared in plan metadata.
 
-    Checks that the declared path exists and is a git repository (contains .git).
+    For ontology-worktree projects, .git is a worktree pointer file (not a
+    directory). Validates existence and a resolvable upstream main repo path.
+
+    For standard projects, validates .git exists (directory or file).
     Optional field — returns None if not declared.
 
     Returns:
         Error message string if validation fails, None if OK or not declared
     """
-    match = re.search(r'^\-\s+\*\*Target Project Path\*\*:\s*(.+)$', content, re.MULTILINE)
+    match = re.search(r'^\-\s+\*\*Project Path\*\*:\s*(.+)$', content, re.MULTILINE)
     if not match:
         return None
 
@@ -258,12 +266,66 @@ def _check_project_path(content: str) -> str | None:
     resolved = ws_root / declared
 
     if not resolved.exists():
-        return f"### Target Project Path: declared path does not exist: {declared}"
+        return f"Project Path: declared path does not exist: {declared}"
 
-    if not (resolved / ".git").exists():
-        return f"### Target Project Path: declared path is not a git repository: {declared}"
+    git_path = resolved / ".git"
+    if not git_path.exists():
+        return f"Project Path: not a git repository (no .git): {declared}"
+
+    # ontology-worktree: .git is a file pointing to main repo
+    project_type = _read_project_type(content)
+    if project_type == "ontology-worktree":
+        if not git_path.is_file():
+            return (
+                f"Project Path: expected worktree pointer file at {declared}/.git "
+                f"but found directory (ontology-worktree .git must be a file)"
+            )
+        try:
+            content_git = git_path.read_text().strip()
+            if not content_git.startswith("gitdir: "):
+                return f"Project Path: {declared}/.git is not a valid worktree pointer (missing 'gitdir:' prefix)"
+            main_repo_part = content_git[len("gitdir: "):]
+            if "/.git/worktrees/" not in main_repo_part:
+                return f"Project Path: {declared}/.git does not reference a valid worktree"
+        except Exception:
+            return f"Project Path: cannot read {declared}/.git worktree pointer"
 
     return None
+
+
+def _check_project_type(content: str) -> str | None:
+    """Validate Project Type if declared in plan metadata.
+
+    For ontology-worktree projects, requires Project Path to be declared and
+    consistent with the worktree layout.
+
+    Returns:
+        Error message string if validation fails, None if OK or not declared
+    """
+    project_type = _read_project_type(content)
+    if not project_type:
+        return None
+
+    valid_types = {"standard", "ontology-worktree"}
+    if project_type not in valid_types:
+        return f"Project Type: unknown value '{project_type}' (valid: {', '.join(sorted(valid_types))})"
+
+    if project_type == "ontology-worktree":
+        path_match = re.search(r'^\-\s+\*\*Project Path\*\*:\s*(.+)$', content, re.MULTILINE)
+        if not path_match:
+            return "Project Type: 'ontology-worktree' declared but no Project Path found"
+
+    return None
+
+
+def _read_project_type(content: str) -> str | None:
+    """Read Project Type value from plan metadata.
+
+    Returns:
+        Project type string ('standard', 'ontology-worktree'), or None
+    """
+    match = re.search(r'^\-\s+\*\*Project Type\*\*:\s*(.+)$', content, re.MULTILINE)
+    return match.group(1).strip() if match else None
 
 
 def check_acceptance_criteria(plan_file: str) -> None:
