@@ -159,8 +159,8 @@ def _commit_ontology_worktree(
 
     Ontology worktree (.wopal/) is a special case:
     - Located at workspace_root/.wopal
-    - Branch is space/main (not main)
-    - Pushes to fork (sampx/wopal-space-ontology)
+    - Branch is space/<space-name> (e.g., space/main for main space)
+    - Pushes to fork (e.g., sampx/wopal-space-ontology)
 
     Args:
         workspace_root: Workspace root path
@@ -181,7 +181,7 @@ def _commit_ontology_worktree(
         log_info("No uncommitted changes in ontology worktree")
         return True
 
-    # Get current branch (space/main)
+    # Get current branch (dynamically, e.g., space/main, space/xxx)
     branch = get_current_branch(ontology_path)
     if not branch:
         log_error("Cannot resolve ontology worktree branch")

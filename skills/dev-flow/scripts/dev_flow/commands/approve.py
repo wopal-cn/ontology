@@ -402,9 +402,16 @@ def cmd_approve(args: argparse.Namespace) -> int:
             worktree_name = f"ontology-{branch}"
             worktree_path = worktrees_dir / worktree_name
             
-            # Create feature branch from space/main in the main repo
+            # Determine base branch from .wopal/ worktree's current branch
+            ontology_worktree = workspace_root / ".wopal"
+            base_branch = get_current_branch(ontology_worktree)
+            if not base_branch:
+                log_error("无法解析 ontology worktree 当前分支")
+                return 1
+
+            # Create feature branch from base branch in the main repo
             branch_result = subprocess.run(
-                ["git", "branch", branch, "space/main"],
+                ["git", "branch", branch, base_branch],
                 cwd=str(main_repo),
                 capture_output=True,
                 text=True,
@@ -413,7 +420,7 @@ def cmd_approve(args: argparse.Namespace) -> int:
                 log_error(f"创建 feature 分支失败: {branch}")
                 print(branch_result.stderr)
                 return 1
-            log_info(f"Created branch: {branch} (from space/main)")
+            log_info(f"Created branch: {branch} (from {base_branch})")
             
             # Create worktree from the new branch
             wt_result = subprocess.run(
