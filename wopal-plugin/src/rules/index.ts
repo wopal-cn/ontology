@@ -21,7 +21,11 @@ export {
 } from "./matcher.js";
 
 // From formatter
-export { readAndFormatRules } from "./formatter.js";
+export {
+  readAndFormatRules,
+  type MatchedRuleInfo,
+  type FormattedRulesResult,
+} from "./formatter.js";
 
 // From path-extractor
 export {

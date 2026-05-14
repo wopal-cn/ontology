@@ -100,7 +100,6 @@ const openCodeRulesPlugin = async (pluginInput: PluginInput): Promise<Hooks> => 
   let ruleFiles: DiscoveredRule[];
   if (rulesInjectionEnabled) {
     ruleFiles = await discoverRuleFiles(pluginInput.directory, rulesDebugLog);
-    rulesDebugLog(`Discovered ${ruleFiles.length} rule file(s)`);
   } else {
     debugLog("Rules module disabled");
     ruleFiles = [];

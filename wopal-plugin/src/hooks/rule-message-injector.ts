@@ -31,6 +31,7 @@ export async function injectRulesToMessage(
     ctx.ruleInjectorCtx,
     contextPaths,
     userPrompt,
+    sessionID,
   );
 
   if (!formattedRules) return;
@@ -41,6 +42,4 @@ export async function injectRulesToMessage(
     text: `<rules-context>\n${formattedRules}\n</rules-context>`,
     synthetic: true,
   });
-
-  ctx.rulesDebugLog(`Injected rules for session ${sessionID}`);
 }

@@ -2,11 +2,26 @@
  * Rule formatting for system prompt injection
  */
 
-import { createDebugLog } from "../debug.js";
 import { getCachedRule, type DiscoveredRule } from "./discoverer.js";
 import { fileMatchesGlobs, promptMatchesKeywords } from "./matcher.js";
 
-const debugLog = createDebugLog("[rules]", "rules");
+/**
+ * Matched rule description for logging
+ */
+export interface MatchedRuleInfo {
+  name: string;
+  reason: string;
+}
+
+/**
+ * Result of readAndFormatRules
+ */
+export interface FormattedRulesResult {
+  /** Formatted rules content for injection */
+  content: string;
+  /** Array of matched rule info for logging (e.g. rule name with match reason) */
+  matchedRules: MatchedRuleInfo[];
+}
 
 /**
  * Read and format rule files for system prompt injection
@@ -14,18 +29,20 @@ const debugLog = createDebugLog("[rules]", "rules");
  * @param contextFilePaths - Optional array of file paths from conversation context (used to filter conditional rules)
  * @param userPrompt - Optional user prompt text (used for keyword matching)
  * @param availableToolIDs - Optional array of available tool IDs (used for tool-based filtering)
+ * @returns Object with formatted content and matched rules info
  */
 export async function readAndFormatRules(
   files: DiscoveredRule[],
   contextFilePaths?: string[],
   userPrompt?: string,
   availableToolIDs?: string[],
-): Promise<string> {
+): Promise<FormattedRulesResult> {
   if (files.length === 0) {
-    return "";
+    return { content: "", matchedRules: [] };
   }
 
   const ruleContents: string[] = [];
+  const matchedRules: MatchedRuleInfo[] = [];
   const availableToolSet =
     availableToolIDs && availableToolIDs.length > 0
       ? new Set(availableToolIDs)
@@ -43,35 +60,52 @@ export async function readAndFormatRules(
     // Rules with metadata (globs, keywords, or tools) require matching
     // OR logic: rule applies if keywords match OR globs match OR tools match
     if (metadata?.globs || metadata?.keywords || metadata?.tools) {
-      let globsMatch = false;
-      let keywordsMatch = false;
-      let toolsMatch = false;
+      const matchReasons: string[] = [];
 
       // Check globs against context file paths
       if (metadata.globs && contextFilePaths && contextFilePaths.length > 0) {
-        globsMatch = contextFilePaths.some((contextPath) =>
-          fileMatchesGlobs(contextPath, metadata.globs!),
+        const matchingGlobs = metadata.globs.filter((glob) =>
+          contextFilePaths.some((contextPath) =>
+            fileMatchesGlobs(contextPath, [glob]),
+          ),
         );
+        if (matchingGlobs.length > 0) {
+          matchReasons.push(`globs: ${matchingGlobs.join(", ")}`);
+        }
       }
 
       // Check keywords against user prompt
       if (metadata.keywords && userPrompt) {
-        keywordsMatch = promptMatchesKeywords(userPrompt, metadata.keywords);
+        const matchingKeywords = metadata.keywords.filter((keyword) =>
+          promptMatchesKeywords(userPrompt, [keyword]),
+        );
+        if (matchingKeywords.length > 0) {
+          matchReasons.push(`keyword: ${matchingKeywords.join(", ")}`);
+        }
       }
 
       // Check tools against available tool IDs
       if (metadata.tools && availableToolSet) {
-        toolsMatch = metadata.tools.some((tool) => availableToolSet.has(tool));
+        const matchingTools = metadata.tools.filter((tool) =>
+          availableToolSet.has(tool),
+        );
+        if (matchingTools.length > 0) {
+          matchReasons.push(`tools: ${matchingTools.join(", ")}`);
+        }
       }
 
       // If rule has conditions but none match, skip it
-      if (!globsMatch && !keywordsMatch && !toolsMatch) {
+      if (matchReasons.length === 0) {
         continue;
       }
 
-      debugLog(
-        `Including conditional rule: ${relativePath} (globs: ${globsMatch}, keywords: ${keywordsMatch}, tools: ${toolsMatch})`,
-      );
+      matchedRules.push({
+        name: relativePath,
+        reason: matchReasons.join("; "),
+      });
+    } else {
+      // Unconditional rule (no metadata) - always included
+      matchedRules.push({ name: relativePath, reason: "unconditional" });
     }
 
     // Use cached stripped content for output
@@ -80,11 +114,12 @@ export async function readAndFormatRules(
   }
 
   if (ruleContents.length === 0) {
-    return "";
+    return { content: "", matchedRules: [] };
   }
 
-  return (
+  const content =
     `# OpenCode Rules\n\nPlease follow the following rules:\n\n` +
-    ruleContents.join("\n\n---\n\n")
-  );
+    ruleContents.join("\n\n---\n\n");
+
+  return { content, matchedRules };
 }

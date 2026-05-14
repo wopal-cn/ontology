@@ -53,22 +53,24 @@ describe("readAndFormatRules", () => {
     const files = toRules([rule1Path, rule2Path]);
 
     // Act
-    const formatted = await readAndFormatRules(files);
+    const result = await readAndFormatRules(files);
 
     // Assert
-    expect(formatted).toContain("OpenCode Rules");
-    expect(formatted).toContain("rule1.md");
-    expect(formatted).toContain("rule2.md");
-    expect(formatted).toContain("Rule 1");
-    expect(formatted).toContain("Rule 2");
+    expect(result.content).toContain("OpenCode Rules");
+    expect(result.content).toContain("rule1.md");
+    expect(result.content).toContain("rule2.md");
+    expect(result.content).toContain("Rule 1");
+    expect(result.content).toContain("Rule 2");
+    expect(result.matchedRules).toHaveLength(2);
   });
 
   it("should return empty string when no files provided", async () => {
     // Act
-    const formatted = await readAndFormatRules([]);
+    const result = await readAndFormatRules([]);
 
     // Assert
-    expect(formatted).toBe("");
+    expect(result.content).toBe("");
+    expect(result.matchedRules).toHaveLength(0);
   });
 
   it("should handle file read errors gracefully", async () => {
@@ -78,12 +80,13 @@ describe("readAndFormatRules", () => {
     writeFileSync(validFile, "# Valid Rule");
 
     // Act & Assert - should not throw
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([nonExistentFile, validFile]),
     );
 
     // Should still include the valid file
-    expect(formatted).toContain("valid.md");
+    expect(result.content).toContain("valid.md");
+    expect(result.matchedRules).toHaveLength(1);
   });
 
   it("should include filename as subheader in output", async () => {
@@ -92,10 +95,10 @@ describe("readAndFormatRules", () => {
     writeFileSync(rulePath, "Rule content");
 
     // Act
-    const formatted = await readAndFormatRules(toRules([rulePath]));
+    const result = await readAndFormatRules(toRules([rulePath]));
 
     // Assert
-    expect(formatted).toMatch(/##\s+my-rules\.md/);
+    expect(result.content).toMatch(/##\s+my-rules\.md/);
   });
 
   it("should include instructions to follow rules", async () => {
@@ -104,10 +107,10 @@ describe("readAndFormatRules", () => {
     writeFileSync(rulePath, "Rule content");
 
     // Act
-    const formatted = await readAndFormatRules(toRules([rulePath]));
+    const result = await readAndFormatRules(toRules([rulePath]));
 
     // Assert - check for language indicating rules should be followed
-    expect(formatted.toLowerCase()).toMatch(
+    expect(result.content.toLowerCase()).toMatch(
       /follow|adhereread the following rules|must follow/i,
     );
   });
@@ -118,13 +121,14 @@ describe("readAndFormatRules", () => {
     writeFileSync(rulePath, "This rule always applies");
 
     // Act
-    const formatted = await readAndFormatRules(toRules([rulePath]), [
+    const result = await readAndFormatRules(toRules([rulePath]), [
       "src/utils/helpers.js",
     ]);
 
     // Assert - rule should be included even though file doesn't match any pattern
-    expect(formatted).toContain("unconditional.mdc");
-    expect(formatted).toContain("This rule always applies");
+    expect(result.content).toContain("unconditional.mdc");
+    expect(result.content).toContain("This rule always applies");
+    expect(result.matchedRules[0].reason).toBe("unconditional");
   });
 
   it("should include rule when file matches glob pattern in metadata", async () => {
@@ -139,13 +143,14 @@ This is a rule for TypeScript components.`;
     writeFileSync(rulePath, ruleContent);
 
     // Act - testing with a matching file path
-    const formatted = await readAndFormatRules(toRules([rulePath]), [
+    const result = await readAndFormatRules(toRules([rulePath]), [
       "src/components/button.ts",
     ]);
 
     // Assert
-    expect(formatted).toContain("typescript.mdc");
-    expect(formatted).toContain("This is a rule for TypeScript components.");
+    expect(result.content).toContain("typescript.mdc");
+    expect(result.content).toContain("This is a rule for TypeScript components.");
+    expect(result.matchedRules[0].reason).toContain("globs:");
   });
 
   it("should exclude rule when file does not match glob pattern in metadata", async () => {
@@ -160,12 +165,13 @@ This is a rule for TypeScript components.`;
     writeFileSync(rulePath, ruleContent);
 
     // Act - testing with a non-matching file path
-    const formatted = await readAndFormatRules(toRules([rulePath]), [
+    const result = await readAndFormatRules(toRules([rulePath]), [
       "src/utils/helpers.js",
     ]);
 
     // Assert - should return empty because rule doesn't apply
-    expect(formatted).toBe("");
+    expect(result.content).toBe("");
+    expect(result.matchedRules).toHaveLength(0);
   });
 
   it("should include rule when file matches any of multiple glob patterns", async () => {
@@ -181,13 +187,14 @@ Multi-pattern rule`;
     writeFileSync(rulePath, ruleContent);
 
     // Act - test with file matching second pattern
-    const formatted = await readAndFormatRules(toRules([rulePath]), [
+    const result = await readAndFormatRules(toRules([rulePath]), [
       "lib/utils/helper.js",
     ]);
 
     // Assert
-    expect(formatted).toContain("multi.mdc");
-    expect(formatted).toContain("Multi-pattern rule");
+    expect(result.content).toContain("multi.mdc");
+    expect(result.content).toContain("Multi-pattern rule");
+    expect(result.matchedRules[0].reason).toContain("globs:");
   });
 
   it("should handle mixed rules with and without metadata", async () => {
@@ -207,16 +214,17 @@ Only for TypeScript`,
     );
 
     // Act - test with matching TypeScript file
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([unconditionalPath, conditionalPath]),
       ["src/app.ts"],
     );
 
     // Assert - both should be included
-    expect(formatted).toContain("always.md");
-    expect(formatted).toContain("Always apply this");
-    expect(formatted).toContain("conditional.mdc");
-    expect(formatted).toContain("Only for TypeScript");
+    expect(result.content).toContain("always.md");
+    expect(result.content).toContain("Always apply this");
+    expect(result.content).toContain("conditional.mdc");
+    expect(result.content).toContain("Only for TypeScript");
+    expect(result.matchedRules).toHaveLength(2);
   });
 
   it("should exclude conditional rule but include unconditional when file does not match", async () => {
@@ -236,15 +244,17 @@ Only for TypeScript`,
     );
 
     // Act - test with non-matching file
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([unconditionalPath, conditionalPath]),
       ["docs/readme.md"],
     );
 
     // Assert - only unconditional rule should be included
-    expect(formatted).toContain("always.md");
-    expect(formatted).toContain("Always apply this");
-    expect(formatted).not.toContain("Only for TypeScript");
+    expect(result.content).toContain("always.md");
+    expect(result.content).toContain("Always apply this");
+    expect(result.content).not.toContain("Only for TypeScript");
+    expect(result.matchedRules).toHaveLength(1);
+    expect(result.matchedRules[0].name).toBe("always.md");
   });
 
   it("should skip conditional rule when no context is provided", async () => {
@@ -261,10 +271,11 @@ TypeScript only rule`,
     );
 
     // Act - no file path provided
-    const formatted = await readAndFormatRules(toRules([rulePath]));
+    const result = await readAndFormatRules(toRules([rulePath]));
 
     // Assert - rule should NOT be applied (conditions not satisfied)
-    expect(formatted).toBe("");
+    expect(result.content).toBe("");
+    expect(result.matchedRules).toHaveLength(0);
   });
 
   it("should include rule when user prompt matches keywords", async () => {
@@ -282,15 +293,16 @@ Follow testing best practices.`,
     );
 
     // Act - prompt matches keyword
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       [],
       "I need help testing this function",
     );
 
     // Assert
-    expect(formatted).toContain("testing-rule.mdc");
-    expect(formatted).toContain("Follow testing best practices");
+    expect(result.content).toContain("testing-rule.mdc");
+    expect(result.content).toContain("Follow testing best practices");
+    expect(result.matchedRules[0].reason).toContain("keyword:");
   });
 
   it("should exclude rule when user prompt does not match keywords", async () => {
@@ -308,14 +320,15 @@ Follow testing best practices.`,
     );
 
     // Act - prompt does not match
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       [],
       "help me with the database",
     );
 
     // Assert
-    expect(formatted).toBe("");
+    expect(result.content).toBe("");
+    expect(result.matchedRules).toHaveLength(0);
   });
 
   it("should include rule when either keywords OR globs match (keywords match)", async () => {
@@ -334,15 +347,16 @@ Testing standards.`,
     );
 
     // Act - keywords match but no test files in context
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       ["src/app.ts"],
       "help with testing",
     );
 
     // Assert - rule should be included (keywords matched)
-    expect(formatted).toContain("test-rule.mdc");
-    expect(formatted).toContain("Testing standards");
+    expect(result.content).toContain("test-rule.mdc");
+    expect(result.content).toContain("Testing standards");
+    expect(result.matchedRules[0].reason).toContain("keyword:");
   });
 
   it("should include rule when either keywords OR globs match (globs match)", async () => {
@@ -361,15 +375,16 @@ Testing standards.`,
     );
 
     // Act - globs match but prompt doesn't mention testing
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       ["src/utils.test.ts"],
       "fix the import error",
     );
 
     // Assert - rule should be included (globs matched)
-    expect(formatted).toContain("test-rule.mdc");
-    expect(formatted).toContain("Testing standards");
+    expect(result.content).toContain("test-rule.mdc");
+    expect(result.content).toContain("Testing standards");
+    expect(result.matchedRules[0].reason).toContain("globs:");
   });
 
   it("should exclude rule when neither keywords nor globs match", async () => {
@@ -388,14 +403,15 @@ Testing standards.`,
     );
 
     // Act - neither matches
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       ["src/app.ts"],
       "update the readme",
     );
 
     // Assert - rule should NOT be included
-    expect(formatted).toBe("");
+    expect(result.content).toBe("");
+    expect(result.matchedRules).toHaveLength(0);
   });
 
   it("should handle case-insensitive keyword matching", async () => {
@@ -412,14 +428,14 @@ Testing rule.`,
     );
 
     // Act - lowercase in prompt
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       [],
       "testing in lowercase",
     );
 
     // Assert
-    expect(formatted).toContain("case-rule.mdc");
+    expect(result.content).toContain("case-rule.mdc");
   });
 
   it("should match keyword at word boundary (prefix matching)", async () => {
@@ -436,14 +452,14 @@ Test rule.`,
     );
 
     // Act - "test" should match "testing"
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       [],
       "I am testing this",
     );
 
     // Assert
-    expect(formatted).toContain("boundary-rule.mdc");
+    expect(result.content).toContain("boundary-rule.mdc");
   });
 
   it("should not match keyword mid-word", async () => {
@@ -460,14 +476,15 @@ Test rule.`,
     );
 
     // Act - "test" should NOT match "contest"
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       [],
       "I entered a contest",
     );
 
     // Assert
-    expect(formatted).toBe("");
+    expect(result.content).toBe("");
+    expect(result.matchedRules).toHaveLength(0);
   });
 
   it("should include rule when tool is available", async () => {
@@ -484,7 +501,7 @@ Use web search best practices.`,
     );
 
     // Act - tool is available
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       [],
       undefined,
@@ -492,8 +509,9 @@ Use web search best practices.`,
     );
 
     // Assert
-    expect(formatted).toContain("websearch-rule.mdc");
-    expect(formatted).toContain("Use web search best practices");
+    expect(result.content).toContain("websearch-rule.mdc");
+    expect(result.content).toContain("Use web search best practices");
+    expect(result.matchedRules[0].reason).toContain("tools:");
   });
 
   it("should exclude rule when tool is not available", async () => {
@@ -510,7 +528,7 @@ Use web search best practices.`,
     );
 
     // Act - tool is NOT available
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       [],
       undefined,
@@ -518,7 +536,8 @@ Use web search best practices.`,
     );
 
     // Assert
-    expect(formatted).toBe("");
+    expect(result.content).toBe("");
+    expect(result.matchedRules).toHaveLength(0);
   });
 
   it("should include rule when any of multiple tools is available (OR logic)", async () => {
@@ -536,7 +555,7 @@ Search best practices.`,
     );
 
     // Act - only codesearch is available
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       [],
       undefined,
@@ -544,7 +563,8 @@ Search best practices.`,
     );
 
     // Assert
-    expect(formatted).toContain("search-rule.mdc");
+    expect(result.content).toContain("search-rule.mdc");
+    expect(result.matchedRules[0].reason).toContain("tools:");
   });
 
   it("should include rule when tools match OR globs match", async () => {
@@ -563,7 +583,7 @@ TypeScript or LSP rule.`,
     );
 
     // Act - globs match but tools don't
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       ["src/index.ts"],
       undefined,
@@ -571,7 +591,8 @@ TypeScript or LSP rule.`,
     );
 
     // Assert - should be included (globs matched)
-    expect(formatted).toContain("multi-condition.mdc");
+    expect(result.content).toContain("multi-condition.mdc");
+    expect(result.matchedRules[0].reason).toContain("globs:");
   });
 
   it("should include rule when tools match OR keywords match", async () => {
@@ -590,7 +611,7 @@ Search guidelines.`,
     );
 
     // Act - tools match but keywords don't
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       [],
       "help with database",
@@ -598,7 +619,8 @@ Search guidelines.`,
     );
 
     // Assert - should be included (tools matched)
-    expect(formatted).toContain("tools-keywords.mdc");
+    expect(result.content).toContain("tools-keywords.mdc");
+    expect(result.matchedRules[0].reason).toContain("tools:");
   });
 
   it("should exclude rule when neither tools nor globs nor keywords match", async () => {
@@ -619,7 +641,7 @@ TypeScript with LSP rule.`,
     );
 
     // Act - nothing matches
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([rulePath]),
       ["src/index.js"],
       "help with python",
@@ -627,7 +649,8 @@ TypeScript with LSP rule.`,
     );
 
     // Assert
-    expect(formatted).toBe("");
+    expect(result.content).toBe("");
+    expect(result.matchedRules).toHaveLength(0);
   });
 
   it("should skip tool-conditional rule when no tools are provided", async () => {
@@ -644,10 +667,11 @@ Web search only.`,
     );
 
     // Act - no tools provided (simulates tool discovery failure)
-    const formatted = await readAndFormatRules(toRules([rulePath]));
+    const result = await readAndFormatRules(toRules([rulePath]));
 
     // Assert
-    expect(formatted).toBe("");
+    expect(result.content).toBe("");
+    expect(result.matchedRules).toHaveLength(0);
   });
 
   it("should include unconditional rules even when tool-conditional rules are skipped", async () => {
@@ -667,7 +691,7 @@ Only with websearch.`,
     );
 
     // Act - websearch not available
-    const formatted = await readAndFormatRules(
+    const result = await readAndFormatRules(
       toRules([unconditionalPath, conditionalPath]),
       [],
       undefined,
@@ -675,8 +699,10 @@ Only with websearch.`,
     );
 
     // Assert - only unconditional rule included
-    expect(formatted).toContain("always.md");
-    expect(formatted).toContain("Always apply this");
-    expect(formatted).not.toContain("Only with websearch");
+    expect(result.content).toContain("always.md");
+    expect(result.content).toContain("Always apply this");
+    expect(result.content).not.toContain("Only with websearch");
+    expect(result.matchedRules).toHaveLength(1);
+    expect(result.matchedRules[0].name).toBe("always.md");
   });
 });

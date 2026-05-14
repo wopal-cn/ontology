@@ -284,9 +284,6 @@ export async function discoverRuleFiles(
       globalRulesDir,
     );
     for (const { filePath, relativePath } of globalRules) {
-      if (rulesDebugLog) {
-        rulesDebugLog(`Discovered global rule: ${relativePath} (${filePath})`);
-      }
       files.push({ filePath, relativePath });
     }
   }
@@ -299,11 +296,15 @@ export async function discoverRuleFiles(
       projectRulesDir,
     );
     for (const { filePath, relativePath } of projectRules) {
-      if (rulesDebugLog) {
-        rulesDebugLog(`Discovered project rule: ${relativePath} (${filePath})`);
-      }
       files.push({ filePath, relativePath });
     }
+  }
+
+  // Single-line summary log
+  if (rulesDebugLog && files.length > 0) {
+    rulesDebugLog(
+      `Discovered ${files.length} rule file(s): ${files.map((r) => r.relativePath).join(", ")}`,
+    );
   }
 
   return files;

@@ -644,9 +644,9 @@ describe("Cache Functionality", () => {
     const result2 = await readAndFormatRules(rules);
 
     // Assert - both should have the same content
-    expect(result1).toContain("Cached Rule");
-    expect(result2).toContain("Cached Rule");
-    expect(result1).toBe(result2);
+    expect(result1.content).toContain("Cached Rule");
+    expect(result2.content).toContain("Cached Rule");
+    expect(result1.content).toBe(result2.content);
   });
 
   it("should invalidate cache when file is modified", async () => {
@@ -659,7 +659,7 @@ describe("Cache Functionality", () => {
 
     // Act - read the file
     const result1 = await readAndFormatRules(rules);
-    expect(result1).toContain("Original Content");
+    expect(result1.content).toContain("Original Content");
 
     // Wait a bit to ensure mtime changes
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -671,8 +671,8 @@ describe("Cache Functionality", () => {
     const result2 = await readAndFormatRules(rules);
 
     // Assert - should get the new content
-    expect(result2).toContain("Modified Content");
-    expect(result2).not.toContain("Original Content");
+    expect(result2.content).toContain("Modified Content");
+    expect(result2.content).not.toContain("Original Content");
   });
 
   it("should handle clearRuleCache correctly", async () => {
@@ -689,6 +689,6 @@ describe("Cache Functionality", () => {
 
     // File should be re-read from disk (we can verify by checking the result is still correct)
     const result = await readAndFormatRules(rules);
-    expect(result).toContain("Test Content");
+    expect(result.content).toContain("Test Content");
   });
 });

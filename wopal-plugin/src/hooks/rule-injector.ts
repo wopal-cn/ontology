@@ -7,6 +7,7 @@
 import {
   readAndFormatRules,
   type DiscoveredRule,
+  type MatchedRuleInfo,
 } from "../rules/index.js";
 import { extractConnectedMcpCapabilityIDs } from "./mcp-tools.js";
 import type { DebugLog } from "../debug.js";
@@ -42,9 +43,7 @@ export async function queryAvailableToolIDs(
     for (const id of toolResult.value.data) {
       ids.add(id);
     }
-    ctx.rulesDebugLog(
-      `Built-in tools: ${toolResult.value.data.slice(0, 10).join(", ")}${toolResult.value.data.length > 10 ? "..." : ""} (${toolResult.value.data.length} total)`,
-    );
+    // Removed verbose "Built-in tools" log - not useful for debugging
   } else if (toolResult.status === "rejected") {
     const message =
       toolResult.reason instanceof Error
@@ -73,32 +72,57 @@ export async function queryAvailableToolIDs(
 }
 
 /**
+ * Format matched rules info for logging.
+ * @param matchedRules - Array of matched rule info
+ * @returns Array of formatted strings like "typescript.md (match reason)"
+ */
+function formatMatchedRulesForLog(matchedRules: MatchedRuleInfo[]): string[] {
+  return matchedRules.map((rule) =>
+    rule.reason === "unconditional" ? rule.name : `${rule.name} (${rule.reason})`,
+  );
+}
+
+/**
  * Inject rules into system prompt.
  *
  * @param ctx - Rule injector context
  * @param contextPaths - Current context paths (normalized)
  * @param userPrompt - Latest user prompt (optional)
+ * @param sessionID - Session ID for logging (optional)
  * @returns Formatted rules string or undefined if no applicable rules
  */
 export async function injectRules(
   ctx: RuleInjectorContext,
   contextPaths: string[],
   userPrompt?: string,
+  sessionID?: string,
 ): Promise<string | undefined> {
   const availableToolIDs = await queryAvailableToolIDs(ctx);
 
-  const formattedRules = await readAndFormatRules(
+  const result = await readAndFormatRules(
     ctx.ruleFiles,
     contextPaths,
     userPrompt,
     availableToolIDs,
   );
 
-  if (formattedRules) {
-    ctx.rulesDebugLog("Injecting rules into system prompt");
-    return formattedRules;
+  if (result.content) {
+    const matchedRuleNames = formatMatchedRulesForLog(result.matchedRules);
+    ctx.rulesDebugLog(
+      `Injected ${matchedRuleNames.length} rules for session ${sessionID ?? "unknown"}: ${matchedRuleNames.join(", ")}`,
+    );
+    return result.content;
   } else {
-    ctx.rulesDebugLog("No applicable rules for current context");
+    // No rules matched - show context for diagnosis
+    const pathsPreview =
+      contextPaths.length > 0
+        ? contextPaths.slice(0, 3).join(", ") +
+          (contextPaths.length > 3 ? "..." : "")
+        : "none";
+    const promptPreview = (userPrompt ?? "").slice(0, 50);
+    ctx.rulesDebugLog(
+      `No rules matched for session ${sessionID ?? "unknown"} (paths: ${pathsPreview}; prompt: "${promptPreview}")`,
+    );
     return undefined;
   }
 }
