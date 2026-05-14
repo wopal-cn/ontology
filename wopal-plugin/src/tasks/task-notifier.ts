@@ -32,12 +32,14 @@ export async function sendProgressNotification(
     contextLine = `\n**Context:** ${contextUsage}% used${warn}`
   }
 
-  const notification = `[WOPAL TASK PROGRESS]
+  const notification = `<system-reminder>
+[WOPAL TASK PROGRESS]
 **ID:** \`${task.id}\`
 **Description:** ${task.description}
 **Progress:** ${messageCount} messages${contextLine}
 
-Task is still running. Use \`wopal_task_output(task_id="${task.id}")\` for details.`
+Task is still running. Use \`wopal_task_output(task_id="${task.id}")\` for details.
+</system-reminder>`
 
   await sendNotification(deps, task.parentSessionID, notification)
   debugLog(`[progressNotify] sent: taskId=${task.id} messages=${messageCount}`)

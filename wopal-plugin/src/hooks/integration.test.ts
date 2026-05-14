@@ -101,7 +101,7 @@ describe("OpenCodeRulesPlugin", () => {
     }
   });
 
-  it("should inject rules into system prompt via system.transform hook", async () => {
+  it("should inject rules into user message via messages.transform hook", async () => {
     // Arrange
     writeFileSync(
       path.join(globalRulesDir, "rule.md"),
@@ -125,26 +125,36 @@ describe("OpenCodeRulesPlugin", () => {
     try {
       // Act
       const hooks = await plugin(mockInput);
-      const systemTransform = hooks[
-        "experimental.chat.system.transform"
+      const messagesTransform = hooks[
+        "experimental.chat.messages.transform"
       ] as any;
-      const result = await systemTransform(
-        { model: { providerID: "test", modelID: "test" } },
-        { system: ["You are a helpful assistant."] },
+      const result = await messagesTransform(
+        {},
+        {
+          messages: [
+            {
+              role: "user",
+              info: { sessionID: "test-ses", role: "user" },
+              parts: [{ type: "text", text: "hello" }],
+            },
+          ],
+        },
       );
 
-      // Assert
-      expect(result.system.join("\n")).toContain(
-        "You are a helpful assistant.",
+      // Assert - rules injected as synthetic part in user message
+      const userMsg = result.messages[0];
+      const syntheticParts = (userMsg.parts as any[]).filter(
+        (p: any) => p.synthetic,
       );
-      expect(result.system.join("\n")).toContain("OpenCode Rules");
-      expect(result.system.join("\n")).toContain("Test Rule");
+      const rulesText = syntheticParts.map((p: any) => p.text).join("\n");
+      expect(rulesText).toContain("OpenCode Rules");
+      expect(rulesText).toContain("Test Rule");
     } finally {
       process.env.XDG_CONFIG_HOME = originalEnv;
     }
   });
 
-  it("should handle empty system prompt", async () => {
+  it("should inject rules into user message with empty system prompt", async () => {
     // Arrange
     writeFileSync(path.join(globalRulesDir, "rule.md"), "# Rule Content");
 
@@ -165,17 +175,30 @@ describe("OpenCodeRulesPlugin", () => {
     try {
       // Act
       const hooks = await plugin(mockInput);
-      const systemTransform = hooks[
-        "experimental.chat.system.transform"
+      const messagesTransform = hooks[
+        "experimental.chat.messages.transform"
       ] as any;
-      const result = await systemTransform(
-        { model: { providerID: "test", modelID: "test" } },
-        { system: [] },
+      const result = await messagesTransform(
+        {},
+        {
+          messages: [
+            {
+              role: "user",
+              info: { sessionID: "test-ses", role: "user" },
+              parts: [{ type: "text", text: "hello" }],
+            },
+          ],
+        },
       );
 
-      // Assert
-      expect(result.system.join("\n")).toContain("OpenCode Rules");
-      expect(result.system.join("\n")).toContain("Rule Content");
+      // Assert - rules injected as synthetic part
+      const userMsg = result.messages[0];
+      const syntheticParts = (userMsg.parts as any[]).filter(
+        (p: any) => p.synthetic,
+      );
+      const rulesText = syntheticParts.map((p: any) => p.text).join("\n");
+      expect(rulesText).toContain("OpenCode Rules");
+      expect(rulesText).toContain("Rule Content");
     } finally {
       process.env.XDG_CONFIG_HOME = originalEnv;
     }
@@ -302,10 +325,14 @@ Use React best practices for components.`,
         const messagesOutput: any = {
           messages: [
             {
+              role: "user",
+              info: { sessionID: testSessionID, role: "user" },
+              parts: [{ type: "text", text: "write a component" }],
+            },
+            {
               role: "assistant",
               parts: [
                 {
-                  sessionID: testSessionID,
                   type: "tool-invocation",
                   toolInvocation: {
                     toolName: "read",
@@ -317,30 +344,19 @@ Use React best practices for components.`,
           ],
         };
 
-        const systemOutput: any = {
-          system: ["Base prompt."],
-        };
-
-        // First, process messages with a matching file reference
+        // messages.transform seeds context AND injects rules
         const messagesTransform = hooks[
           "experimental.chat.messages.transform"
         ] as any;
-        await messagesTransform({}, messagesOutput);
+        const result = await messagesTransform({}, messagesOutput);
 
-        // Then, get the system prompt with sessionID in input
-        const systemTransform = hooks[
-          "experimental.chat.system.transform"
-        ] as any;
-        const result = await systemTransform(
-          {
-            sessionID: testSessionID,
-            model: { providerID: "test", modelID: "test" },
-          },
-          systemOutput,
+        // Assert - conditional rule should be injected to user message as synthetic
+        const userMsg = result.messages[0];
+        const syntheticParts = (userMsg.parts as any[]).filter(
+          (p: any) => p.synthetic,
         );
-
-        // Assert - conditional rule should be included
-        expect(result.system.join("\n")).toContain("React best practices");
+        const rulesText = syntheticParts.map((p: any) => p.text).join("\n");
+        expect(rulesText).toContain("React best practices");
       } finally {
         process.env.XDG_CONFIG_HOME = originalEnv;
       }
@@ -381,10 +397,14 @@ Use React best practices for components.`,
         const messagesOutput: any = {
           messages: [
             {
+              role: "user",
+              info: { sessionID: testSessionID, role: "user" },
+              parts: [{ type: "text", text: "hi" }],
+            },
+            {
               role: "assistant",
               parts: [
                 {
-                  sessionID: testSessionID,
                   type: "tool-invocation",
                   toolInvocation: {
                     toolName: "read",
@@ -396,30 +416,19 @@ Use React best practices for components.`,
           ],
         };
 
-        const systemOutput: any = {
-          system: ["Base prompt."],
-        };
-
         // Process messages with NON-matching file reference
         const messagesTransform = hooks[
           "experimental.chat.messages.transform"
         ] as any;
-        await messagesTransform({}, messagesOutput);
+        const result = await messagesTransform({}, messagesOutput);
 
-        // Get the system prompt with sessionID in input
-        const systemTransform = hooks[
-          "experimental.chat.system.transform"
-        ] as any;
-        const result = await systemTransform(
-          {
-            sessionID: testSessionID,
-            model: { providerID: "test", modelID: "test" },
-          },
-          systemOutput,
+        // Assert - conditional rule should NOT be injected
+        const userMsg = result.messages[0];
+        const syntheticParts = (userMsg.parts as any[]).filter(
+          (p: any) => p.synthetic,
         );
-
-        // Assert - conditional rule should NOT be included
-        expect(result.system.join("\n")).not.toContain("React best practices");
+        const rulesText = syntheticParts.map((p: any) => p.text).join("\n");
+        expect(rulesText).not.toContain("React best practices");
       } finally {
         process.env.XDG_CONFIG_HOME = originalEnv;
       }
@@ -459,48 +468,32 @@ Special rule content.`,
         // Act
         const hooks = await plugin(mockInput);
 
-        // Create messages with sessionID in parts (as OpenCode does)
-        const testSessionID = "test-session-789";
-        const messagesOutput: any = {
-          messages: [
-            {
-              role: "user",
-              parts: [
-                {
-                  sessionID: testSessionID,
-                  type: "text",
-                  text: "Check src/index.ts",
-                },
-              ],
-            },
-          ],
-        };
-
-        const systemOutput: any = {
-          system: [],
-        };
-
         // Process with non-matching context
         const messagesTransform = hooks[
           "experimental.chat.messages.transform"
         ] as any;
-        await messagesTransform({}, messagesOutput);
-
-        const systemTransform = hooks[
-          "experimental.chat.system.transform"
-        ] as any;
-        const result = await systemTransform(
+        const result = await messagesTransform(
+          {},
           {
-            sessionID: testSessionID,
-            model: { providerID: "test", modelID: "test" },
+            messages: [
+              {
+                role: "user",
+                info: { sessionID: "test-session-789", role: "user" },
+                parts: [{ type: "text", text: "Check src/index.ts" }],
+              },
+            ],
           },
-          systemOutput,
         );
 
         // Assert
-        expect(result.system.join("\n")).toContain("Always Apply");
-        expect(result.system.join("\n")).toContain("This rule always applies");
-        expect(result.system).not.toContain("Special rule content");
+        const userMsg = result.messages[0];
+        const syntheticParts = (userMsg.parts as any[]).filter(
+          (p: any) => p.synthetic,
+        );
+        const rulesText = syntheticParts.map((p: any) => p.text).join("\n");
+        expect(rulesText).toContain("Always Apply");
+        expect(rulesText).toContain("This rule always applies");
+        expect(rulesText).not.toContain("Special rule content");
       } finally {
         process.env.XDG_CONFIG_HOME = originalEnv;
       }
@@ -536,15 +529,18 @@ Follow testing best practices.`,
         // Act
         const hooks = await plugin(mockInput);
 
-        // Create messages with sessionID in parts (as OpenCode does)
         const testSessionID = "test-session-multi";
         const messagesOutput: any = {
           messages: [
             {
+              role: "user",
+              info: { sessionID: testSessionID, role: "user" },
+              parts: [{ type: "text", text: "add tests" }],
+            },
+            {
               role: "assistant",
               parts: [
                 {
-                  sessionID: testSessionID,
                   type: "tool-invocation",
                   toolInvocation: {
                     toolName: "read",
@@ -563,36 +559,26 @@ Follow testing best practices.`,
           ],
         };
 
-        const systemOutput: any = {
-          system: [],
-        };
-
         // Process with one matching and one non-matching file
         const messagesTransform = hooks[
           "experimental.chat.messages.transform"
         ] as any;
-        await messagesTransform({}, messagesOutput);
-
-        const systemTransform = hooks[
-          "experimental.chat.system.transform"
-        ] as any;
-        const result = await systemTransform(
-          {
-            sessionID: testSessionID,
-            model: { providerID: "test", modelID: "test" },
-          },
-          systemOutput,
-        );
+        const result = await messagesTransform({}, messagesOutput);
 
         // Assert - rule should be included because at least one file matches
-        expect(result.system.join("\n")).toContain("testing best practices");
+        const userMsg = result.messages[0];
+        const syntheticParts = (userMsg.parts as any[]).filter(
+          (p: any) => p.synthetic,
+        );
+        const rulesText = syntheticParts.map((p: any) => p.text).join("\n");
+        expect(rulesText).toContain("testing best practices");
       } finally {
         process.env.XDG_CONFIG_HOME = originalEnv;
       }
     });
   });
 
-  it("does not require messages.transform to inject conditional rules", async () => {
+  it("system.transform no longer injects rules (rules moved to messages.transform)", async () => {
     // Arrange - create conditional rule
     const originalEnv = process.env.XDG_CONFIG_HOME;
     process.env.XDG_CONFIG_HOME = path.join(testDir, ".config");
@@ -634,8 +620,9 @@ Special rule content.`,
         { system: ["Base prompt."] },
       );
 
-      // Assert - conditional rule should be included via sessionState
-      expect(result.system.join("\n")).toContain("Special rule content");
+      // Assert - system.transform no longer injects rules
+      expect(result.system.join("\n")).not.toContain("Special rule content");
+      expect(result.system.join("\n")).toContain("Base prompt.");
     } finally {
       process.env.XDG_CONFIG_HOME = originalEnv;
     }

@@ -120,16 +120,34 @@ Use React best practices.`,
         { args: { filePath: "src/components/Button.tsx" } },
       );
 
-      const systemTransform = hooks[
-        "experimental.chat.system.transform"
+      // Now call messages.transform with a user message
+      const messagesTransform = hooks[
+        "experimental.chat.messages.transform"
       ] as any;
-      const result = await systemTransform(
-        { sessionID: "ses_1", model: { providerID: "test", modelID: "test" } },
-        { system: ["Base prompt."] },
+      const messagesResult = await messagesTransform(
+        {},
+        {
+          messages: [
+            {
+              role: "user",
+              info: { sessionID: "ses_1", role: "user" },
+              parts: [{ type: "text", text: "write a button component" }],
+            },
+          ],
+        },
       );
 
-      // Assert
-      expect(result.system.join("\n")).toContain("React best practices");
+      // Assert - rules should be injected into the user message as a synthetic part
+      const lastMsg = messagesResult.messages.find(
+        (m: any) => m.role === "user" || m.info?.role === "user",
+      );
+      const syntheticParts = (lastMsg.parts as any[]).filter(
+        (p: any) => p.synthetic,
+      );
+      const rulesText = syntheticParts
+        .map((p: any) => p.text)
+        .join("\n");
+      expect(rulesText).toContain("React best practices");
     } finally {
       process.env.XDG_CONFIG_HOME = originalEnv;
     }

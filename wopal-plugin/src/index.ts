@@ -9,7 +9,7 @@
 import type { PluginInput, Hooks } from "@opencode-ai/plugin";
 import type { SystemPromptMetadata } from "./types.js";
 import { createOpencodeClient as createV2OpencodeClient } from "@opencode-ai/sdk/v2";
-import { discoverRuleFiles } from "./rules/index.js";
+import { discoverRuleFiles, type DiscoveredRule } from "./rules/index.js";
 import { createHookContext, createAllHooks } from "./hooks/index.js";
 import { sessionStore } from "./session-store-instance.js";
 import { createDebugLog, createWarnLog } from "./debug.js";

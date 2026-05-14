@@ -1,10 +1,9 @@
 /**
- * System Transform Hook - Facade for rule + memory injection
+ * System Transform Hook - Memory injection + snapshot/dump
  *
- * Coordinates rule-injector and memory-injector modules.
+ * Coordinates memory-injector module.
  */
 
-import type { DiscoveredRule } from "../rules/index.js";
 import type { SessionStore } from "../session-store.js";
 import type { MemoryInjector } from "../memory/index.js";
 import type { DebugLog } from "../debug.js";
@@ -12,11 +11,6 @@ import type { SystemPromptMetadata } from "../types.js";
 import type { MessageWithInfo } from "./message-context.js";
 import type { Model } from "@opencode-ai/sdk";
 import { writeContextDump } from "../tools/dump-formatter.js";
-import {
-  injectRules,
-  queryAvailableToolIDs,
-  type RuleInjectorContext,
-} from "./rule-injector.js";
 import {
   injectMemoriesIntoSystem,
   isChildSession,
@@ -34,9 +28,7 @@ export interface SystemTransformHookContext {
   client: unknown;
   directory: string;
   projectDirectory: string;
-  ruleFiles: DiscoveredRule[];
   sessionStore: SessionStore;
-  rulesDebugLog: DebugLog;
   memoryDebugLog: DebugLog;
   contextDebugLog: DebugLog;
   now: () => number;
@@ -47,19 +39,10 @@ export interface SystemTransformHookContext {
   systemMetadataMap?: Map<string, SystemPromptMetadata>;
   systemInjectionsMap?: Map<string, string[]>;
   transformedMessagesMap?: Map<string, MessageWithInfo[]>;
-  rulesInjectionEnabled: boolean;    // Passed from HookContext
   memoryInjectionEnabled: boolean;   // Passed from HookContext
 }
 
 export function createSystemTransformHooks(ctx: SystemTransformHookContext) {
-  // Build sub-module contexts
-  const ruleInjectorCtx: RuleInjectorContext = {
-    client: ctx.client,
-    directory: ctx.directory,
-    ruleFiles: ctx.ruleFiles,
-    rulesDebugLog: ctx.rulesDebugLog,
-  };
-
   const memoryInjectorCtx: MemoryInjectorContext = {
     client: ctx.client,
     sessionStore: ctx.sessionStore,
@@ -74,15 +57,12 @@ export function createSystemTransformHooks(ctx: SystemTransformHookContext) {
     output: SystemTransformOutput | null,
   ): Promise<SystemTransformOutput> {
     const sessionID = hookInput?.sessionID;
-    const sessionState = sessionID
-      ? ctx.sessionStore.get(sessionID)
-      : undefined;
 
     if (sessionID) {
       const skip = ctx.sessionStore.shouldSkipInjection(sessionID);
       if (skip) {
         ctx.contextDebugLog(
-          `Session ${sessionID} is compacting - skipping rule injection`,
+          `Session ${sessionID} is compacting - skipping memory injection`,
         );
         return output ?? { system: [] };
       }
@@ -97,24 +77,6 @@ export function createSystemTransformHooks(ctx: SystemTransformHookContext) {
 
     // Record initial length before plugin injections
     const initialSystemLength = output.system.length;
-
-    // Rule injection (controlled by ctx, not env vars)
-    if (ctx.rulesInjectionEnabled) {
-      const contextPaths = sessionState
-        ? Array.from(sessionState.contextPaths).sort()
-        : [];
-      const userPrompt = sessionState?.lastUserPrompt;
-
-      const formattedRules = await injectRules(
-        ruleInjectorCtx,
-        contextPaths,
-        userPrompt,
-      );
-
-      if (formattedRules) {
-        output.system.push(formattedRules);
-      }
-    }
 
     // Memory injection (after rules, into same system array)
     if (ctx.memoryInjectionEnabled && ctx.memoryInjector && sessionID) {
@@ -162,8 +124,6 @@ export function createSystemTransformHooks(ctx: SystemTransformHookContext) {
 
   return {
     "experimental.chat.system.transform": onSystemTransform,
-    // Expose internal methods for testing
-    _queryAvailableToolIDs: () => queryAvailableToolIDs(ruleInjectorCtx),
     _isChildSession: (sessionID: string) =>
       isChildSession(memoryInjectorCtx, sessionID),
     _onSystemTransform: onSystemTransform,

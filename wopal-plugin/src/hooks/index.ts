@@ -10,6 +10,7 @@ import { createMessageHooks } from "./message-hooks.js";
 import { createSystemTransformHooks } from "./system-transform.js";
 import { createEventRouter } from "./event-router.js";
 import { createCompactionHooks } from "./compaction.js";
+import type { RuleInjectorContext } from "./rule-injector.js";
 
 export interface HookContextOptions {
   client: unknown;
@@ -89,15 +90,28 @@ export function createAllHooks(ctx: HookContext): Record<string, unknown> {
     contextDebugLog: ctx.contextDebugLog,
     projectDirectory: ctx.projectDirectory,
     transformedMessagesMap,
+    skillReloadCtx: {
+      sessionStore: ctx.sessionStore,
+      contextDebugLog: ctx.contextDebugLog,
+    },
+    ruleMessageCtx: {
+      sessionStore: ctx.sessionStore,
+      ruleInjectorCtx: {
+        client: ctx.client,
+        directory: ctx.directory,
+        ruleFiles: ctx.ruleFiles,
+        rulesDebugLog: ctx.rulesDebugLog,
+      } satisfies RuleInjectorContext,
+      rulesDebugLog: ctx.rulesDebugLog,
+      rulesInjectionEnabled: ctx.rulesInjectionEnabled,
+    },
   });
 
   const systemTransformHooks = createSystemTransformHooks({
     client: ctx.client,
     directory: ctx.directory,
     projectDirectory: ctx.projectDirectory,
-    ruleFiles: ctx.ruleFiles,
     sessionStore: ctx.sessionStore,
-    rulesDebugLog: ctx.rulesDebugLog,
     memoryDebugLog: ctx.memoryDebugLog,
     contextDebugLog: ctx.contextDebugLog,
     now: ctx.now,
@@ -108,7 +122,6 @@ export function createAllHooks(ctx: HookContext): Record<string, unknown> {
     systemMetadataMap: ctx.systemMetadataMap,
     systemInjectionsMap: ctx.systemInjectionsMap,
     transformedMessagesMap,
-    rulesInjectionEnabled: ctx.rulesInjectionEnabled,
     memoryInjectionEnabled: ctx.memoryInjectionEnabled,
   });
 

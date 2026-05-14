@@ -117,17 +117,34 @@ MCP Context7 rule content`;
         serverUrl: new URL("http://localhost:3000"),
       });
 
-      // Act
-      const systemTransform = hooks[
-        "experimental.chat.system.transform"
+      // Act - call messages.transform with a user message
+      const messagesTransform = hooks[
+        "experimental.chat.messages.transform"
       ] as any;
-      const result = await systemTransform(
-        { model: { providerID: "test", modelID: "test" } },
-        { system: ["Base prompt."] },
+      const result = await messagesTransform(
+        {},
+        {
+          messages: [
+            {
+              role: "user",
+              info: { sessionID: "ses_1", role: "user" },
+              parts: [{ type: "text", text: "use context7" }],
+            },
+          ],
+        },
       );
 
-      // Assert - rule content should be included when MCP is connected
-      expect(result.system.join("\n")).toContain("MCP Context7 rule content");
+      // Assert - rule content should be injected into the user message as a synthetic part
+      const lastMsg = result.messages.find(
+        (m: any) => m.role === "user" || m.info?.role === "user",
+      );
+      const syntheticParts = (lastMsg.parts as any[]).filter(
+        (p: any) => p.synthetic,
+      );
+      const rulesText = syntheticParts
+        .map((p: any) => p.text)
+        .join("\n");
+      expect(rulesText).toContain("MCP Context7 rule content");
     } finally {
       process.env.XDG_CONFIG_HOME = originalEnv;
     }

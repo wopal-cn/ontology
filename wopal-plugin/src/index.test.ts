@@ -88,7 +88,7 @@ describe("OpenCodeRulesPlugin", () => {
     }
   });
 
-  it("should inject rules into system prompt via system.transform hook", async () => {
+  it("should inject rules into user message via messages.transform hook", async () => {
     writeFileSync(
       path.join(globalRulesDir, "rule.md"),
       "# Test Rule\nDo this always",
@@ -110,16 +110,28 @@ describe("OpenCodeRulesPlugin", () => {
         serverUrl: new URL("http://localhost:3000"),
       });
 
-      const systemTransform = hooks[
-        "experimental.chat.system.transform"
+      const messagesTransform = hooks[
+        "experimental.chat.messages.transform"
       ] as any;
-      const result = await systemTransform(
-        { model: { providerID: "test", modelID: "test" } },
-        { system: ["You are a helpful assistant."] },
+      const result = await messagesTransform(
+        {},
+        {
+          messages: [
+            {
+              role: "user",
+              info: { sessionID: "test-ses", role: "user" },
+              parts: [{ type: "text", text: "hello" }],
+            },
+          ],
+        },
       );
 
-      expect(result.system.join("\n")).toContain("You are a helpful assistant.");
-      expect(result.system.join("\n")).toContain("Test Rule");
+      const userMsg = result.messages[0];
+      const syntheticParts = (userMsg.parts as any[]).filter(
+        (p: any) => p.synthetic,
+      );
+      const rulesText = syntheticParts.map((p: any) => p.text).join("\n");
+      expect(rulesText).toContain("Test Rule");
     } finally {
       process.env.XDG_CONFIG_HOME = originalEnv;
     }
